@@ -2,6 +2,7 @@ import type { Metadata } from "next";
 import type { ReactNode } from "react";
 import "./globals.css";
 import "./github-links.css";
+import "./drive.css";
 
 export const metadata: Metadata = {
   title: "Tasks Dash",
