@@ -101,7 +101,7 @@ export function GithubWorkItemLinks({
       ...(github.branch ? [github.branch] : []),
     ]),
   ];
-  const commits = github.commits?.length
+  const commits: GithubCommitView[] = github.commits?.length
     ? github.commits
     : (github.commitShas ?? []).map((sha) => ({ sha, message: "" }));
 
