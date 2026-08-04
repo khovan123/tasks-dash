@@ -29,9 +29,4 @@ export class CreateProjectDto {
   @IsString()
   @IsOptional()
   leadId?: string;
-
-  @IsString()
-  @MaxLength(256)
-  @IsOptional()
-  driveRootFolderId?: string;
 }
