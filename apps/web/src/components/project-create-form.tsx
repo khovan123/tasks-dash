@@ -14,7 +14,6 @@ const DEFAULT_VALUES: ProjectFormValues = {
   key: "",
   name: "",
   description: "",
-  driveRootFolderId: "",
 };
 
 export function ProjectCreateForm() {
@@ -29,11 +28,7 @@ export function ProjectCreateForm() {
     try {
       await apiRequest("/api/projects", {
         method: "POST",
-        body: JSON.stringify({
-          ...values,
-          color: "#6256f5",
-          driveRootFolderId: values.driveRootFolderId || undefined,
-        }),
+        body: JSON.stringify({ ...values, color: "#6256f5" }),
       });
       form.reset(DEFAULT_VALUES);
       router.refresh();
@@ -54,8 +49,9 @@ export function ProjectCreateForm() {
           </div>
         </div>
         <p className="form-message">
-          Repository được liên kết sau khi tạo project bằng danh sách repository
-          lấy trực tiếp từ GitHub App.
+          Repository được chọn từ GitHub App. Google Drive sẽ tự tạo folder dự
+          án bên trong root workspace do Owner đã cấp quyền; không nhập folder ID
+          thủ công.
         </p>
         <div className="form-grid">
           <label>
@@ -80,14 +76,6 @@ export function ProjectCreateForm() {
               {...form.register("description")}
               placeholder="Mục tiêu và phạm vi dự án"
               aria-invalid={Boolean(form.formState.errors.description)}
-            />
-          </label>
-          <label className="wide">
-            Google Drive folder ID
-            <input
-              {...form.register("driveRootFolderId")}
-              placeholder="1AbCd..."
-              aria-invalid={Boolean(form.formState.errors.driveRootFolderId)}
             />
           </label>
         </div>
