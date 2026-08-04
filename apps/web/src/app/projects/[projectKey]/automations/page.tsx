@@ -1,6 +1,23 @@
 import Link from "next/link";
+import { Zap } from "lucide-react";
 import { apiData } from "@/lib/server/api-data";
 import { AutomationCreateForm } from "@/components/automation-create-form";
+import {
+  AppPage,
+  AppTopbar,
+  PageHero,
+  SectionHeading,
+} from "@/components/layout/app-shell";
+import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
+import { Badge } from "@/components/ui/badge";
+import { Button } from "@/components/ui/button";
+import { Card, CardContent, CardHeader } from "@/components/ui/card";
+import {
+  Empty,
+  EmptyDescription,
+  EmptyHeader,
+  EmptyTitle,
+} from "@/components/ui/empty";
 
 export const dynamic = "force-dynamic";
 
@@ -22,14 +39,57 @@ export default async function AutomationsPage({ params }: { params: Promise<{ pr
   const rules = await apiData<AutomationRule[]>(`/projects/${key}/automations`);
 
   return (
-    <main className="app-page">
-      <header className="topbar"><Link href={`/projects/${key}`}>← {key}</Link><Link href="/settings/integrations">Tích hợp</Link></header>
-      <section className="hero-panel"><div><span className="eyebrow">REAL EXECUTION ENGINE</span><h1>Automation · {key}</h1><p>Rules được lưu trong MongoDB và chạy bởi webhook hoặc scheduler thật.</p></div></section>
-      <section className="data-card">
-        <div className="section-heading"><div><span>AUTOMATION RULES</span><h2>Rules hiện tại</h2></div><strong>{rules.length}</strong></div>
-        {rules.length === 0 ? <p className="empty-inline">Chưa có automation rule.</p> : <div className="rule-list">{rules.map((rule) => <article className="rule-row" key={rule._id}><div><strong>{rule.name}</strong><span>{rule.trigger} · {rule.executionMode}</span></div><div><strong>{rule.lastResult ?? "Chưa chạy"}</strong><span>{rule.runCount} lần chạy</span></div>{rule.lastError ? <p className="error">{rule.lastError}</p> : null}</article>)}</div>}
-      </section>
+    <AppPage>
+      <AppTopbar>
+        <Button asChild variant="ghost"><Link href={`/projects/${key}`}>← {key}</Link></Button>
+        <Button asChild variant="outline" size="sm"><Link href="/settings/integrations">Tích hợp</Link></Button>
+      </AppTopbar>
+      <PageHero
+        eyebrow="Real execution engine"
+        title={`Automation · ${key}`}
+        description="Rules được lưu trong MongoDB và chạy bởi webhook hoặc scheduler thật."
+        aside={<Zap className="size-14 text-primary" />}
+      />
+      <Card>
+        <CardHeader>
+          <SectionHeading eyebrow="Automation rules" title="Rules hiện tại" meta={`${rules.length} rules`} />
+        </CardHeader>
+        <CardContent>
+          {rules.length === 0 ? (
+            <Empty>
+              <EmptyHeader>
+                <EmptyTitle>Chưa có automation rule</EmptyTitle>
+                <EmptyDescription>Tạo rule GitHub → Discord đầu tiên bên dưới.</EmptyDescription>
+              </EmptyHeader>
+            </Empty>
+          ) : (
+            <div className="grid gap-3">
+              {rules.map((rule) => (
+                <article key={rule._id} className="grid gap-4 rounded-lg border bg-muted/20 p-4 sm:grid-cols-[1fr_auto]">
+                  <div className="space-y-2">
+                    <div className="flex flex-wrap items-center gap-2">
+                      <strong>{rule.name}</strong>
+                      <Badge variant={rule.enabled ? "success" : "secondary"}>{rule.enabled ? "Enabled" : "Disabled"}</Badge>
+                    </div>
+                    <p className="text-sm text-muted-foreground">{rule.trigger} · {rule.executionMode}</p>
+                  </div>
+                  <div className="text-sm sm:text-right">
+                    <strong>{rule.lastResult ?? "Chưa chạy"}</strong>
+                    <p className="text-muted-foreground">{rule.runCount} lần chạy</p>
+                  </div>
+                  {rule.lastError ? (
+                    <Alert variant="destructive" className="sm:col-span-2">
+                      <AlertTitle>Lần chạy gần nhất thất bại</AlertTitle>
+                      <AlertDescription>{rule.lastError}</AlertDescription>
+                    </Alert>
+                  ) : null}
+                </article>
+              ))}
+            </div>
+          )}
+        </CardContent>
+      </Card>
       <AutomationCreateForm projectKey={key} />
-    </main>
+    </AppPage>
   );
 }

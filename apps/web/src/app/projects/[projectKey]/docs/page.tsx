@@ -1,9 +1,23 @@
 import Link from "next/link";
+import { HardDrive } from "lucide-react";
 import {
   DriveFileManager,
   type DriveNode,
 } from "@/components/drive-file-manager";
 import { apiData } from "@/lib/server/api-data";
+import {
+  AppNav,
+  AppPage,
+  AppTopbar,
+} from "@/components/layout/app-shell";
+import { Button } from "@/components/ui/button";
+import {
+  Empty,
+  EmptyContent,
+  EmptyDescription,
+  EmptyHeader,
+  EmptyTitle,
+} from "@/components/ui/empty";
 
 export const dynamic = "force-dynamic";
 
@@ -44,33 +58,33 @@ export default async function ProjectDocsPage({
   }
 
   return (
-    <main className="app-page">
-      <header className="topbar">
-        <Link href={`/projects/${key}`}>← {key}</Link>
-        <nav>
-          <Link href={`/projects/${key}/backlog`}>Backlog</Link>
-          <Link href={`/projects/${key}/designer`}>Designer</Link>
-          <Link href={`/projects/${key}/docs`}>Docs</Link>
-          <Link href={`/projects/${key}/automations`}>Automation</Link>
-        </nav>
-      </header>
+    <AppPage>
+      <AppTopbar>
+        <Button asChild variant="ghost"><Link href={`/projects/${key}`}>← {key}</Link></Button>
+        <AppNav>
+          <Button asChild variant="ghost" size="sm"><Link href={`/projects/${key}/backlog`}>Backlog</Link></Button>
+          <Button asChild variant="ghost" size="sm"><Link href={`/projects/${key}/designer`}>Designer</Link></Button>
+          <Button asChild variant="ghost" size="sm"><Link href={`/projects/${key}/docs`}>Docs</Link></Button>
+          <Button asChild variant="ghost" size="sm"><Link href={`/projects/${key}/automations`}>Automation</Link></Button>
+        </AppNav>
+      </AppTopbar>
 
       {!status.connected ? (
-        <section className="empty-state">
-          <span className="eyebrow">OWNER AUTHORIZATION REQUIRED</span>
-          <h1>Google Drive chưa được kết nối</h1>
-          <p>
-            Workspace Owner phải cấp quyền một lần. Tasks Dash sẽ tự tạo root
-            workspace và folder riêng cho từng project; không hỗ trợ link folder
-            ngoài.
-          </p>
-          <a
-            className="primary link-button"
-            href="/api/integrations/google-drive/connect"
-          >
-            Owner kết nối Google Drive
-          </a>
-        </section>
+        <Empty className="min-h-80">
+          <HardDrive className="size-12 text-primary" />
+          <EmptyHeader>
+            <EmptyTitle>Google Drive chưa được kết nối</EmptyTitle>
+            <EmptyDescription>
+              Workspace Owner phải cấp quyền một lần. Tasks Dash sẽ tự tạo root
+              workspace và folder riêng cho từng project; không hỗ trợ link folder ngoài.
+            </EmptyDescription>
+          </EmptyHeader>
+          <EmptyContent>
+            <Button asChild>
+              <a href="/api/integrations/google-drive/connect">Owner kết nối Google Drive</a>
+            </Button>
+          </EmptyContent>
+        </Empty>
       ) : tree ? (
         <DriveFileManager
           projectKey={key}
@@ -80,15 +94,17 @@ export default async function ProjectDocsPage({
           items={tree.items}
         />
       ) : (
-        <section className="empty-state">
-          <span className="eyebrow">DRIVE PROVISIONING ERROR</span>
-          <h1>Chưa thể tải folder dự án</h1>
-          <p>{error ?? status.lastError ?? "Google Drive tạm thời không khả dụng."}</p>
-          <Link className="secondary link-button" href="/settings/integrations">
-            Kiểm tra tích hợp
-          </Link>
-        </section>
+        <Empty className="min-h-80">
+          <HardDrive className="size-12 text-destructive" />
+          <EmptyHeader>
+            <EmptyTitle>Chưa thể tải folder dự án</EmptyTitle>
+            <EmptyDescription>{error ?? status.lastError ?? "Google Drive tạm thời không khả dụng."}</EmptyDescription>
+          </EmptyHeader>
+          <EmptyContent>
+            <Button asChild variant="outline"><Link href="/settings/integrations">Kiểm tra tích hợp</Link></Button>
+          </EmptyContent>
+        </Empty>
       )}
-    </main>
+    </AppPage>
   );
 }

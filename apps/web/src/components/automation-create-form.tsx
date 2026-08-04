@@ -8,11 +8,26 @@ import {
 } from "@tasks-dash/contracts";
 import { useRouter } from "next/navigation";
 import { FormProvider, useForm } from "react-hook-form";
+import { Zap } from "lucide-react";
 import {
   DiscordAutomationValues,
   discordAutomationSchema,
 } from "@/features/automations/schemas/discord-automation.schema";
 import { apiRequest } from "@/lib/api/api-request";
+import { FormCard } from "@/components/layout/app-shell";
+import { Button } from "@/components/ui/button";
+import {
+  Field,
+  FieldError,
+  FieldGroup,
+  FieldLabel,
+} from "@/components/ui/field";
+import { Input } from "@/components/ui/input";
+import {
+  NativeSelect,
+  NativeSelectOption,
+} from "@/components/ui/native-select";
+import { Textarea } from "@/components/ui/textarea";
 
 export function AutomationCreateForm({ projectKey }: { projectKey: string }) {
   const router = useRouter();
@@ -56,16 +71,42 @@ export function AutomationCreateForm({ projectKey }: { projectKey: string }) {
 
   return (
     <FormProvider {...form}>
-      <form className="form-card" onSubmit={form.handleSubmit(submit)} noValidate>
-        <div className="section-heading"><div><span>EVENT AUTOMATION</span><h2>Thông báo Discord từ GitHub PR</h2></div></div>
-        <div className="form-grid">
-          <label>Tên rule<input {...form.register("name")} placeholder="Notify Discord when PR opens" /></label>
-          <label>Trigger<select {...form.register("trigger")}><option value={AUTOMATION_TRIGGERS.pullRequestOpened}>Pull request opened</option><option value={AUTOMATION_TRIGGERS.pullRequestMerged}>Pull request merged</option></select></label>
-          <label className="wide">Tiêu đề<input {...form.register("title")} /></label>
-          <label className="wide">Nội dung<textarea {...form.register("message")} /></label>
-        </div>
-        {form.formState.errors.root?.message ? <p className="error">{form.formState.errors.root.message}</p> : null}
-        <button className="primary" disabled={form.formState.isSubmitting}>{form.formState.isSubmitting ? "Đang tạo…" : "Tạo automation"}</button>
+      <form onSubmit={form.handleSubmit(submit)} noValidate>
+        <FormCard
+          eyebrow="Event automation"
+          title="Thông báo Discord từ GitHub PR"
+          footer={
+            <Button disabled={form.formState.isSubmitting}>
+              <Zap />
+              {form.formState.isSubmitting ? "Đang tạo…" : "Tạo automation"}
+            </Button>
+          }
+        >
+          <FieldGroup>
+            <Field>
+              <FieldLabel htmlFor="automation-name">Tên rule</FieldLabel>
+              <Input id="automation-name" {...form.register("name")} placeholder="Notify Discord when PR opens" />
+            </Field>
+            <Field>
+              <FieldLabel htmlFor="automation-trigger">Trigger</FieldLabel>
+              <NativeSelect id="automation-trigger" {...form.register("trigger")}>
+                <NativeSelectOption value={AUTOMATION_TRIGGERS.pullRequestOpened}>Pull request opened</NativeSelectOption>
+                <NativeSelectOption value={AUTOMATION_TRIGGERS.pullRequestMerged}>Pull request merged</NativeSelectOption>
+              </NativeSelect>
+            </Field>
+          </FieldGroup>
+          <Field>
+            <FieldLabel htmlFor="automation-title">Tiêu đề</FieldLabel>
+            <Input id="automation-title" {...form.register("title")} />
+          </Field>
+          <Field>
+            <FieldLabel htmlFor="automation-message">Nội dung</FieldLabel>
+            <Textarea id="automation-message" {...form.register("message")} />
+          </Field>
+          {form.formState.errors.root?.message ? (
+            <FieldError>{form.formState.errors.root.message}</FieldError>
+          ) : null}
+        </FormCard>
       </form>
     </FormProvider>
   );

@@ -1,8 +1,6 @@
 import type { Metadata } from "next";
 import type { ReactNode } from "react";
 import "./globals.css";
-import "./github-links.css";
-import "./drive.css";
 
 export const metadata: Metadata = {
   title: "Tasks Dash",
@@ -14,7 +12,9 @@ export default function RootLayout({
 }: Readonly<{ children: ReactNode }>) {
   return (
     <html lang="vi">
-      <body>{children}</body>
+      <body className="min-h-screen bg-background font-sans text-foreground">
+        {children}
+      </body>
     </html>
   );
 }

@@ -2,6 +2,14 @@ import type { MemberRole } from "@tasks-dash/contracts";
 import Link from "next/link";
 import { WorkspaceMembersManager } from "@/components/workspace-members-manager";
 import { apiData } from "@/lib/server/api-data";
+import {
+  AppNav,
+  AppPage,
+  AppTopbar,
+  PageHero,
+} from "@/components/layout/app-shell";
+import { Button } from "@/components/ui/button";
+
 export const dynamic = "force-dynamic";
 
 interface WorkspaceMember {
@@ -30,28 +38,27 @@ interface WorkspaceMembersResponse {
 export default async function WorkspaceMembersPage() {
   const data = await apiData<WorkspaceMembersResponse>("/workspace/members");
   return (
-    <main className="app-page">
-      <header className="topbar">
-        <Link href="/">← Tổng quan</Link>
-        <nav>
-          <Link href="/workspaces">Switch workspace</Link>
+    <AppPage>
+      <AppTopbar>
+        <Button asChild variant="ghost">
+          <Link href="/">← Tổng quan</Link>
+        </Button>
+        <AppNav>
+          <Button asChild variant="outline" size="sm">
+            <Link href="/workspaces">Switch workspace</Link>
+          </Button>
           <strong>Workspace members</strong>
-        </nav>
-      </header>
-      <section className="hero-panel">
-        <div>
-          <span className="eyebrow">WORKSPACE LEVEL</span>
-          <h1>{data.workspace.name}</h1>
-          <p>
-            Thành viên thuộc workspace active. Một GitHub account có thể có role
-            khác nhau ở từng workspace.
-          </p>
-        </div>
-      </section>
+        </AppNav>
+      </AppTopbar>
+      <PageHero
+        eyebrow="Workspace level"
+        title={data.workspace.name}
+        description="Thành viên thuộc workspace active. Một GitHub account có thể có role khác nhau ở từng workspace."
+      />
       <WorkspaceMembersManager
         members={data.members}
         invitations={data.invitations}
       />
-    </main>
+    </AppPage>
   );
 }

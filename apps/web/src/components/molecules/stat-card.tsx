@@ -1,3 +1,0 @@
-import { LucideIcon } from "lucide-react";
-import { Card, CardContent } from "@/components/atoms/card";
-export function StatCard({ label, value, caption, icon: Icon }: { label: string; value: string | number; caption: string; icon: LucideIcon }) { return <Card><CardContent className="flex items-start justify-between pt-5"><div><p className="text-sm font-medium text-slate-500">{label}</p><p className="mt-2 text-3xl font-bold tracking-tight">{value}</p><p className="mt-1 text-xs text-slate-500">{caption}</p></div><div className="rounded-lg bg-indigo-50 p-2.5 text-indigo-600"><Icon size={20}/></div></CardContent></Card>; }

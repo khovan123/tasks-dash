@@ -4,12 +4,26 @@ import { zodResolver } from "@hookform/resolvers/zod";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { FormProvider, useForm } from "react-hook-form";
+import { Github, Link2Off } from "lucide-react";
 import {
   RepositoryLinkFormValues,
   RepositoryLinkPayload,
   repositoryLinkSchema,
 } from "@/features/integrations/schemas/repository-link.schema";
 import { apiRequest } from "@/lib/api/api-request";
+import { FormCard } from "@/components/layout/app-shell";
+import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
+import { Button } from "@/components/ui/button";
+import {
+  Field,
+  FieldDescription,
+  FieldError,
+  FieldLabel,
+} from "@/components/ui/field";
+import {
+  NativeSelect,
+  NativeSelectOption,
+} from "@/components/ui/native-select";
 
 export interface GithubRepositoryOption {
   id: number;
@@ -89,47 +103,75 @@ export function RepositoryLinkForm({
 
   return (
     <FormProvider {...form}>
-      <form
-        className="form-card"
-        onSubmit={form.handleSubmit(submit)}
-        noValidate
-      >
-        <div className="section-heading">
-          <div>
-            <span>GITHUB REPOSITORY</span>
-            <h2>Liên kết repository</h2>
-          </div>
-          {currentRepositoryFullName ? (
-            <a
-              href={`https://github.com/${currentRepositoryFullName}`}
-              target="_blank"
-              rel="noreferrer"
-            >
-              {currentRepositoryFullName}
-            </a>
-          ) : null}
-        </div>
-
-        {repositories.length === 0 ? (
-          <p className="empty-inline">
-            Chưa có repository khả dụng. Hãy cài GitHub App hoặc cấp quyền cho
-            repository trong <Link href="/settings/integrations">Tích hợp</Link>.
-          </p>
-        ) : (
-          <div className="form-grid">
-            <label className="wide">
-              Repository từ GitHub
-              <select
+      <form onSubmit={form.handleSubmit(submit)} noValidate>
+        <FormCard
+          eyebrow="GitHub repository"
+          title="Liên kết repository"
+          description={
+            currentRepositoryFullName ? (
+              <a
+                className="font-medium text-primary hover:underline"
+                href={`https://github.com/${currentRepositoryFullName}`}
+                target="_blank"
+                rel="noreferrer"
+              >
+                {currentRepositoryFullName}
+              </a>
+            ) : (
+              "Chọn repository trực tiếp từ GitHub App installation của workspace."
+            )
+          }
+          footer={
+            <>
+              <Button
+                disabled={form.formState.isSubmitting || repositories.length === 0}
+              >
+                <Github />
+                {form.formState.isSubmitting
+                  ? "Đang liên kết…"
+                  : currentRepositoryFullName
+                    ? "Đổi repository"
+                    : "Liên kết repository"}
+              </Button>
+              {currentRepositoryFullName ? (
+                <Button
+                  variant="outline"
+                  type="button"
+                  disabled={form.formState.isSubmitting}
+                  onClick={() => void unlink()}
+                >
+                  <Link2Off /> Ngắt liên kết
+                </Button>
+              ) : null}
+            </>
+          }
+        >
+          {repositories.length === 0 ? (
+            <Alert>
+              <AlertTitle>Chưa có repository khả dụng</AlertTitle>
+              <AlertDescription>
+                Cài GitHub App hoặc cấp quyền repository trong{" "}
+                <Link className="font-medium text-primary hover:underline" href="/settings/integrations">
+                  Tích hợp
+                </Link>
+                .
+              </AlertDescription>
+            </Alert>
+          ) : (
+            <Field>
+              <FieldLabel htmlFor="github-repository">Repository từ GitHub</FieldLabel>
+              <NativeSelect
+                id="github-repository"
                 {...form.register("repositoryId")}
                 aria-invalid={Boolean(form.formState.errors.repositoryId)}
               >
-                <option value="">Chọn repository</option>
+                <NativeSelectOption value="">Chọn repository</NativeSelectOption>
                 {repositories.map((repository) => {
                   const linkedElsewhere =
                     repository.linkedProjectKey &&
                     repository.linkedProjectKey !== projectKey;
                   return (
-                    <option
+                    <NativeSelectOption
                       key={repository.id}
                       value={repository.id}
                       disabled={Boolean(linkedElsewhere)}
@@ -138,50 +180,23 @@ export function RepositoryLinkForm({
                       {linkedElsewhere
                         ? ` · đã liên kết ${repository.linkedProjectKey}`
                         : ""}
-                    </option>
+                    </NativeSelectOption>
                   );
                 })}
-              </select>
-            </label>
-          </div>
-        )}
-
-        <p className="form-message">
-          Tên repository, URL, quyền riêng tư và default branch được lấy trực
-          tiếp từ GitHub App. Không nhập thủ công owner/repository.
-        </p>
-
-        {form.formState.errors.repositoryId?.message ? (
-          <p className="error">
-            {form.formState.errors.repositoryId.message}
-          </p>
-        ) : null}
-        {form.formState.errors.root?.message ? (
-          <p className="error">{form.formState.errors.root.message}</p>
-        ) : null}
-
-        <div className="form-actions">
-          <button
-            className="primary"
-            disabled={form.formState.isSubmitting || repositories.length === 0}
-          >
-            {form.formState.isSubmitting
-              ? "Đang liên kết…"
-              : currentRepositoryFullName
-                ? "Đổi repository"
-                : "Liên kết repository"}
-          </button>
-          {currentRepositoryFullName ? (
-            <button
-              className="secondary"
-              type="button"
-              disabled={form.formState.isSubmitting}
-              onClick={() => void unlink()}
-            >
-              Ngắt liên kết
-            </button>
+              </NativeSelect>
+              <FieldDescription>
+                Tên, URL, quyền riêng tư và default branch được lấy trực tiếp từ
+                GitHub. Client chỉ gửi repository ID.
+              </FieldDescription>
+              {form.formState.errors.repositoryId?.message ? (
+                <FieldError>{form.formState.errors.repositoryId.message}</FieldError>
+              ) : null}
+            </Field>
+          )}
+          {form.formState.errors.root?.message ? (
+            <FieldError>{form.formState.errors.root.message}</FieldError>
           ) : null}
-        </div>
+        </FormCard>
       </form>
     </FormProvider>
   );

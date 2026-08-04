@@ -1,6 +1,22 @@
 import Link from "next/link";
+import { Bot, Github, HardDrive, MessageCircle } from "lucide-react";
 import { DiscordConnectForm } from "@/components/discord-connect-form";
 import { apiData } from "@/lib/server/api-data";
+import {
+  AppPage,
+  AppTopbar,
+  PageHero,
+} from "@/components/layout/app-shell";
+import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
+import { Badge } from "@/components/ui/badge";
+import { Button } from "@/components/ui/button";
+import {
+  Card,
+  CardContent,
+  CardDescription,
+  CardHeader,
+  CardTitle,
+} from "@/components/ui/card";
 
 export const dynamic = "force-dynamic";
 
@@ -37,55 +53,92 @@ export default async function IntegrationsPage() {
   ]);
 
   return (
-    <main className="app-page">
-      <header className="topbar">
-        <Link href="/">← Tổng quan</Link>
+    <AppPage>
+      <AppTopbar>
+        <Button asChild variant="ghost">
+          <Link href="/">← Tổng quan</Link>
+        </Button>
         <strong>Production integrations</strong>
-      </header>
-      <section className="hero-panel">
-        <div>
-          <span className="eyebrow">REAL CONNECTIONS</span>
-          <h1>Tích hợp production</h1>
-          <p>Mỗi trạng thái được truy vấn từ backend. Secret không được gửi lại trình duyệt.</p>
-        </div>
-      </section>
-      <section className="integration-grid">
-        <article className="integration-card">
-          <span className="eyebrow">GITHUB APP</span>
-          <h2>{github.length ? "Đã kết nối" : "Chưa kết nối"}</h2>
-          <p>
-            {github.length
-              ? github.map((item) => `${item.accountLogin} · ${item.repositoryCount} repositories`).join(", ")
-              : "Cài GitHub App để webhook và API repository hoạt động bằng installation token."}
-          </p>
-          <a className="primary link-button" href="/api/integrations/github/install">
-            {github.length ? "Quản lý installation" : "Cài GitHub App"}
-          </a>
-        </article>
-        <article className="integration-card">
-          <span className="eyebrow">GOOGLE DRIVE · OWNER ONLY</span>
-          <h2>{drive.connected ? "Đã kết nối" : "Chưa kết nối"}</h2>
-          <p>
-            {drive.connected
-              ? `${drive.accountEmail} · root ${drive.workspaceRootFolderName ?? "Tasks Dash"}`
-              : "Workspace Owner cấp quyền drive.file một lần. Hệ thống tự tạo root workspace và folder từng project; không link folder ngoài."}
-          </p>
-          {drive.lastError ? <p className="error">{drive.lastError}</p> : null}
-          <a className="primary link-button" href="/api/integrations/google-drive/connect">
-            {drive.connected ? "Owner kết nối lại" : "Owner kết nối Drive"}
-          </a>
-        </article>
-        <article className="integration-card">
-          <span className="eyebrow">DISCORD</span>
-          <h2>{discord.length} dự án đã kết nối</h2>
-          <p>
-            {discord.length
-              ? discord.map((item) => `${item.projectKey}: ${item.webhookName}`).join(", ")
-              : "Webhook được xác minh trước khi mã hóa và lưu vào MongoDB."}
-          </p>
-        </article>
+      </AppTopbar>
+      <PageHero
+        eyebrow="Real connections"
+        title="Tích hợp production"
+        description="Mỗi trạng thái được truy vấn từ backend. Secret không được gửi lại trình duyệt."
+        aside={<Bot className="size-14 text-primary" />}
+      />
+      <section className="grid gap-4 lg:grid-cols-3">
+        <Card>
+          <CardHeader>
+            <Github className="size-8 text-primary" />
+            <div className="flex items-center justify-between gap-3">
+              <CardTitle>GitHub App</CardTitle>
+              <Badge variant={github.length ? "success" : "secondary"}>
+                {github.length ? "Đã kết nối" : "Chưa kết nối"}
+              </Badge>
+            </div>
+            <CardDescription>
+              {github.length
+                ? github.map((item) => `${item.accountLogin} · ${item.repositoryCount} repositories`).join(", ")
+                : "Cài GitHub App để webhook và API repository hoạt động bằng installation token."}
+            </CardDescription>
+          </CardHeader>
+          <CardContent>
+            <Button asChild>
+              <a href="/api/integrations/github/install">
+                {github.length ? "Quản lý installation" : "Cài GitHub App"}
+              </a>
+            </Button>
+          </CardContent>
+        </Card>
+
+        <Card>
+          <CardHeader>
+            <HardDrive className="size-8 text-primary" />
+            <div className="flex items-center justify-between gap-3">
+              <CardTitle>Google Drive</CardTitle>
+              <Badge variant={drive.connected ? "success" : "secondary"}>
+                {drive.connected ? "Đã kết nối" : "Owner only"}
+              </Badge>
+            </div>
+            <CardDescription>
+              {drive.connected
+                ? `${drive.accountEmail} · root ${drive.workspaceRootFolderName ?? "Tasks Dash"}`
+                : "Workspace Owner cấp quyền drive.file một lần. Hệ thống tự tạo root workspace và folder từng project."}
+            </CardDescription>
+          </CardHeader>
+          <CardContent className="space-y-4">
+            {drive.lastError ? (
+              <Alert variant="destructive">
+                <AlertTitle>Lỗi đồng bộ</AlertTitle>
+                <AlertDescription>{drive.lastError}</AlertDescription>
+              </Alert>
+            ) : null}
+            <Button asChild>
+              <a href="/api/integrations/google-drive/connect">
+                {drive.connected ? "Owner kết nối lại" : "Owner kết nối Drive"}
+              </a>
+            </Button>
+          </CardContent>
+        </Card>
+
+        <Card>
+          <CardHeader>
+            <MessageCircle className="size-8 text-primary" />
+            <div className="flex items-center justify-between gap-3">
+              <CardTitle>Discord</CardTitle>
+              <Badge variant={discord.length ? "success" : "secondary"}>
+                {discord.length} dự án
+              </Badge>
+            </div>
+            <CardDescription>
+              {discord.length
+                ? discord.map((item) => `${item.projectKey}: ${item.webhookName}`).join(", ")
+                : "Webhook được xác minh trước khi mã hóa và lưu vào MongoDB."}
+            </CardDescription>
+          </CardHeader>
+        </Card>
       </section>
       <DiscordConnectForm projectKeys={projects.map((project) => project.key)} />
-    </main>
+    </AppPage>
   );
 }
