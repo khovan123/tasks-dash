@@ -1,6 +1,8 @@
 "use client";
 
+import { LogOut } from "lucide-react";
 import { apiRequest } from "@/lib/api/api-request";
+import { Button } from "@/components/ui/button";
 
 export function LogoutButton() {
   async function logout(): Promise<void> {
@@ -8,5 +10,9 @@ export function LogoutButton() {
     window.location.assign("/");
   }
 
-  return <button className="ghost" onClick={() => void logout()}>Đăng xuất</button>;
+  return (
+    <Button variant="ghost" size="sm" onClick={() => void logout()}>
+      <LogOut /> Đăng xuất
+    </Button>
+  );
 }

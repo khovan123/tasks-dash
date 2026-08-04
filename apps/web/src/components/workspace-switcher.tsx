@@ -1,7 +1,14 @@
 "use client";
 
 import { useState } from "react";
+import { LoaderCircle } from "lucide-react";
 import { apiRequest } from "@/lib/api/api-request";
+import { Field, FieldError, FieldLabel } from "@/components/ui/field";
+import {
+  NativeSelect,
+  NativeSelectOption,
+} from "@/components/ui/native-select";
+import { cn } from "@/lib/utils";
 
 export interface WorkspaceOption {
   workspaceId: string;
@@ -38,26 +45,27 @@ export function WorkspaceSwitcher({
   }
 
   return (
-    <div
-      className={compact ? "workspace-switcher compact" : "workspace-switcher"}
-      style={{ minWidth: compact ? 190 : 280 }}
-    >
-      <label style={{ display: "flex", flexDirection: "column", gap: 5 }}>
-        <span className="eyebrow">Workspace</span>
-        <select
+    <Field className={cn(compact ? "w-52" : "w-full min-w-64")}>
+      <FieldLabel className={compact ? "sr-only" : undefined}>Workspace</FieldLabel>
+      <div className="relative">
+        <NativeSelect
           value={active?.workspaceId ?? ""}
           disabled={busy}
           onChange={(event) => void switchWorkspace(event.target.value)}
           aria-label="Chuyển workspace"
+          className={compact ? "h-8 text-xs" : undefined}
         >
           {workspaces.map((workspace) => (
-            <option key={workspace.workspaceId} value={workspace.workspaceId}>
+            <NativeSelectOption key={workspace.workspaceId} value={workspace.workspaceId}>
               {workspace.name} · {workspace.role}
-            </option>
+            </NativeSelectOption>
           ))}
-        </select>
-      </label>
-      {error ? <small className="error">{error}</small> : null}
-    </div>
+        </NativeSelect>
+        {busy ? (
+          <LoaderCircle className="pointer-events-none absolute right-8 top-1/2 size-4 -translate-y-1/2 animate-spin text-muted-foreground" />
+        ) : null}
+      </div>
+      {error ? <FieldError>{error}</FieldError> : null}
+    </Field>
   );
 }

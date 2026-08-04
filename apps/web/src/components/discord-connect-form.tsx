@@ -3,11 +3,26 @@
 import { zodResolver } from "@hookform/resolvers/zod";
 import { useRouter } from "next/navigation";
 import { FormProvider, useForm } from "react-hook-form";
+import { MessageCirclePlus } from "lucide-react";
 import { apiRequest } from "@/lib/api/api-request";
 import {
   DiscordFormValues,
   discordFormSchema,
 } from "@/features/integrations/schemas/discord-form.schema";
+import { FormCard } from "@/components/layout/app-shell";
+import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
+import { Button } from "@/components/ui/button";
+import {
+  Field,
+  FieldError,
+  FieldGroup,
+  FieldLabel,
+} from "@/components/ui/field";
+import { Input } from "@/components/ui/input";
+import {
+  NativeSelect,
+  NativeSelectOption,
+} from "@/components/ui/native-select";
 
 export function DiscordConnectForm({ projectKeys }: { projectKeys: string[] }) {
   const router = useRouter();
@@ -35,15 +50,62 @@ export function DiscordConnectForm({ projectKeys }: { projectKeys: string[] }) {
 
   return (
     <FormProvider {...form}>
-      <form className="form-card" onSubmit={form.handleSubmit(submit)} noValidate>
-        <div className="section-heading"><div><span>DISCORD AUTOMATION</span><h2>Kết nối webhook theo dự án</h2></div></div>
-        <div className="form-grid">
-          <label>Dự án<select {...form.register("projectKey")} aria-invalid={Boolean(form.formState.errors.projectKey)}><option value="">Chọn project key</option>{projectKeys.map((key) => <option key={key} value={key}>{key}</option>)}</select></label>
-          <label className="wide">Webhook URL<input {...form.register("webhookUrl")} type="url" autoComplete="off" placeholder="https://discord.com/api/webhooks/..." aria-invalid={Boolean(form.formState.errors.webhookUrl)} /></label>
-        </div>
-        {form.formState.errors.root?.message ? <p className="error">{form.formState.errors.root.message}</p> : null}
-        {success ? <p className="form-message">Discord đã được xác minh và kết nối.</p> : null}
-        <button className="primary" disabled={form.formState.isSubmitting || projectKeys.length === 0}>{form.formState.isSubmitting ? "Đang xác minh…" : "Kết nối Discord"}</button>
+      <form onSubmit={form.handleSubmit(submit)} noValidate>
+        <FormCard
+          eyebrow="Discord automation"
+          title="Kết nối webhook theo dự án"
+          footer={
+            <Button disabled={form.formState.isSubmitting || projectKeys.length === 0}>
+              <MessageCirclePlus />
+              {form.formState.isSubmitting ? "Đang xác minh…" : "Kết nối Discord"}
+            </Button>
+          }
+        >
+          <FieldGroup>
+            <Field>
+              <FieldLabel htmlFor="discord-project">Dự án</FieldLabel>
+              <NativeSelect
+                id="discord-project"
+                {...form.register("projectKey")}
+                aria-invalid={Boolean(form.formState.errors.projectKey)}
+              >
+                <NativeSelectOption value="">Chọn project key</NativeSelectOption>
+                {projectKeys.map((key) => (
+                  <NativeSelectOption key={key} value={key}>{key}</NativeSelectOption>
+                ))}
+              </NativeSelect>
+              {form.formState.errors.projectKey?.message ? (
+                <FieldError>{form.formState.errors.projectKey.message}</FieldError>
+              ) : null}
+            </Field>
+            <Field>
+              <FieldLabel htmlFor="discord-webhook">Webhook URL</FieldLabel>
+              <Input
+                id="discord-webhook"
+                {...form.register("webhookUrl")}
+                type="url"
+                autoComplete="off"
+                placeholder="https://discord.com/api/webhooks/..."
+                aria-invalid={Boolean(form.formState.errors.webhookUrl)}
+              />
+              {form.formState.errors.webhookUrl?.message ? (
+                <FieldError>{form.formState.errors.webhookUrl.message}</FieldError>
+              ) : null}
+            </Field>
+          </FieldGroup>
+          {form.formState.errors.root?.message ? (
+            <Alert variant="destructive">
+              <AlertTitle>Không thể kết nối</AlertTitle>
+              <AlertDescription>{form.formState.errors.root.message}</AlertDescription>
+            </Alert>
+          ) : null}
+          {success ? (
+            <Alert variant="success">
+              <AlertTitle>Đã kết nối</AlertTitle>
+              <AlertDescription>Discord đã được xác minh và lưu an toàn.</AlertDescription>
+            </Alert>
+          ) : null}
+        </FormCard>
       </form>
     </FormProvider>
   );

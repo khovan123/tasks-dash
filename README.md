@@ -18,6 +18,13 @@ The repository does not ship dashboard mock JSON, demo seed routes, integration 
 - Work-item Figma component links and document links, each supporting multiple optional entries.
 - Project Designer Catalog for Figma files, pages, components, and FigJam boards.
 - Persistent backlog ranking with drag-and-drop and accessible up/down controls.
+- Frontend UI built entirely with Tailwind CSS v4 utilities and source-owned shadcn/ui components under `apps/web/src/components/ui`.
+
+## Frontend design system
+
+The authenticated Next.js application uses Tailwind CSS v4 for layout and styling. Reusable primitives follow the shadcn/ui source model and live in `apps/web/src/components/ui` (`Button`, `Card`, `Badge`, `Field`, `Input`, `NativeSelect`, `Dialog`, `Table`, `Empty`, and related components).
+
+`apps/web/src/app/globals.css` contains only Tailwind imports, design tokens, theme variables, and base styles. Feature-specific semantic stylesheets are not used. CI runs `apps/web/test/shadcn-architecture.test.mjs` to prevent legacy CSS classes or the old `components/atoms` architecture from returning.
 
 ## Multi-workspace identity model
 
@@ -37,7 +44,7 @@ Owners can create another workspace at `/workspaces`. Existing GitHub identities
 ```text
 apps/
   api/   NestJS API, MongoDB models, OAuth, integrations, automation workers
-  web/   Authenticated Next.js application and BFF proxy
+  web/   Authenticated Next.js application, Tailwind v4, shadcn/ui source components, BFF proxy
 packages/
   contracts/ canonical domain values and API envelopes
 ```

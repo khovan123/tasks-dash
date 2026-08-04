@@ -3,12 +3,24 @@
 import { zodResolver } from "@hookform/resolvers/zod";
 import { useRouter } from "next/navigation";
 import { FormProvider, useForm } from "react-hook-form";
+import { FolderPlus } from "lucide-react";
 import { apiRequest } from "@/lib/api/api-request";
 import {
   ProjectFormPayload,
   ProjectFormValues,
   projectFormSchema,
 } from "@/features/projects/schemas/project-form.schema";
+import { FormCard } from "@/components/layout/app-shell";
+import { Button } from "@/components/ui/button";
+import {
+  Field,
+  FieldDescription,
+  FieldError,
+  FieldGroup,
+  FieldLabel,
+} from "@/components/ui/field";
+import { Input } from "@/components/ui/input";
+import { Textarea } from "@/components/ui/textarea";
 
 const DEFAULT_VALUES: ProjectFormValues = {
   key: "",
@@ -41,52 +53,61 @@ export function ProjectCreateForm() {
 
   return (
     <FormProvider {...form}>
-      <form className="form-card" onSubmit={form.handleSubmit(submit)} noValidate>
-        <div className="section-heading">
-          <div>
-            <span>CREATE PROJECT</span>
-            <h2>Tạo dự án thật</h2>
-          </div>
-        </div>
-        <p className="form-message">
-          Repository được chọn từ GitHub App. Google Drive sẽ tự tạo folder dự
-          án bên trong root workspace do Owner đã cấp quyền; không nhập folder ID
-          thủ công.
-        </p>
-        <div className="form-grid">
-          <label>
-            Project key
-            <input
-              {...form.register("key")}
-              placeholder="TD"
-              aria-invalid={Boolean(form.formState.errors.key)}
-            />
-          </label>
-          <label>
-            Tên dự án
-            <input
-              {...form.register("name")}
-              placeholder="Tasks Dash"
-              aria-invalid={Boolean(form.formState.errors.name)}
-            />
-          </label>
-          <label className="wide">
-            Mô tả
-            <textarea
+      <form onSubmit={form.handleSubmit(submit)} noValidate>
+        <FormCard
+          eyebrow="Create project"
+          title="Tạo dự án thật"
+          description="Repository được chọn từ GitHub App. Google Drive tự tạo folder dự án bên trong root workspace; không nhập repository hoặc folder ID thủ công."
+          footer={
+            <Button disabled={form.formState.isSubmitting}>
+              <FolderPlus />
+              {form.formState.isSubmitting ? "Đang tạo…" : "Tạo dự án"}
+            </Button>
+          }
+        >
+          <FieldGroup>
+            <Field>
+              <FieldLabel htmlFor="project-key">Project key</FieldLabel>
+              <Input
+                id="project-key"
+                {...form.register("key")}
+                placeholder="TD"
+                aria-invalid={Boolean(form.formState.errors.key)}
+              />
+              {form.formState.errors.key?.message ? (
+                <FieldError>{form.formState.errors.key.message}</FieldError>
+              ) : null}
+            </Field>
+            <Field>
+              <FieldLabel htmlFor="project-name">Tên dự án</FieldLabel>
+              <Input
+                id="project-name"
+                {...form.register("name")}
+                placeholder="Tasks Dash"
+                aria-invalid={Boolean(form.formState.errors.name)}
+              />
+              {form.formState.errors.name?.message ? (
+                <FieldError>{form.formState.errors.name.message}</FieldError>
+              ) : null}
+            </Field>
+          </FieldGroup>
+          <Field>
+            <FieldLabel htmlFor="project-description">Mô tả</FieldLabel>
+            <Textarea
+              id="project-description"
               {...form.register("description")}
               placeholder="Mục tiêu và phạm vi dự án"
               aria-invalid={Boolean(form.formState.errors.description)}
             />
-          </label>
-        </div>
-        {Object.values(form.formState.errors)[0]?.message ? (
-          <p className="error">
-            {String(Object.values(form.formState.errors)[0]?.message)}
-          </p>
-        ) : null}
-        <button className="primary" disabled={form.formState.isSubmitting}>
-          {form.formState.isSubmitting ? "Đang tạo…" : "Tạo dự án"}
-        </button>
+            <FieldDescription>Mô tả này hiển thị trên dashboard workspace.</FieldDescription>
+            {form.formState.errors.description?.message ? (
+              <FieldError>{form.formState.errors.description.message}</FieldError>
+            ) : null}
+          </Field>
+          {form.formState.errors.root?.message ? (
+            <FieldError>{form.formState.errors.root.message}</FieldError>
+          ) : null}
+        </FormCard>
       </form>
     </FormProvider>
   );

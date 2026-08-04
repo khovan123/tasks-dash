@@ -4,12 +4,30 @@ import { zodResolver } from "@hookform/resolvers/zod";
 import { PRIORITIES, WORK_ITEM_TYPES } from "@tasks-dash/contracts";
 import { useRouter } from "next/navigation";
 import { FormProvider, useFieldArray, useForm } from "react-hook-form";
+import { Plus, Trash2 } from "lucide-react";
 import {
   WorkItemFormInput,
   WorkItemFormValues,
   workItemFormSchema,
 } from "@/features/work-items/schemas/work-item-form.schema";
 import { apiRequest } from "@/lib/api/api-request";
+import { FormCard } from "@/components/layout/app-shell";
+import { Button } from "@/components/ui/button";
+import {
+  Field,
+  FieldDescription,
+  FieldError,
+  FieldGroup,
+  FieldLabel,
+  FieldLegend,
+  FieldSet,
+} from "@/components/ui/field";
+import { Input } from "@/components/ui/input";
+import {
+  NativeSelect,
+  NativeSelectOption,
+} from "@/components/ui/native-select";
+import { Textarea } from "@/components/ui/textarea";
 
 interface WorkflowStatus {
   id: string;
@@ -53,10 +71,7 @@ export function WorkItemCreateForm({
     },
   });
   const figma = useFieldArray({ control: form.control, name: "figmaLinks" });
-  const documents = useFieldArray({
-    control: form.control,
-    name: "documentLinks",
-  });
+  const documents = useFieldArray({ control: form.control, name: "documentLinks" });
 
   async function submit(values: WorkItemFormValues): Promise<void> {
     form.clearErrors("root");
@@ -94,34 +109,135 @@ export function WorkItemCreateForm({
 
   return (
     <FormProvider {...form}>
-      <form className="form-card" onSubmit={form.handleSubmit(submit)} noValidate>
-        <div className="section-heading">
-          <div><span>CREATE WORK ITEM</span><h2>Thêm Task, Module hoặc Bug</h2></div>
-        </div>
-        <div className="form-grid">
-          <label>Loại<select {...form.register("type")}>{Object.values(WORK_ITEM_TYPES).map((type) => <option key={type} value={type}>{type}</option>)}</select></label>
-          <label>Priority<select {...form.register("priority")}>{Object.values(PRIORITIES).map((priority) => <option key={priority} value={priority}>{priority}</option>)}</select></label>
-          <label className="wide">Summary<input {...form.register("summary")} placeholder="Mô tả ngắn work item" /></label>
-          <label className="wide">Description<textarea {...form.register("description")} placeholder="Acceptance criteria hoặc mô tả chi tiết" /></label>
-          <label>Status<select {...form.register("statusId")}><option value="">Backend default</option>{statuses.map((status) => <option key={status.id} value={status.id}>{status.name}</option>)}</select></label>
-          <label>Assignee<select {...form.register("assigneeId")}><option value="">Chưa gán</option>{members.map((member) => <option key={member.id} value={member.id}>{member.name} · {member.email}</option>)}</select></label>
-          <label>Story points<input type="number" min="0" max="100" {...form.register("storyPoints")} /></label>
-          <label>Due date<input type="date" {...form.register("dueDate")} /></label>
-          <label className="wide">Labels<input {...form.register("labels")} placeholder="frontend, urgent, release-1" /></label>
-        </div>
+      <form onSubmit={form.handleSubmit(submit)} noValidate>
+        <FormCard
+          eyebrow="Create work item"
+          title="Thêm Task, Module hoặc Bug"
+          description="Metadata được lưu vào MongoDB; Figma component và document link đều hỗ trợ nhiều URL tùy chọn."
+          footer={
+            <Button disabled={form.formState.isSubmitting}>
+              <Plus />
+              {form.formState.isSubmitting ? "Đang tạo…" : "Tạo work item"}
+            </Button>
+          }
+        >
+          <FieldGroup>
+            <Field>
+              <FieldLabel htmlFor="work-item-type">Loại</FieldLabel>
+              <NativeSelect id="work-item-type" {...form.register("type")}>
+                {Object.values(WORK_ITEM_TYPES).map((type) => (
+                  <NativeSelectOption key={type} value={type}>{type}</NativeSelectOption>
+                ))}
+              </NativeSelect>
+            </Field>
+            <Field>
+              <FieldLabel htmlFor="work-item-priority">Priority</FieldLabel>
+              <NativeSelect id="work-item-priority" {...form.register("priority")}>
+                {Object.values(PRIORITIES).map((priority) => (
+                  <NativeSelectOption key={priority} value={priority}>{priority}</NativeSelectOption>
+                ))}
+              </NativeSelect>
+            </Field>
+          </FieldGroup>
 
-        <div className="link-fieldset">
-          <div className="section-heading"><div><span>OPTIONAL · MANY</span><h3>Figma component</h3></div><button className="secondary compact" type="button" onClick={() => figma.append({ label: "", url: "" })}>+ Thêm link</button></div>
-          {figma.fields.length === 0 ? <p className="empty-inline">Chưa gắn Figma component.</p> : figma.fields.map((field, index) => <div className="link-row" key={field.id}><input {...form.register(`figmaLinks.${index}.label`)} placeholder="Tên component" /><input {...form.register(`figmaLinks.${index}.url`)} placeholder="https://www.figma.com/..." /><button className="danger-button" type="button" onClick={() => figma.remove(index)}>Xóa</button></div>)}
-        </div>
+          <Field>
+            <FieldLabel htmlFor="work-item-summary">Summary</FieldLabel>
+            <Input id="work-item-summary" {...form.register("summary")} placeholder="Mô tả ngắn work item" />
+          </Field>
+          <Field>
+            <FieldLabel htmlFor="work-item-description">Description</FieldLabel>
+            <Textarea id="work-item-description" {...form.register("description")} placeholder="Acceptance criteria hoặc mô tả chi tiết" />
+          </Field>
 
-        <div className="link-fieldset">
-          <div className="section-heading"><div><span>OPTIONAL · MANY</span><h3>Docs links</h3></div><button className="secondary compact" type="button" onClick={() => documents.append({ label: "", url: "" })}>+ Thêm link</button></div>
-          {documents.fields.length === 0 ? <p className="empty-inline">Chưa gắn tài liệu.</p> : documents.fields.map((field, index) => <div className="link-row" key={field.id}><input {...form.register(`documentLinks.${index}.label`)} placeholder="Tên tài liệu" /><input {...form.register(`documentLinks.${index}.url`)} placeholder="https://docs.google.com/..." /><button className="danger-button" type="button" onClick={() => documents.remove(index)}>Xóa</button></div>)}
-        </div>
+          <FieldGroup>
+            <Field>
+              <FieldLabel htmlFor="work-item-status">Status</FieldLabel>
+              <NativeSelect id="work-item-status" {...form.register("statusId")}>
+                <NativeSelectOption value="">Backend default</NativeSelectOption>
+                {statuses.map((status) => (
+                  <NativeSelectOption key={status.id} value={status.id}>{status.name}</NativeSelectOption>
+                ))}
+              </NativeSelect>
+            </Field>
+            <Field>
+              <FieldLabel htmlFor="work-item-assignee">Assignee</FieldLabel>
+              <NativeSelect id="work-item-assignee" {...form.register("assigneeId")}>
+                <NativeSelectOption value="">Chưa gán</NativeSelectOption>
+                {members.map((member) => (
+                  <NativeSelectOption key={member.id} value={member.id}>
+                    {member.name} · {member.email}
+                  </NativeSelectOption>
+                ))}
+              </NativeSelect>
+            </Field>
+            <Field>
+              <FieldLabel htmlFor="work-item-points">Story points</FieldLabel>
+              <Input id="work-item-points" type="number" min="0" max="100" {...form.register("storyPoints")} />
+            </Field>
+            <Field>
+              <FieldLabel htmlFor="work-item-due-date">Due date</FieldLabel>
+              <Input id="work-item-due-date" type="date" {...form.register("dueDate")} />
+            </Field>
+          </FieldGroup>
 
-        {form.formState.errors.root?.message ? <p className="error">{form.formState.errors.root.message}</p> : null}
-        <button className="primary" disabled={form.formState.isSubmitting}>{form.formState.isSubmitting ? "Đang tạo…" : "Tạo work item"}</button>
+          <Field>
+            <FieldLabel htmlFor="work-item-labels">Labels</FieldLabel>
+            <Input id="work-item-labels" {...form.register("labels")} placeholder="frontend, urgent, release-1" />
+            <FieldDescription>Phân tách nhiều label bằng dấu phẩy.</FieldDescription>
+          </Field>
+
+          <FieldSet>
+            <FieldLegend>Figma component · optional · many</FieldLegend>
+            <div className="flex justify-end">
+              <Button variant="outline" size="sm" type="button" onClick={() => figma.append({ label: "", url: "" })}>
+                <Plus /> Thêm link
+              </Button>
+            </div>
+            {figma.fields.length === 0 ? (
+              <FieldDescription>Chưa gắn Figma component.</FieldDescription>
+            ) : (
+              <div className="grid gap-3">
+                {figma.fields.map((field, index) => (
+                  <div className="grid gap-2 md:grid-cols-[minmax(0,.7fr)_minmax(0,1.6fr)_auto]" key={field.id}>
+                    <Input {...form.register(`figmaLinks.${index}.label`)} placeholder="Tên component" />
+                    <Input {...form.register(`figmaLinks.${index}.url`)} placeholder="https://www.figma.com/..." />
+                    <Button variant="destructive" size="icon" type="button" aria-label="Xóa Figma link" onClick={() => figma.remove(index)}>
+                      <Trash2 />
+                    </Button>
+                  </div>
+                ))}
+              </div>
+            )}
+          </FieldSet>
+
+          <FieldSet>
+            <FieldLegend>Docs links · optional · many</FieldLegend>
+            <div className="flex justify-end">
+              <Button variant="outline" size="sm" type="button" onClick={() => documents.append({ label: "", url: "" })}>
+                <Plus /> Thêm link
+              </Button>
+            </div>
+            {documents.fields.length === 0 ? (
+              <FieldDescription>Chưa gắn tài liệu.</FieldDescription>
+            ) : (
+              <div className="grid gap-3">
+                {documents.fields.map((field, index) => (
+                  <div className="grid gap-2 md:grid-cols-[minmax(0,.7fr)_minmax(0,1.6fr)_auto]" key={field.id}>
+                    <Input {...form.register(`documentLinks.${index}.label`)} placeholder="Tên tài liệu" />
+                    <Input {...form.register(`documentLinks.${index}.url`)} placeholder="https://docs.google.com/..." />
+                    <Button variant="destructive" size="icon" type="button" aria-label="Xóa document link" onClick={() => documents.remove(index)}>
+                      <Trash2 />
+                    </Button>
+                  </div>
+                ))}
+              </div>
+            )}
+          </FieldSet>
+
+          {form.formState.errors.root?.message ? (
+            <FieldError>{form.formState.errors.root.message}</FieldError>
+          ) : null}
+        </FormCard>
       </form>
     </FormProvider>
   );

@@ -4,11 +4,41 @@ import { zodResolver } from "@hookform/resolvers/zod";
 import { DESIGN_CATALOG_TYPES } from "@tasks-dash/contracts";
 import { useRouter } from "next/navigation";
 import { FormProvider, useForm } from "react-hook-form";
+import { ExternalLink, Figma, Plus, Trash2 } from "lucide-react";
 import {
   DesignCatalogFormValues,
   designCatalogSchema,
 } from "@/features/design-catalog/schemas/design-catalog.schema";
 import { apiRequest } from "@/lib/api/api-request";
+import { FormCard } from "@/components/layout/app-shell";
+import { Badge } from "@/components/ui/badge";
+import { Button } from "@/components/ui/button";
+import {
+  Card,
+  CardContent,
+  CardDescription,
+  CardFooter,
+  CardHeader,
+  CardTitle,
+} from "@/components/ui/card";
+import {
+  Empty,
+  EmptyDescription,
+  EmptyHeader,
+  EmptyTitle,
+} from "@/components/ui/empty";
+import {
+  Field,
+  FieldError,
+  FieldGroup,
+  FieldLabel,
+} from "@/components/ui/field";
+import { Input } from "@/components/ui/input";
+import {
+  NativeSelect,
+  NativeSelectOption,
+} from "@/components/ui/native-select";
+import { Textarea } from "@/components/ui/textarea";
 
 interface DesignCatalogItem {
   _id: string;
@@ -80,33 +110,94 @@ export function DesignerCatalogManager({
   }
 
   return (
-    <>
+    <div className="space-y-6">
       <FormProvider {...form}>
-        <form className="form-card" onSubmit={form.handleSubmit(submit)} noValidate>
-          <div className="section-heading"><div><span>DESIGNER CATALOG</span><h2>Gắn Figma vào project</h2></div></div>
-          <div className="form-grid">
-            <label>Tên<input {...form.register("name")} placeholder="Checkout / Payment Button" /></label>
-            <label>Loại<select {...form.register("type")}>{Object.values(DESIGN_CATALOG_TYPES).map((type) => <option key={type} value={type}>{type}</option>)}</select></label>
-            <label className="wide">Figma URL<input {...form.register("figmaUrl")} placeholder="https://www.figma.com/design/..." /></label>
-            <label className="wide">Mô tả<textarea {...form.register("description")} placeholder="Mục đích, state và quy tắc sử dụng" /></label>
-            <label className="wide">Tags<input {...form.register("tags")} placeholder="mobile, checkout, v2" /></label>
-          </div>
-          {form.formState.errors.root?.message ? <p className="error">{form.formState.errors.root.message}</p> : null}
-          <button className="primary" disabled={form.formState.isSubmitting}>{form.formState.isSubmitting ? "Đang thêm…" : "Thêm vào catalog"}</button>
+        <form onSubmit={form.handleSubmit(submit)} noValidate>
+          <FormCard
+            eyebrow="Designer catalog"
+            title="Gắn Figma vào project"
+            footer={
+              <Button disabled={form.formState.isSubmitting}>
+                <Plus />
+                {form.formState.isSubmitting ? "Đang thêm…" : "Thêm vào catalog"}
+              </Button>
+            }
+          >
+            <FieldGroup>
+              <Field>
+                <FieldLabel htmlFor="design-name">Tên</FieldLabel>
+                <Input id="design-name" {...form.register("name")} placeholder="Checkout / Payment Button" />
+              </Field>
+              <Field>
+                <FieldLabel htmlFor="design-type">Loại</FieldLabel>
+                <NativeSelect id="design-type" {...form.register("type")}>
+                  {Object.values(DESIGN_CATALOG_TYPES).map((type) => (
+                    <NativeSelectOption key={type} value={type}>{type}</NativeSelectOption>
+                  ))}
+                </NativeSelect>
+              </Field>
+            </FieldGroup>
+            <Field>
+              <FieldLabel htmlFor="figma-url">Figma URL</FieldLabel>
+              <Input id="figma-url" {...form.register("figmaUrl")} placeholder="https://www.figma.com/design/..." />
+            </Field>
+            <Field>
+              <FieldLabel htmlFor="design-description">Mô tả</FieldLabel>
+              <Textarea id="design-description" {...form.register("description")} placeholder="Mục đích, state và quy tắc sử dụng" />
+            </Field>
+            <Field>
+              <FieldLabel htmlFor="design-tags">Tags</FieldLabel>
+              <Input id="design-tags" {...form.register("tags")} placeholder="mobile, checkout, v2" />
+            </Field>
+            {form.formState.errors.root?.message ? (
+              <FieldError>{form.formState.errors.root.message}</FieldError>
+            ) : null}
+          </FormCard>
         </form>
       </FormProvider>
 
-      <section className="catalog-grid">
-        {items.length === 0 ? <article className="empty-state"><h2>Catalog đang trống</h2><p>Thêm Figma file, page, component hoặc FigJam board đầu tiên.</p></article> : items.map((item) => (
-          <article className="catalog-card" key={item._id}>
-            <div className="project-card-head"><span className="project-key">{item.type}</span><button className="danger-button" type="button" onClick={() => void remove(item._id)}>Xóa</button></div>
-            <h2>{item.name}</h2>
-            <p>{item.description || "Chưa có mô tả."}</p>
-            <div className="tag-list">{item.tags.map((tag) => <span key={tag}>{tag}</span>)}</div>
-            <a className="primary link-button" href={item.figmaUrl} target="_blank" rel="noreferrer">Mở trong Figma</a>
-          </article>
-        ))}
-      </section>
-    </>
+      {items.length === 0 ? (
+        <Empty>
+          <Figma className="size-10 text-primary" />
+          <EmptyHeader>
+            <EmptyTitle>Catalog đang trống</EmptyTitle>
+            <EmptyDescription>Thêm Figma file, page, component hoặc FigJam board đầu tiên.</EmptyDescription>
+          </EmptyHeader>
+        </Empty>
+      ) : (
+        <section className="grid gap-4 md:grid-cols-2 xl:grid-cols-3">
+          {items.map((item) => (
+            <Card key={item._id}>
+              <CardHeader>
+                <div className="flex items-center justify-between gap-3">
+                  <Badge variant="purple">{item.type}</Badge>
+                  <Button
+                    variant="ghost"
+                    size="icon-sm"
+                    type="button"
+                    aria-label={`Xóa ${item.name}`}
+                    onClick={() => void remove(item._id)}
+                  >
+                    <Trash2 className="text-destructive" />
+                  </Button>
+                </div>
+                <CardTitle>{item.name}</CardTitle>
+                <CardDescription>{item.description || "Chưa có mô tả."}</CardDescription>
+              </CardHeader>
+              <CardContent className="flex flex-wrap gap-2">
+                {item.tags.map((tag) => <Badge key={tag} variant="secondary">{tag}</Badge>)}
+              </CardContent>
+              <CardFooter>
+                <Button asChild>
+                  <a href={item.figmaUrl} target="_blank" rel="noreferrer">
+                    <ExternalLink /> Mở trong Figma
+                  </a>
+                </Button>
+              </CardFooter>
+            </Card>
+          ))}
+        </section>
+      )}
+    </div>
   );
 }

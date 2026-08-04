@@ -1,9 +1,35 @@
 import Link from "next/link";
+import { FolderKanban, Settings, Users, Workflow } from "lucide-react";
 import { apiData, apiResponse } from "@/lib/server/api-data";
 import { ProjectCreateForm } from "@/components/project-create-form";
 import { LogoutButton } from "@/components/logout-button";
 import { WorkspaceSwitcher } from "@/components/workspace-switcher";
 import type { WorkspaceOption } from "@/components/workspace-switcher";
+import {
+  AppNav,
+  AppPage,
+  AppTopbar,
+  PageHero,
+} from "@/components/layout/app-shell";
+import { Badge } from "@/components/ui/badge";
+import { Button } from "@/components/ui/button";
+import {
+  Card,
+  CardContent,
+  CardDescription,
+  CardFooter,
+  CardHeader,
+  CardTitle,
+} from "@/components/ui/card";
+import {
+  Empty,
+  EmptyContent,
+  EmptyDescription,
+  EmptyHeader,
+  EmptyTitle,
+} from "@/components/ui/empty";
+import { Progress } from "@/components/ui/progress";
+
 export const dynamic = "force-dynamic";
 
 interface Session {
@@ -48,23 +74,30 @@ export default async function HomePage() {
 
   if (sessionResponse.status === 401) {
     return (
-      <main className="auth-page">
-        <section className="auth-card">
-          <div className="brand-mark">TD</div>
-          <span className="eyebrow">INVITE-ONLY MULTI-WORKSPACE</span>
-          <h1>Tasks Dash</h1>
-          <p>
-            Một GitHub account có thể tham gia nhiều workspace, nhưng workspace mới
-            vẫn cần invitation hoặc được Owner tạo từ workspace hiện tại.
-          </p>
-          <a
-            className="primary link-button"
-            href={`${browserApi.replace(/\/$/, "")}/auth/github/login`}
-          >
-            Đăng nhập với GitHub
-          </a>
-          <small>Thành viên mới phải mở link invitation được gửi qua email.</small>
-        </section>
+      <main className="grid min-h-screen place-items-center px-4 py-10">
+        <Card className="w-full max-w-lg border-primary/20 shadow-xl shadow-primary/10">
+          <CardHeader className="items-center text-center">
+            <div className="mb-2 grid size-14 place-items-center rounded-2xl bg-primary text-lg font-black text-primary-foreground">
+              TD
+            </div>
+            <Badge variant="purple">INVITE-ONLY MULTI-WORKSPACE</Badge>
+            <CardTitle className="text-4xl">Tasks Dash</CardTitle>
+            <CardDescription className="max-w-md text-base leading-relaxed">
+              Một GitHub account có thể tham gia nhiều workspace, nhưng workspace
+              mới vẫn cần invitation hoặc được Owner tạo từ workspace hiện tại.
+            </CardDescription>
+          </CardHeader>
+          <CardContent className="flex justify-center">
+            <Button asChild size="lg">
+              <a href={`${browserApi.replace(/\/$/, "")}/auth/github/login`}>
+                Đăng nhập với GitHub
+              </a>
+            </Button>
+          </CardContent>
+          <CardFooter className="justify-center text-center text-sm text-muted-foreground">
+            Thành viên mới phải mở link invitation được gửi qua email.
+          </CardFooter>
+        </Card>
       </main>
     );
   }
@@ -80,79 +113,110 @@ export default async function HomePage() {
   ]);
 
   return (
-    <main className="app-page">
-      <header className="topbar">
+    <AppPage>
+      <AppTopbar>
         <div>
-          <span className="eyebrow">TASKS DASH</span>
-          <strong>Production workspace</strong>
-        </div>
-        <nav>
-          <WorkspaceSwitcher workspaces={workspaces} compact />
-          <Link href="/workspaces">Quản lý workspace</Link>
-          <Link href="/workspace/members">
-            Thành viên ({dashboard.members.length})
-          </Link>
-          <Link href="/settings/integrations">Tích hợp</Link>
-          <LogoutButton />
-        </nav>
-      </header>
-
-      <section className="hero-panel">
-        <div>
-          <span className="eyebrow">ACTIVE WORKSPACE {session.workspaceId}</span>
-          <h1>Xin chào, {session.name || session.login}</h1>
-          <p>
-            GitHub identity dùng chung cho {workspaces.length} workspace. Project,
-            integration, member role và dữ liệu vẫn được cô lập theo workspace đang
-            active.
+          <p className="text-xs font-semibold uppercase tracking-[0.18em] text-primary">
+            Tasks Dash
           </p>
+          <p className="font-semibold">Production workspace</p>
         </div>
-        <img className="profile-avatar" src={session.avatarUrl} alt="" />
-      </section>
+        <AppNav>
+          <WorkspaceSwitcher workspaces={workspaces} compact />
+          <Button asChild variant="ghost" size="sm">
+            <Link href="/workspaces"><Workflow />Workspaces</Link>
+          </Button>
+          <Button asChild variant="ghost" size="sm">
+            <Link href="/workspace/members"><Users />Thành viên ({dashboard.members.length})</Link>
+          </Button>
+          <Button asChild variant="ghost" size="sm">
+            <Link href="/settings/integrations"><Settings />Tích hợp</Link>
+          </Button>
+          <LogoutButton />
+        </AppNav>
+      </AppTopbar>
+
+      <PageHero
+        eyebrow={`Active workspace · ${session.workspaceId}`}
+        title={`Xin chào, ${session.name || session.login}`}
+        description={
+          <>
+            GitHub identity dùng chung cho {workspaces.length} workspace. Project,
+            integration, member role và dữ liệu vẫn được cô lập theo workspace
+            đang active.
+          </>
+        }
+        aside={
+          session.avatarUrl ? (
+            <img
+              className="size-20 rounded-2xl border-4 border-background object-cover shadow-md"
+              src={session.avatarUrl}
+              alt={session.name || session.login}
+            />
+          ) : null
+        }
+      />
 
       {dashboard.projects.length === 0 ? (
-        <section className="empty-state">
-          <span className="eyebrow">EMPTY WORKSPACE</span>
-          <h2>Chưa có dự án</h2>
-          <p>
-            Tạo dự án đầu tiên trong workspace đang active, sau đó thêm work item,
-            Designer Catalog và automation.
-          </p>
-          <Link className="secondary link-button" href="/settings/integrations">
-            Cấu hình tích hợp
-          </Link>
-        </section>
+        <Empty>
+          <FolderKanban className="size-10 text-primary" />
+          <EmptyHeader>
+            <EmptyTitle>Chưa có dự án</EmptyTitle>
+            <EmptyDescription>
+              Tạo dự án đầu tiên trong workspace đang active, sau đó thêm work
+              item, Designer Catalog và automation.
+            </EmptyDescription>
+          </EmptyHeader>
+          <EmptyContent>
+            <Button asChild variant="outline">
+              <Link href="/settings/integrations">Cấu hình tích hợp</Link>
+            </Button>
+          </EmptyContent>
+        </Empty>
       ) : (
-        <section className="project-grid">
+        <section className="grid gap-4 md:grid-cols-2 xl:grid-cols-3">
           {dashboard.projects.map((project) => (
-            <Link
-              href={`/projects/${project.key}`}
-              className="project-card"
-              key={project.key}
-            >
-              <div className="project-card-head">
-                <span className="project-key">{project.key}</span>
-                <span>{project.progress}%</span>
-              </div>
-              <h2>{project.name}</h2>
-              <p>{project.description}</p>
-              <div className="progress">
-                <span style={{ width: `${project.progress}%` }} />
-              </div>
-              <dl>
-                <div><dt>Work items</dt><dd>{project.totalItems}</dd></div>
-                <div><dt>Hoàn thành</dt><dd>{project.completedItems}</dd></div>
-                <div><dt>PR đang mở</dt><dd>{project.openPrItems}</dd></div>
-              </dl>
-              <small>
-                {project.repositoryFullName ?? "Chưa liên kết repository"}
-              </small>
+            <Link href={`/projects/${project.key}`} key={project.key}>
+              <Card className="h-full transition-all hover:-translate-y-0.5 hover:border-primary/30 hover:shadow-lg">
+                <CardHeader>
+                  <div className="flex items-center justify-between gap-3">
+                    <Badge variant="purple">{project.key}</Badge>
+                    <span className="text-sm font-semibold text-muted-foreground">
+                      {project.progress}%
+                    </span>
+                  </div>
+                  <CardTitle className="text-xl">{project.name}</CardTitle>
+                  <CardDescription className="line-clamp-2 min-h-10">
+                    {project.description}
+                  </CardDescription>
+                </CardHeader>
+                <CardContent className="space-y-4">
+                  <Progress value={project.progress} />
+                  <dl className="grid grid-cols-3 gap-2">
+                    <div className="rounded-lg bg-muted/60 p-3">
+                      <dt className="text-xs text-muted-foreground">Work items</dt>
+                      <dd className="mt-1 text-xl font-bold">{project.totalItems}</dd>
+                    </div>
+                    <div className="rounded-lg bg-muted/60 p-3">
+                      <dt className="text-xs text-muted-foreground">Hoàn thành</dt>
+                      <dd className="mt-1 text-xl font-bold">{project.completedItems}</dd>
+                    </div>
+                    <div className="rounded-lg bg-muted/60 p-3">
+                      <dt className="text-xs text-muted-foreground">PR mở</dt>
+                      <dd className="mt-1 text-xl font-bold">{project.openPrItems}</dd>
+                    </div>
+                  </dl>
+                </CardContent>
+                <CardFooter className="text-xs text-muted-foreground">
+                  {project.repositoryFullName ?? "Chưa liên kết repository"}
+                </CardFooter>
+              </Card>
             </Link>
           ))}
         </section>
       )}
 
       <ProjectCreateForm />
-    </main>
+    </AppPage>
   );
 }
