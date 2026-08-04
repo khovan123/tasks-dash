@@ -39,10 +39,12 @@ import {
   UploadedDriveFile,
 } from "./google-drive.adapter";
 import {
+  ConfigureDiscordWorkspaceDto,
   ConnectDiscordDto,
   CreateDriveFolderDto,
   DiscordMessageDto,
   LinkGithubRepositoryDto,
+  ProvisionDiscordProjectDto,
   RenameDriveItemDto,
 } from "./integration.schemas";
 
@@ -264,6 +266,54 @@ export class IntegrationsController {
   ): Promise<Record<string, unknown>> {
     if (!file) throw new BadRequestException("File is required.");
     return this.drive.uploadFile(workspaceId, projectKey, file, parentId);
+  }
+
+  @Get("discord/workspace/status")
+  discordWorkspaceStatus(
+    @WorkspaceId() workspaceId: string,
+  ): Promise<Record<string, unknown>> {
+    return this.discord.workspaceStatus(workspaceId);
+  }
+
+  @Get("discord/install")
+  @RequireRoles(MEMBER_ROLES.owner, MEMBER_ROLES.admin)
+  @Redirect()
+  discordInstall(): { url: string; statusCode: number } {
+    return { url: this.discord.installUrl(), statusCode: 302 };
+  }
+
+  @Post("discord/workspace/configure")
+  @RequireRoles(MEMBER_ROLES.owner, MEMBER_ROLES.admin)
+  discordConfigureWorkspace(
+    @WorkspaceId() workspaceId: string,
+    @Body() body: ConfigureDiscordWorkspaceDto,
+  ): Promise<Record<string, unknown>> {
+    return this.discord.configureWorkspace(workspaceId, body);
+  }
+
+  @Post("discord/workspace/provision-all")
+  @RequireRoles(MEMBER_ROLES.owner, MEMBER_ROLES.admin)
+  discordProvisionAll(
+    @WorkspaceId() workspaceId: string,
+  ): Promise<{
+    provisionedProjects: string[];
+    failedProjects: Array<{ projectKey: string; error: string }>;
+  }> {
+    return this.discord.provisionAll(workspaceId);
+  }
+
+  @Post("discord/projects/:projectKey/provision")
+  @RequireRoles(
+    MEMBER_ROLES.owner,
+    MEMBER_ROLES.admin,
+    MEMBER_ROLES.projectLead,
+  )
+  discordProvisionProject(
+    @WorkspaceId() workspaceId: string,
+    @Param("projectKey") projectKey: string,
+    @Body() body: ProvisionDiscordProjectDto,
+  ): Promise<Record<string, unknown>> {
+    return this.discord.provisionProject(workspaceId, projectKey, body);
   }
 
   @Get("discord/status")

@@ -3,7 +3,7 @@
 import { zodResolver } from "@hookform/resolvers/zod";
 import { useRouter } from "next/navigation";
 import { FormProvider, useForm } from "react-hook-form";
-import { MessageCirclePlus } from "lucide-react";
+import { Link2 } from "lucide-react";
 import { apiRequest } from "@/lib/api/api-request";
 import {
   DiscordFormValues,
@@ -14,6 +14,7 @@ import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { Button } from "@/components/ui/button";
 import {
   Field,
+  FieldDescription,
   FieldError,
   FieldGroup,
   FieldLabel,
@@ -52,12 +53,13 @@ export function DiscordConnectForm({ projectKeys }: { projectKeys: string[] }) {
     <FormProvider {...form}>
       <form onSubmit={form.handleSubmit(submit)} noValidate>
         <FormCard
-          eyebrow="Discord automation"
-          title="Kết nối webhook theo dự án"
+          eyebrow="Manual webhook fallback"
+          title="Gắn webhook có sẵn"
+          description="Chỉ dùng khi project cần một channel/webhook đặc biệt không do Tasks Dash bot quản lý. Luồng tự động ở trên là lựa chọn mặc định."
           footer={
             <Button disabled={form.formState.isSubmitting || projectKeys.length === 0}>
-              <MessageCirclePlus />
-              {form.formState.isSubmitting ? "Đang xác minh…" : "Kết nối Discord"}
+              <Link2 />
+              {form.formState.isSubmitting ? "Đang xác minh…" : "Kết nối webhook thủ công"}
             </Button>
           }
         >
@@ -88,6 +90,7 @@ export function DiscordConnectForm({ projectKeys }: { projectKeys: string[] }) {
                 placeholder="https://discord.com/api/webhooks/..."
                 aria-invalid={Boolean(form.formState.errors.webhookUrl)}
               />
+              <FieldDescription>URL được xác minh rồi mã hóa AES-256-GCM.</FieldDescription>
               {form.formState.errors.webhookUrl?.message ? (
                 <FieldError>{form.formState.errors.webhookUrl.message}</FieldError>
               ) : null}
@@ -102,7 +105,7 @@ export function DiscordConnectForm({ projectKeys }: { projectKeys: string[] }) {
           {success ? (
             <Alert variant="success">
               <AlertTitle>Đã kết nối</AlertTitle>
-              <AlertDescription>Discord đã được xác minh và lưu an toàn.</AlertDescription>
+              <AlertDescription>Discord webhook đã được xác minh và lưu an toàn.</AlertDescription>
             </Alert>
           ) : null}
         </FormCard>
