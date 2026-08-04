@@ -1,66 +1,61 @@
 # Tasks Dash
 
-A Jira-inspired multi-project management dashboard with configurable workflows, work items, modules, sprints, boards, project documentation, members, automation rules, and GitHub/Discord/Google Drive integration adapters.
+Tasks Dash is a production-oriented multi-project delivery workspace built with Next.js, NestJS, MongoDB, GitHub Apps, Google Drive OAuth, and Discord webhooks.
 
-## Live demo
-
-GitHub Pages: https://khovan123.github.io/tasks-dash/
-
-The Pages workflow publishes the static interactive prototype from the repository root. It redeploys automatically whenever `index.html`, `styles.css`, `app.js`, or the Pages workflow changes on `main`.
-
-## Stack
-
-- **Web:** Next.js, React, Tailwind CSS, shadcn-style primitives, Atomic Design, feature-based modules
-- **API:** NestJS, CQRS, dependency injection, Clean Architecture boundaries, DDD-oriented domain models, cron/webhook/workflow jobs
-- **Database:** MongoDB via Mongoose
-- **Contracts:** shared canonical constants, DTOs, and success/problem envelopes
-
-## Implemented MVP
-
-- Portfolio overview with progress, activity, member presence, project health, and daily work-item statistics
-- Sidebar containing every project and Jira-style project keys
-- Project overview, backlog, sprint board, configurable workflow builder, docs explorer, members, and automation screens
-- Work item types: Module, Story, Task, Bug, Sub-task
-- Jira-like metadata: status, priority, labels, sprint, module, reporter, assignee, dates, points, linked GitHub PR
-- GitHub webhook ingestion and PR/work-item key linking
-- Discord webhook notification adapter
-- Google Drive project-root/folder tree adapter
-- Scheduled automation runner and event-driven automation rule model
-- MongoDB seed endpoint for local/demo data
-
-## Start locally
-
-```bash
-cp .env.example .env
-npm install
-docker compose up -d mongodb
-npm run dev
-```
-
-Open `http://localhost:3000`. API Swagger is at `http://localhost:4000/api/docs`.
-
-Seed demo database:
-
-```bash
-curl -X POST http://localhost:4000/api/demo/seed
-```
-
-## Integration setup
-
-The UI remains usable in demo mode. For live connections, configure the environment variables in `.env` and register the corresponding callback/webhook URLs:
-
-- GitHub webhook: `POST /api/integrations/github/webhook`
-- Google Drive callback: `GET /api/integrations/google-drive/callback`
-- Discord: use `DISCORD_WEBHOOK_URL`
+The repository does **not** ship dashboard mock JSON, a demo seed endpoint, integration demo mode, or a client-controlled workspace fallback. Outside the test environment, the API fails during startup when mandatory database, OAuth, encryption, or GitHub App configuration is missing.
 
 ## Architecture
 
 ```text
 apps/
-  api/   NestJS feature modules, CQRS handlers, domain and infrastructure boundaries
-  web/   Next.js App Router, Atomic Design components, feature modules, BFF helpers
+  api/   NestJS API, MongoDB models, GitHub/Drive/Discord integrations, automation workers
+  web/   Authenticated Next.js application and BFF proxy
 packages/
-  contracts/ canonical shared values and API contracts
+  contracts/ canonical domain values and API envelopes
 ```
 
-See `docs/ARCHITECTURE.md`, `docs/DATA_MODEL.md`, and `docs/INTEGRATIONS.md`.
+GitHub Pages publishes only the static product/architecture page. The authenticated application must be deployed as the Next.js service.
+
+## Production capabilities
+
+- GitHub user authorization with a signed HttpOnly session cookie.
+- Encrypted GitHub user tokens with refresh-token rotation.
+- GitHub App JWT and one-hour installation access tokens.
+- Installation ownership verification before linking a workspace.
+- Raw-body HMAC verification and idempotent GitHub webhook processing.
+- Pull-request/work-item linking from project keys in titles, bodies, or branches.
+- Per-project Discord webhooks encrypted with AES-256-GCM.
+- Event and scheduled automation rules with execution locks and run history.
+- Google Drive read-only OAuth with encrypted refresh tokens and project folder trees.
+- MongoDB-backed projects, workflows, work items, sprints, members, integrations, and automation runs.
+
+## Development
+
+Copy `.env.example` to `.env`, replace every placeholder, and run:
+
+```bash
+npm install
+docker compose up -d mongodb
+npm run dev
+```
+
+There is no seed command. A newly authenticated workspace starts empty by design.
+
+## Build
+
+```bash
+npm run typecheck
+npm run build
+```
+
+Container builds:
+
+```bash
+docker build -f apps/api/Dockerfile -t tasks-dash-api .
+docker build \
+  --build-arg NEXT_PUBLIC_API_BASE_URL=https://api.example.com/api \
+  -f apps/web/Dockerfile \
+  -t tasks-dash-web .
+```
+
+See [`docs/PRODUCTION_SETUP.md`](docs/PRODUCTION_SETUP.md) for GitHub App permissions, callback URLs, Google OAuth, Discord, MongoDB, cookie-domain requirements, secret generation, and verification steps.

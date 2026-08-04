@@ -7,11 +7,11 @@ import { CreateProjectDto } from "./projects.dto";
 @Injectable()
 export class ProjectsService {
   constructor(@InjectModel(ProjectDocument.name) private readonly projects: Model<ProjectHydratedDocument>) {}
-  async create(workspaceId: string, dto: CreateProjectDto): Promise<ProjectHydratedDocument> {
-    const project = Project.create({ workspaceId, ...dto }).toPrimitives();
+  async create(workspaceId: string, actorId: string, dto: CreateProjectDto): Promise<ProjectHydratedDocument> {
+    const project = Project.create({ workspaceId, ...dto, leadId: dto.leadId ?? actorId }).toPrimitives();
     const exists = await this.projects.exists({ workspaceId, key: project.key });
     if (exists) throw new ConflictException(`Project key ${project.key} already exists.`);
-    return this.projects.create(project);
+    return this.projects.create({ ...project, memberIds: [actorId] });
   }
   list(workspaceId: string): Promise<ProjectHydratedDocument[]> { return this.projects.find({ workspaceId }).sort({ name: 1 }).exec(); }
   async getByKey(workspaceId: string, key: string): Promise<ProjectHydratedDocument> {

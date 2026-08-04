@@ -1,6 +1,5 @@
 import type { Metadata } from "next";
 import type { ReactNode } from "react";
 import "./globals.css";
-import { Providers } from "./providers";
-export const metadata: Metadata = { title: "Tasks Dash", description: "Multi-project delivery dashboard" };
-export default function RootLayout({ children }: Readonly<{ children: ReactNode }>) { return <html lang="en"><body><Providers>{children}</Providers></body></html>; }
+export const metadata: Metadata = { title: "Tasks Dash", description: "Production multi-project delivery workspace" };
+export default function RootLayout({ children }: Readonly<{ children: ReactNode }>) { return <html lang="vi"><body>{children}</body></html>; }

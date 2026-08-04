@@ -1,11 +1,47 @@
-import { notFound } from "next/navigation";
-import { MEMBER_PRESENCE } from "@tasks-dash/contracts";
-import { CheckCircle2, Clock3, GitPullRequest, ListTodo, Users } from "lucide-react";
-import { ProjectShell } from "@/components/organisms/project-shell";
-import { StatCard } from "@/components/molecules/stat-card";
-import { Card, CardContent, CardHeader } from "@/components/atoms/card";
-import { Avatar } from "@/components/atoms/avatar";
-import { Badge } from "@/components/atoms/badge";
-import { Progress } from "@/components/atoms/progress";
-import { demoData, projectData } from "@/features/demo/demo-data";
-export default async function ProjectOverview({ params }: { params: Promise<{ projectKey: string }> }) { const { projectKey } = await params; if(!demoData.projects.some(p=>p.key===projectKey.toUpperCase())) notFound(); const {project,members,items,sprint}=projectData(projectKey); const done=items.filter(i=>i.statusId==="done").length; const inProgress=items.filter(i=>i.statusId==="progress"||i.statusId==="review").length; return <ProjectShell project={project} active=""><div className="space-y-6"><section className="grid gap-4 lg:grid-cols-4"><StatCard label="Progress" value={`${project.progress}%`} caption={`${done} items completed`} icon={CheckCircle2}/><StatCard label="Current sprint" value={sprint?.name ?? "None"} caption={sprint?.goal ?? "No active sprint"} icon={Clock3}/><StatCard label="In progress" value={inProgress} caption="Including code review" icon={ListTodo}/><StatCard label="Linked PRs" value={project.openPrItems} caption="Incomplete work items" icon={GitPullRequest}/></section><section className="grid gap-6 xl:grid-cols-[1.35fr_1fr]"><Card><CardHeader><div><h2 className="font-bold">Sprint progress</h2><p className="text-sm text-slate-500">{sprint?.goal}</p></div><Badge>{sprint?.state}</Badge></CardHeader><CardContent><div className="mb-2 flex justify-between text-sm"><span>{done} completed</span><strong>{project.progress}%</strong></div><Progress value={project.progress}/><div className="mt-6 grid grid-cols-3 gap-3">{["todo","progress","review"].map(status=><div key={status} className="rounded-lg bg-slate-50 p-4"><p className="text-2xl font-black">{items.filter(i=>i.statusId===status).length}</p><p className="mt-1 text-xs capitalize text-slate-500">{status.replace("progress","in progress")}</p></div>)}</div></CardContent></Card><Card><CardHeader><div><h2 className="font-bold">Project members</h2><p className="text-sm text-slate-500">Current project access</p></div><Users size={20}/></CardHeader><CardContent className="space-y-4">{members.map(member=><div key={member.id} className="flex items-center gap-3"><Avatar name={member.name} src={member.avatarUrl}/><div className="flex-1"><p className="text-sm font-semibold">{member.name}</p><p className="text-xs text-slate-500">{member.role.replaceAll("_"," ")}</p></div><span className={`size-2 rounded-full ${member.status===MEMBER_PRESENCE.online?"bg-emerald-500":"bg-amber-500"}`}/></div>)}</CardContent></Card></section></div></ProjectShell>; }
+import Link from "next/link";
+import { apiData } from "@/lib/server/api-data";
+export const dynamic = "force-dynamic";
+
+interface Project {
+  key: string;
+  name: string;
+  description: string;
+  repositoryFullName?: string;
+  driveRootFolderId?: string;
+}
+interface WorkItem {
+  key: string;
+  summary: string;
+  type: string;
+  statusId: string;
+  priority: string;
+  assigneeId?: string;
+  github?: { pullRequestNumber?: number; pullRequestUrl?: string; pullRequestState?: string };
+}
+interface Workflow { name: string; statuses: Array<{ id: string; name: string; category: string }> }
+
+export default async function ProjectPage({ params }: { params: Promise<{ projectKey: string }> }) {
+  const { projectKey } = await params;
+  const key = projectKey.toUpperCase();
+  const [project, items, workflow] = await Promise.all([
+    apiData<Project>(`/projects/${key}`),
+    apiData<WorkItem[]>(`/projects/${key}/work-items`),
+    apiData<Workflow | null>(`/projects/${key}/workflow`),
+  ]);
+
+  return (
+    <main className="app-page">
+      <header className="topbar"><Link href="/">← Tổng quan</Link><nav><Link href={`/projects/${key}/automations`}>Automation</Link><Link href="/settings/integrations">Tích hợp</Link></nav></header>
+      <section className="hero-panel">
+        <div><span className="project-key">{project.key}</span><h1>{project.name}</h1><p>{project.description}</p></div>
+        <div className="project-links"><span>{project.repositoryFullName ?? "Chưa có GitHub repo"}</span><span>{project.driveRootFolderId ? "Drive đã cấu hình" : "Chưa có Drive folder"}</span></div>
+      </section>
+      <section className="data-card">
+        <div className="section-heading"><div><span>LIVE DATABASE</span><h2>Work items</h2></div><strong>{items.length}</strong></div>
+        {items.length === 0 ? <p className="empty-inline">Chưa có work item. Không có dữ liệu mẫu được tự động thêm.</p> : (
+          <div className="table-wrap"><table><thead><tr><th>Key</th><th>Summary</th><th>Type</th><th>Status</th><th>Priority</th><th>GitHub PR</th></tr></thead><tbody>{items.map((item) => <tr key={item.key}><td><strong>{item.key}</strong></td><td>{item.summary}</td><td>{item.type}</td><td>{workflow?.statuses.find((status) => status.id === item.statusId)?.name ?? item.statusId}</td><td>{item.priority}</td><td>{item.github?.pullRequestUrl ? <a href={item.github.pullRequestUrl} target="_blank" rel="noreferrer">#{item.github.pullRequestNumber} · {item.github.pullRequestState}</a> : "—"}</td></tr>)}</tbody></table></div>
+        )}
+      </section>
+    </main>
+  );
+}

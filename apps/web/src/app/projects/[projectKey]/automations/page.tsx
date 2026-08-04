@@ -1,8 +1,35 @@
-import { Bot, CheckCircle2, GitPullRequest, MessageCircle, Play, Plus, Zap } from "lucide-react";
-import { AUTOMATION_ACTIONS } from "@tasks-dash/contracts";
-import { Badge } from "@/components/atoms/badge";
-import { Button } from "@/components/atoms/button";
-import { Card, CardContent, CardHeader } from "@/components/atoms/card";
-import { ProjectShell } from "@/components/organisms/project-shell";
-import { projectData } from "@/features/demo/demo-data";
-export default async function AutomationsPage({params}:{params:Promise<{projectKey:string}>}){const{projectKey}=await params;const{project,automations}=projectData(projectKey);return <ProjectShell project={project} active="automations"><div className="mb-5 flex items-end justify-between"><div><h2 className="text-xl font-bold">Automation rules</h2><p className="mt-1 text-sm text-slate-500">Connect work item events to GitHub and Discord actions.</p></div><Button size="sm"><Plus size={15}/>Create rule</Button></div><div className="grid gap-4">{automations.map(rule=><Card key={rule.id}><CardContent className="flex items-center gap-4 pt-5"><div className="rounded-xl bg-indigo-50 p-3 text-indigo-600"><Bot size={21}/></div><div className="min-w-0 flex-1"><div className="flex items-center gap-2"><h3 className="font-bold">{rule.name}</h3><Badge className="bg-emerald-50 text-emerald-700">ACTIVE</Badge></div><div className="mt-2 flex flex-wrap items-center gap-2 text-xs text-slate-500"><GitPullRequest size={13}/><span>{rule.trigger.replaceAll("_"," ")}</span><span>→</span>{rule.actions.map(action=><span key={action.type} className="flex items-center gap-1 rounded bg-slate-100 px-2 py-1">{action.type===AUTOMATION_ACTIONS.notifyDiscord?<MessageCircle size={12}/>:<Zap size={12}/>} {action.type.replaceAll("_"," ")}</span>)}</div></div><div className="text-right"><p className="flex items-center justify-end gap-1 text-sm font-bold"><CheckCircle2 size={14} className="text-emerald-500"/>{rule.runCount} runs</p><p className="mt-1 text-xs text-slate-400">Last run succeeded</p></div><Button variant="secondary" size="icon"><Play size={15}/></Button></CardContent></Card>)}{automations.length===0&&<Card><CardContent className="py-16 text-center"><Bot className="mx-auto text-slate-300" size={36}/><p className="mt-3 font-semibold">No automation rules yet</p><p className="mt-1 text-sm text-slate-500">Create a rule to automate GitHub and Discord workflows.</p></CardContent></Card>}</div></ProjectShell>}
+import Link from "next/link";
+import { apiData } from "@/lib/server/api-data";
+import { AutomationCreateForm } from "@/components/automation-create-form";
+
+export const dynamic = "force-dynamic";
+
+interface AutomationRule {
+  _id: string;
+  name: string;
+  enabled: boolean;
+  trigger: string;
+  executionMode: string;
+  runCount: number;
+  lastRunAt?: string;
+  lastResult?: string;
+  lastError?: string;
+}
+
+export default async function AutomationsPage({ params }: { params: Promise<{ projectKey: string }> }) {
+  const { projectKey } = await params;
+  const key = projectKey.toUpperCase();
+  const rules = await apiData<AutomationRule[]>(`/projects/${key}/automations`);
+
+  return (
+    <main className="app-page">
+      <header className="topbar"><Link href={`/projects/${key}`}>← {key}</Link><Link href="/settings/integrations">Tích hợp</Link></header>
+      <section className="hero-panel"><div><span className="eyebrow">REAL EXECUTION ENGINE</span><h1>Automation · {key}</h1><p>Rules được lưu trong MongoDB và chạy bởi webhook hoặc scheduler thật.</p></div></section>
+      <section className="data-card">
+        <div className="section-heading"><div><span>AUTOMATION RULES</span><h2>Rules hiện tại</h2></div><strong>{rules.length}</strong></div>
+        {rules.length === 0 ? <p className="empty-inline">Chưa có automation rule.</p> : <div className="rule-list">{rules.map((rule) => <article className="rule-row" key={rule._id}><div><strong>{rule.name}</strong><span>{rule.trigger} · {rule.executionMode}</span></div><div><strong>{rule.lastResult ?? "Chưa chạy"}</strong><span>{rule.runCount} lần chạy</span></div>{rule.lastError ? <p className="error">{rule.lastError}</p> : null}</article>)}</div>}
+      </section>
+      <AutomationCreateForm projectKey={key} />
+    </main>
+  );
+}

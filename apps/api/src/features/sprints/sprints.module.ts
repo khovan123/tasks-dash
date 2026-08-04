@@ -1,7 +1,8 @@
-import { Body, Controller, Get, Headers, Injectable, Module, Param, Post } from "@nestjs/common";
+import { Body, Controller, Get, Injectable, Module, Param, Post } from "@nestjs/common";
 import { InjectModel, MongooseModule, Prop, Schema, SchemaFactory } from "@nestjs/mongoose";
-import { Model, HydratedDocument } from "mongoose";
-import { SPRINT_STATES, SprintState } from "@tasks-dash/contracts";
+import { HydratedDocument, Model } from "mongoose";
+import { MEMBER_ROLES, SPRINT_STATES, SprintState } from "@tasks-dash/contracts";
+import { RequireRoles, WorkspaceId } from "../../common/auth-context";
 import { BaseMongoDocument } from "../../common/base.schema";
 @Schema({ collection: "sprints", timestamps: true })
 export class SprintDocument extends BaseMongoDocument {
@@ -24,8 +25,10 @@ export class SprintsService {
 @Controller("projects/:projectKey/sprints")
 export class SprintsController {
   constructor(private readonly service: SprintsService) {}
-  @Get() list(@Param("projectKey") key: string, @Headers("x-workspace-id") workspaceId = "demo") { return this.service.list(workspaceId, key); }
-  @Post() create(@Param("projectKey") key: string, @Body() body: Partial<SprintDocument>, @Headers("x-workspace-id") workspaceId = "demo") { return this.service.create(workspaceId, key, body); }
+  @Get() list(@Param("projectKey") key: string, @WorkspaceId() workspaceId: string) { return this.service.list(workspaceId, key); }
+  @Post()
+  @RequireRoles(MEMBER_ROLES.owner, MEMBER_ROLES.admin, MEMBER_ROLES.projectLead)
+  create(@Param("projectKey") key: string, @Body() body: Partial<SprintDocument>, @WorkspaceId() workspaceId: string) { return this.service.create(workspaceId, key, body); }
 }
 @Module({ imports: [MongooseModule.forFeature([{ name: SprintDocument.name, schema: SprintSchema }])], controllers: [SprintsController], providers: [SprintsService], exports: [SprintsService, MongooseModule] })
 export class SprintsModule {}

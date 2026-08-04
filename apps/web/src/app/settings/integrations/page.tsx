@@ -1,9 +1,31 @@
-import { Github, MessageCircle, Cloud, CheckCircle2, ExternalLink } from "lucide-react";
-import { AppSidebar } from "@/components/organisms/app-sidebar";
-import { TopHeader } from "@/components/organisms/top-header";
-import { Card, CardContent } from "@/components/atoms/card";
-import { Badge } from "@/components/atoms/badge";
-import { Button } from "@/components/atoms/button";
-import { demoData } from "@/features/demo/demo-data";
-const integrations=[{name:"GitHub",description:"Link repositories, branches, commits, pull requests and webhooks.",icon:Github,state:"CONNECTED",detail:"khovan123 installation"},{name:"Discord",description:"Send workflow and delivery notifications to project channels.",icon:MessageCircle,state:"CONNECTED",detail:"#jira-issues"},{name:"Google Drive",description:"Browse each project's filtered folder tree and project documents.",icon:Cloud,state:"DEMO MODE",detail:"Configure OAuth credentials"}];
-export default function IntegrationsPage(){return <><AppSidebar projects={demoData.projects}/><div className="ml-[260px] min-h-screen"><TopHeader title="Integrations" subtitle="Connect external delivery and documentation systems"/><main className="p-7"><div className="grid gap-5 xl:grid-cols-3">{integrations.map(({name,description,icon:Icon,state,detail})=><Card key={name}><CardContent className="pt-5"><div className="flex items-start justify-between"><div className="rounded-xl bg-slate-100 p-3"><Icon size={24}/></div><Badge className={state==="CONNECTED"?"bg-emerald-50 text-emerald-700":"bg-amber-50 text-amber-700"}>{state}</Badge></div><h2 className="mt-5 text-lg font-bold">{name}</h2><p className="mt-2 min-h-10 text-sm leading-5 text-slate-500">{description}</p><div className="mt-5 flex items-center gap-2 rounded-lg bg-slate-50 p-3 text-xs"><CheckCircle2 size={14} className="text-emerald-500"/><span className="flex-1">{detail}</span><ExternalLink size={13}/></div><Button className="mt-4 w-full" variant="secondary">Configure {name}</Button></CardContent></Card>)}</div></main></div></>}
+import Link from "next/link";
+import { apiData } from "@/lib/server/api-data";
+import { DiscordConnectForm } from "@/components/discord-connect-form";
+export const dynamic = "force-dynamic";
+
+interface GithubInstallation { installationId: number; accountLogin: string; repositoryCount: number; suspended: boolean; synchronizedAt?: string }
+interface DriveStatus { connected: boolean; accountEmail?: string; connectedAt?: string }
+interface DiscordStatus { projectKey: string; webhookName: string; channelId: string; enabled: boolean; lastSuccessAt?: string; lastError?: string }
+interface Project { key: string; name: string }
+
+export default async function IntegrationsPage() {
+  const [github, drive, discord, projects] = await Promise.all([
+    apiData<GithubInstallation[]>("/integrations/github/status"),
+    apiData<DriveStatus>("/integrations/google-drive/status"),
+    apiData<DiscordStatus[]>("/integrations/discord/status"),
+    apiData<Project[]>("/projects"),
+  ]);
+
+  return (
+    <main className="app-page">
+      <header className="topbar"><Link href="/">← Tổng quan</Link><strong>Production integrations</strong></header>
+      <section className="hero-panel"><div><span className="eyebrow">REAL CONNECTIONS</span><h1>Tích hợp production</h1><p>Mỗi trạng thái được truy vấn từ backend. Secret không được gửi lại trình duyệt.</p></div></section>
+      <section className="integration-grid">
+        <article className="integration-card"><span className="eyebrow">GITHUB APP</span><h2>{github.length ? "Đã kết nối" : "Chưa kết nối"}</h2><p>{github.length ? github.map((item) => `${item.accountLogin} · ${item.repositoryCount} repositories`).join(", ") : "Cài GitHub App để webhook và API repository hoạt động bằng installation token."}</p><a className="primary link-button" href="/api/integrations/github/install">{github.length ? "Quản lý installation" : "Cài GitHub App"}</a></article>
+        <article className="integration-card"><span className="eyebrow">GOOGLE DRIVE</span><h2>{drive.connected ? "Đã kết nối" : "Chưa kết nối"}</h2><p>{drive.connected ? `Tài khoản ${drive.accountEmail}` : "OAuth yêu cầu quyền Drive read-only và lưu refresh token đã mã hóa."}</p><a className="primary link-button" href="/api/integrations/google-drive/connect">{drive.connected ? "Kết nối lại" : "Kết nối Drive"}</a></article>
+        <article className="integration-card"><span className="eyebrow">DISCORD</span><h2>{discord.length} dự án đã kết nối</h2><p>{discord.length ? discord.map((item) => `${item.projectKey}: ${item.webhookName}`).join(", ") : "Webhook được xác minh trước khi mã hóa và lưu vào MongoDB."}</p></article>
+      </section>
+      <DiscordConnectForm projectKeys={projects.map((project) => project.key)} />
+    </main>
+  );
+}
