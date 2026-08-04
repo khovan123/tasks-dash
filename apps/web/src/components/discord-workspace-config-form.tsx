@@ -33,7 +33,7 @@ export interface DiscordWorkspaceStatus {
   enabled: boolean;
   lastProvisionedAt?: string | null;
   lastError?: string | null;
-  installUrl: string;
+  installUrl?: string | null;
 }
 
 export function DiscordWorkspaceConfigForm({
@@ -71,7 +71,9 @@ export function DiscordWorkspaceConfigForm({
       });
       const provisioned = response.provisionedProjects?.length ?? 0;
       const failed = response.failedProjects?.length ?? 0;
-      setResult(`Đã cấu hình Discord và provision ${provisioned} project; ${failed} lỗi.`);
+      setResult(
+        `Đã cấu hình Discord và provision ${provisioned} project; ${failed} lỗi.`,
+      );
       router.refresh();
     } catch (error) {
       form.setError("root", {
@@ -123,9 +125,13 @@ export function DiscordWorkspaceConfigForm({
                   <Bot /> Cài bot vào Discord
                 </a>
               </Button>
-              <Button disabled={form.formState.isSubmitting || !status.botConfigured}>
+              <Button
+                disabled={form.formState.isSubmitting || !status.botConfigured}
+              >
                 <ServerCog />
-                {form.formState.isSubmitting ? "Đang cấu hình…" : "Lưu và provision"}
+                {form.formState.isSubmitting
+                  ? "Đang cấu hình…"
+                  : "Lưu và provision"}
               </Button>
               {status.configured ? (
                 <Button
@@ -135,7 +141,9 @@ export function DiscordWorkspaceConfigForm({
                   onClick={() => void provisionAll()}
                 >
                   <RefreshCw />
-                  {provisioning ? "Đang provision…" : "Provision lại tất cả"}
+                  {provisioning
+                    ? "Đang provision…"
+                    : "Provision lại tất cả"}
                 </Button>
               ) : null}
             </>
@@ -145,7 +153,8 @@ export function DiscordWorkspaceConfigForm({
             <Alert variant="destructive">
               <AlertTitle>Discord bot secret chưa được cấu hình</AlertTitle>
               <AlertDescription>
-                API cần DISCORD_APPLICATION_ID và DISCORD_BOT_TOKEN trong secret manager.
+                API cần DISCORD_APPLICATION_ID và DISCORD_BOT_TOKEN trong secret
+                manager.
               </AlertDescription>
             </Alert>
           ) : null}
@@ -167,7 +176,9 @@ export function DiscordWorkspaceConfigForm({
               ) : null}
             </Field>
             <Field>
-              <FieldLabel htmlFor="discord-category-id">Category ID tùy chọn</FieldLabel>
+              <FieldLabel htmlFor="discord-category-id">
+                Category ID tùy chọn
+              </FieldLabel>
               <Input
                 id="discord-category-id"
                 {...form.register("categoryId")}
@@ -178,21 +189,28 @@ export function DiscordWorkspaceConfigForm({
                 Mọi project channel sẽ nằm trong category này.
               </FieldDescription>
               {form.formState.errors.categoryId?.message ? (
-                <FieldError>{form.formState.errors.categoryId.message}</FieldError>
+                <FieldError>
+                  {form.formState.errors.categoryId.message}
+                </FieldError>
               ) : null}
             </Field>
           </FieldGroup>
 
           <Field>
-            <FieldLabel htmlFor="discord-channel-template">Channel name template</FieldLabel>
+            <FieldLabel htmlFor="discord-channel-template">
+              Channel name template
+            </FieldLabel>
             <Input
               id="discord-channel-template"
               {...form.register("channelNameTemplate")}
               placeholder="{{projectKey}}-updates"
-              aria-invalid={Boolean(form.formState.errors.channelNameTemplate)}
+              aria-invalid={Boolean(
+                form.formState.errors.channelNameTemplate,
+              )}
             />
             <FieldDescription>
-              Hỗ trợ biến {{projectKey}} và {{projectName}}. Tên sẽ tự chuyển về lowercase, bỏ dấu và giới hạn 100 ký tự.
+              Hỗ trợ biến {"{{projectKey}}"} và {"{{projectName}}"}. Tên sẽ tự
+              chuyển về lowercase, bỏ dấu và giới hạn 100 ký tự.
             </FieldDescription>
             {form.formState.errors.channelNameTemplate?.message ? (
               <FieldError>
@@ -207,7 +225,8 @@ export function DiscordWorkspaceConfigForm({
                 Đã kết nối {status.guildName ?? status.guildId}
               </AlertTitle>
               <AlertDescription>
-                Category: {status.categoryName ?? "server root"} · Template: {status.channelNameTemplate}
+                Category: {status.categoryName ?? "server root"} · Template:{" "}
+                {status.channelNameTemplate}
               </AlertDescription>
             </Alert>
           ) : null}
