@@ -12,10 +12,14 @@ export const RequireRoles = (...roles: MemberRole[]) =>
   SetMetadata(REQUIRED_ROLES_KEY, roles);
 
 export interface AuthSession {
+  identityId: string;
+  memberId: string;
+  /** Compatibility alias used by existing project APIs. Always equals memberId. */
   userId: string;
   githubId: number;
   login: string;
   name: string;
+  email: string;
   avatarUrl: string;
   workspaceId: string;
   issuedAt: number;

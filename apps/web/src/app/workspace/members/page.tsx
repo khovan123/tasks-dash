@@ -31,9 +31,27 @@ export default async function WorkspaceMembersPage() {
   const data = await apiData<WorkspaceMembersResponse>("/workspace/members");
   return (
     <main className="app-page">
-      <header className="topbar"><Link href="/">← Tổng quan</Link><strong>Workspace members</strong></header>
-      <section className="hero-panel"><div><span className="eyebrow">WORKSPACE LEVEL</span><h1>{data.workspace.name}</h1><p>Thành viên thuộc workspace. Project chỉ chọn lead hoặc assignee từ danh sách này.</p></div></section>
-      <WorkspaceMembersManager members={data.members} invitations={data.invitations} />
+      <header className="topbar">
+        <Link href="/">← Tổng quan</Link>
+        <nav>
+          <Link href="/workspaces">Switch workspace</Link>
+          <strong>Workspace members</strong>
+        </nav>
+      </header>
+      <section className="hero-panel">
+        <div>
+          <span className="eyebrow">WORKSPACE LEVEL</span>
+          <h1>{data.workspace.name}</h1>
+          <p>
+            Thành viên thuộc workspace active. Một GitHub account có thể có role
+            khác nhau ở từng workspace.
+          </p>
+        </div>
+      </section>
+      <WorkspaceMembersManager
+        members={data.members}
+        invitations={data.invitations}
+      />
     </main>
   );
 }

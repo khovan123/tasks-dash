@@ -9,25 +9,46 @@ import {
 import { ConfigService } from "@nestjs/config";
 import { InjectConnection, InjectModel } from "@nestjs/mongoose";
 import { Connection, isValidObjectId, Model } from "mongoose";
-import { createHash, randomBytes, randomUUID, timingSafeEqual } from "node:crypto";
+import {
+  createHash,
+  randomBytes,
+  randomUUID,
+  timingSafeEqual,
+} from "node:crypto";
 import {
   MemberRole,
   MEMBER_INVITATION_STATUSES,
   MEMBER_PRESENCE,
   MEMBER_ROLES,
 } from "@tasks-dash/contracts";
-import { BootstrapWorkspaceDto, InviteWorkspaceMemberDto } from "./members.dto";
+import {
+  BootstrapWorkspaceDto,
+  CreateWorkspaceDto,
+  InviteWorkspaceMemberDto,
+} from "./members.dto";
 import { InvitationMailerService } from "./invitation-mailer.service";
 import { MemberDocument, MemberHydratedDocument } from "./member.schema";
 import {
   WorkspaceInvitationDocument,
   WorkspaceInvitationHydratedDocument,
 } from "./workspace-invitation.schema";
-import { WorkspaceDocument, WorkspaceHydratedDocument } from "./workspace.schema";
+import {
+  WorkspaceDocument,
+  WorkspaceHydratedDocument,
+} from "./workspace.schema";
 
-interface InvitationProfile {
+interface IdentityProfile {
   name: string;
   avatarUrl: string;
+}
+
+export interface WorkspaceMembershipView {
+  workspaceId: string;
+  name: string;
+  slug: string;
+  role: MemberRole;
+  memberId: string;
+  lastLoginAt: Date | null;
 }
 
 @Injectable()
@@ -57,6 +78,18 @@ export class MembersService {
     return new Date(Date.now() + hours * 60 * 60 * 1000);
   }
 
+  private workspaceSlug(dto: CreateWorkspaceDto): string {
+    const base =
+      dto.workspaceSlug ??
+      dto.workspaceName
+        .toLowerCase()
+        .replace(/[^a-z0-9]+/g, "-")
+        .replace(/^-|-$/g, "")
+        .slice(0, 42);
+    if (!base) throw new BadRequestException("Workspace slug is invalid.");
+    return `${base}-${randomBytes(3).toString("hex")}`;
+  }
+
   private async workspaceName(workspaceId: string): Promise<string> {
     const workspace = await this.workspaces.findOne({ workspaceId }).lean().exec();
     return workspace?.name ?? `Workspace ${workspaceId}`;
@@ -73,7 +106,12 @@ export class MembersService {
     );
     const [workspace, members, invitations] = await Promise.all([
       this.workspaces.findOne({ workspaceId }).lean().exec(),
-      this.members.find({ workspaceId }).sort({ role: 1, name: 1 }).lean().exec(),
+      this.members
+        .find({ workspaceId })
+        .select({ authIdentityId: 0, githubId: 0 })
+        .sort({ role: 1, name: 1 })
+        .lean()
+        .exec(),
       this.invitations
         .find({ workspaceId })
         .select({ tokenHash: 0 })
@@ -103,20 +141,11 @@ export class MembersService {
       throw new UnauthorizedException("Invalid workspace bootstrap secret.");
     }
     const email = this.normalizeEmail(dto.ownerEmail);
-    const slugBase =
-      dto.workspaceSlug ??
-      dto.workspaceName
-        .toLowerCase()
-        .replace(/[^a-z0-9]+/g, "-")
-        .replace(/^-|-$/g, "")
-        .slice(0, 42);
-    if (!slugBase) throw new BadRequestException("Workspace slug is invalid.");
-    const slug = `${slugBase}-${randomBytes(3).toString("hex")}`;
     const workspaceId = `ws_${randomUUID().replaceAll("-", "")}`;
     await this.workspaces.create({
       workspaceId,
       name: dto.workspaceName.trim(),
-      slug,
+      slug: this.workspaceSlug(dto),
       createdByEmail: email,
     });
     const invitation = await this.createInvitation(
@@ -132,6 +161,138 @@ export class MembersService {
       ownerEmail: email,
       expiresAt: invitation.expiresAt,
     };
+  }
+
+  async createWorkspaceForOwner(
+    authIdentityId: string,
+    githubId: number,
+    emailInput: string,
+    profile: IdentityProfile,
+    dto: CreateWorkspaceDto,
+  ): Promise<{ workspace: WorkspaceHydratedDocument; member: MemberHydratedDocument }> {
+    const email = this.normalizeEmail(emailInput);
+    let createdWorkspace: WorkspaceHydratedDocument | null = null;
+    let createdMember: MemberHydratedDocument | null = null;
+
+    await this.connection.transaction(async (session) => {
+      const workspaceId = `ws_${randomUUID().replaceAll("-", "")}`;
+      const workspaces = await this.workspaces.create(
+        [
+          {
+            workspaceId,
+            name: dto.workspaceName.trim(),
+            slug: this.workspaceSlug(dto),
+            createdByEmail: email,
+          },
+        ],
+        { session },
+      );
+      const members = await this.members.create(
+        [
+          {
+            workspaceId,
+            name: profile.name,
+            email,
+            avatarUrl: profile.avatarUrl,
+            role: MEMBER_ROLES.owner,
+            status: MEMBER_PRESENCE.online,
+            authIdentityId,
+            githubId,
+            lastLoginAt: new Date(),
+          },
+        ],
+        { session },
+      );
+      createdWorkspace = workspaces[0];
+      createdMember = members[0];
+    });
+
+    if (!createdWorkspace || !createdMember) {
+      throw new ConflictException("Workspace creation failed.");
+    }
+    return { workspace: createdWorkspace, member: createdMember };
+  }
+
+  async linkIdentityToExistingMemberships(
+    authIdentityId: string,
+    githubId: number,
+    emailInput: string,
+  ): Promise<void> {
+    const email = this.normalizeEmail(emailInput);
+    await this.members
+      .updateMany(
+        {
+          email,
+          $or: [
+            { authIdentityId: { $exists: false } },
+            { authIdentityId: null },
+            { authIdentityId },
+          ],
+        },
+        { $set: { authIdentityId, githubId } },
+      )
+      .exec();
+  }
+
+  async listMemberships(
+    authIdentityId: string,
+  ): Promise<WorkspaceMembershipView[]> {
+    const memberships = await this.members
+      .find({ authIdentityId })
+      .sort({ lastLoginAt: -1, createdAt: 1 })
+      .lean()
+      .exec();
+    const workspaceIds = memberships.map((member) => member.workspaceId);
+    const workspaces = await this.workspaces
+      .find({ workspaceId: { $in: workspaceIds } })
+      .lean()
+      .exec();
+    const byId = new Map(workspaces.map((workspace) => [workspace.workspaceId, workspace]));
+    return memberships.flatMap((member) => {
+      const workspace = byId.get(member.workspaceId);
+      if (!workspace) return [];
+      return [
+        {
+          workspaceId: workspace.workspaceId,
+          name: workspace.name,
+          slug: workspace.slug,
+          role: member.role,
+          memberId: String(member._id),
+          lastLoginAt: member.lastLoginAt ?? null,
+        },
+      ];
+    });
+  }
+
+  async resolveLoginMembership(
+    authIdentityId: string,
+    preferredWorkspaceId?: string,
+  ): Promise<MemberHydratedDocument | null> {
+    if (preferredWorkspaceId) {
+      const preferred = await this.members
+        .findOne({ authIdentityId, workspaceId: preferredWorkspaceId })
+        .exec();
+      if (preferred) return preferred;
+    }
+    return this.members
+      .findOne({ authIdentityId })
+      .sort({ lastLoginAt: -1, createdAt: 1 })
+      .exec();
+  }
+
+  async membershipForWorkspace(
+    authIdentityId: string,
+    workspaceId: string,
+  ): Promise<MemberHydratedDocument> {
+    const member = await this.members
+      .findOne({ authIdentityId, workspaceId })
+      .exec();
+    if (!member) {
+      throw new ForbiddenException(
+        "The GitHub account is not a member of this workspace.",
+      );
+    }
+    return member;
   }
 
   async invite(
@@ -164,10 +325,7 @@ export class MembersService {
         email,
         status: MEMBER_INVITATION_STATUSES.pending,
       },
-      {
-        status: MEMBER_INVITATION_STATUSES.revoked,
-        revokedAt: new Date(),
-      },
+      { status: MEMBER_INVITATION_STATUSES.revoked, revokedAt: new Date() },
     );
     const token = randomBytes(32).toString("base64url");
     const invitation = await this.invitations.create({
@@ -223,7 +381,9 @@ export class MembersService {
   async acceptInvitation(
     rawToken: string,
     emailInput: string,
-    profile: InvitationProfile,
+    profile: IdentityProfile,
+    authIdentityId: string,
+    githubId: number,
   ): Promise<MemberHydratedDocument> {
     const email = this.normalizeEmail(emailInput);
     const hash = this.tokenHash(rawToken);
@@ -252,7 +412,19 @@ export class MembersService {
         .findOne({ workspaceId: invitation.workspaceId, email })
         .session(session)
         .exec();
+      if (existing?.authIdentityId && existing.authIdentityId !== authIdentityId) {
+        throw new ConflictException(
+          "This workspace membership is linked to another GitHub account.",
+        );
+      }
       if (existing) {
+        existing.authIdentityId = authIdentityId;
+        existing.githubId = githubId;
+        existing.name = profile.name;
+        existing.avatarUrl = profile.avatarUrl;
+        existing.status = MEMBER_PRESENCE.online;
+        existing.lastLoginAt = new Date();
+        await existing.save({ session });
         acceptedMember = existing;
       } else {
         const created = await this.members.create(
@@ -264,6 +436,8 @@ export class MembersService {
               avatarUrl: profile.avatarUrl,
               role: invitation.role,
               status: MEMBER_PRESENCE.online,
+              authIdentityId,
+              githubId,
               lastLoginAt: new Date(),
             },
           ],
@@ -291,7 +465,10 @@ export class MembersService {
     return this.members.findOne({ _id: memberId, workspaceId }).exec();
   }
 
-  async touchLogin(member: MemberHydratedDocument, profile: InvitationProfile): Promise<void> {
+  async touchLogin(
+    member: MemberHydratedDocument,
+    profile: IdentityProfile,
+  ): Promise<void> {
     member.name = profile.name;
     member.avatarUrl = profile.avatarUrl;
     member.status = MEMBER_PRESENCE.online;
@@ -311,7 +488,9 @@ export class MembersService {
         workspaceId,
         role: MEMBER_ROLES.owner,
       });
-      if (owners <= 1) throw new ConflictException("The workspace must keep at least one owner.");
+      if (owners <= 1) {
+        throw new ConflictException("The workspace must keep at least one owner.");
+      }
     }
     if (memberId === actorMemberId && role === MEMBER_ROLES.viewer) {
       throw new ConflictException("You cannot change yourself to viewer.");
@@ -335,7 +514,9 @@ export class MembersService {
         workspaceId,
         role: MEMBER_ROLES.owner,
       });
-      if (owners <= 1) throw new ConflictException("The workspace must keep at least one owner.");
+      if (owners <= 1) {
+        throw new ConflictException("The workspace must keep at least one owner.");
+      }
     }
     await this.members.deleteOne({ _id: member._id, workspaceId }).exec();
   }
@@ -359,7 +540,9 @@ export class MembersService {
     const invitation = await this.invitations
       .findOne({ _id: invitationId, workspaceId })
       .exec();
-    if (!invitation) throw new NotFoundException("Workspace invitation was not found.");
+    if (!invitation) {
+      throw new NotFoundException("Workspace invitation was not found.");
+    }
     return invitation;
   }
 

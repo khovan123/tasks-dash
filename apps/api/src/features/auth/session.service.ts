@@ -75,11 +75,16 @@ export class SessionService {
       throw new UnauthorizedException("Invalid session payload.");
     }
     if (
+      !session.identityId ||
+      !session.memberId ||
       !session.workspaceId ||
-      !session.userId ||
+      !session.email ||
+      session.userId !== session.memberId ||
       session.expiresAt <= Math.floor(Date.now() / 1000)
     ) {
-      throw new UnauthorizedException("Session has expired.");
+      throw new UnauthorizedException(
+        "Session upgrade is required. Sign in with GitHub again.",
+      );
     }
     return session;
   }

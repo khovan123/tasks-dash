@@ -52,7 +52,11 @@ export class SessionAuthGuard implements CanActivate {
       }
     }
     const member = await this.members
-      .findOne({ _id: session.userId, workspaceId: session.workspaceId })
+      .findOne({
+        _id: session.memberId,
+        workspaceId: session.workspaceId,
+        authIdentityId: session.identityId,
+      })
       .select({ role: 1 })
       .lean()
       .exec();

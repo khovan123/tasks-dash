@@ -8,8 +8,12 @@ import { InjectModel } from "@nestjs/mongoose";
 import { Model } from "mongoose";
 import { CredentialEncryptionService } from "../../common/security/credential-encryption.service";
 import {
-  AuthUserDocument,
-  AuthUserHydratedDocument,
+  MemberDocument,
+  MemberHydratedDocument,
+} from "../members/member.schema";
+import {
+  AuthIdentityDocument,
+  AuthIdentityHydratedDocument,
 } from "./auth.schemas";
 
 export const GITHUB_API_VERSION = "2026-03-10";
@@ -33,27 +37,29 @@ export function expiresAt(seconds: number | undefined): Date | undefined {
 @Injectable()
 export class GithubUserTokenService {
   constructor(
-    @InjectModel(AuthUserDocument.name)
-    private readonly users: Model<AuthUserHydratedDocument>,
+    @InjectModel(AuthIdentityDocument.name)
+    private readonly identities: Model<AuthIdentityHydratedDocument>,
+    @InjectModel(MemberDocument.name)
+    private readonly members: Model<MemberHydratedDocument>,
     private readonly config: ConfigService,
     private readonly encryption: CredentialEncryptionService,
   ) {}
 
-  async accessTokenForMember(memberId: string): Promise<string> {
-    const user = await this.users.findOne({ memberId }).exec();
-    if (!user) {
+  async accessTokenForIdentity(identityId: string): Promise<string> {
+    const identity = await this.identities.findById(identityId).exec();
+    if (!identity) {
       throw new UnauthorizedException(
         "GitHub user authorization is missing.",
       );
     }
-    const expiry = user.githubAccessTokenExpiresAt?.getTime();
+    const expiry = identity.githubAccessTokenExpiresAt?.getTime();
     if (!expiry || expiry > Date.now() + 60_000) {
-      return this.encryption.decrypt(user.encryptedGithubAccessToken);
+      return this.encryption.decrypt(identity.encryptedGithubAccessToken);
     }
     if (
-      !user.encryptedGithubRefreshToken ||
-      (user.githubRefreshTokenExpiresAt &&
-        user.githubRefreshTokenExpiresAt.getTime() <= Date.now())
+      !identity.encryptedGithubRefreshToken ||
+      (identity.githubRefreshTokenExpiresAt &&
+        identity.githubRefreshTokenExpiresAt.getTime() <= Date.now())
     ) {
       throw new UnauthorizedException(
         "GitHub user authorization expired. Sign in with GitHub again.",
@@ -62,23 +68,33 @@ export class GithubUserTokenService {
     const refreshed = await this.exchange({
       grant_type: "refresh_token",
       refresh_token: this.encryption.decrypt(
-        user.encryptedGithubRefreshToken,
+        identity.encryptedGithubRefreshToken,
       ),
     });
-    user.encryptedGithubAccessToken = this.encryption.encrypt(
+    identity.encryptedGithubAccessToken = this.encryption.encrypt(
       refreshed.access_token!,
     );
-    user.githubAccessTokenExpiresAt = expiresAt(refreshed.expires_in);
+    identity.githubAccessTokenExpiresAt = expiresAt(refreshed.expires_in);
     if (refreshed.refresh_token) {
-      user.encryptedGithubRefreshToken = this.encryption.encrypt(
+      identity.encryptedGithubRefreshToken = this.encryption.encrypt(
         refreshed.refresh_token,
       );
-      user.githubRefreshTokenExpiresAt = expiresAt(
+      identity.githubRefreshTokenExpiresAt = expiresAt(
         refreshed.refresh_token_expires_in,
       );
     }
-    await user.save();
+    await identity.save();
     return refreshed.access_token!;
+  }
+
+  async accessTokenForMember(memberId: string): Promise<string> {
+    const member = await this.members.findById(memberId).lean().exec();
+    if (!member?.authIdentityId) {
+      throw new UnauthorizedException(
+        "Workspace membership is not linked to a GitHub identity.",
+      );
+    }
+    return this.accessTokenForIdentity(member.authIdentityId);
   }
 
   async assertInstallationAccessible(

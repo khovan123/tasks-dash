@@ -10,9 +10,18 @@ export class MemberDocument extends BaseMongoDocument {
   @Prop({ default: "" }) avatarUrl!: string;
   @Prop({ required: true }) role!: MemberRole;
   @Prop({ default: MEMBER_PRESENCE.offline }) status!: string;
+  @Prop({ index: true }) authIdentityId?: string;
+  @Prop({ index: true }) githubId?: number;
   @Prop() lastLoginAt?: Date;
 }
 
 export const MemberSchema = SchemaFactory.createForClass(MemberDocument);
 MemberSchema.index({ workspaceId: 1, email: 1 }, { unique: true });
+MemberSchema.index(
+  { workspaceId: 1, authIdentityId: 1 },
+  {
+    unique: true,
+    partialFilterExpression: { authIdentityId: { $type: "string" } },
+  },
+);
 export type MemberHydratedDocument = HydratedDocument<MemberDocument>;
