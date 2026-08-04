@@ -2,21 +2,34 @@
 
 Tasks Dash never assumes a fixed project key. The accepted key prefix is always read from the project already configured in MongoDB.
 
+## Link a repository to a project
+
+Users do not enter `repositoryFullName` manually.
+
+After the GitHub App is installed, Tasks Dash loads the repositories available to that installation from GitHub. In the project screen, the user selects one repository. The browser sends only the numeric `repositoryId`.
+
+The backend then:
+
+1. reloads the repositories available to the workspace's GitHub App installation;
+2. verifies that the selected `repositoryId` is present;
+3. reads the canonical GitHub `full_name`, such as `acme/application`;
+4. saves that canonical value on the project;
+5. rejects the link when the same repository is already linked to another project in the workspace.
+
+This means a renamed repository is stored using the name currently returned by GitHub, not a user-entered value.
+
+## Webhook matching
+
 The webhook resolves links in this order:
 
 1. Find the workspace from the connected GitHub App `installation.id`.
 2. Read `repository.full_name` from the webhook.
-3. Find the Tasks Dash project whose `repositoryFullName` matches that repository.
+3. Find the Tasks Dash project linked to that repository.
 4. Read that project's stored `key`.
 5. Match only `<CONFIGURED_PROJECT_KEY>-<NUMBER>`.
 6. Confirm that the Work Item exists in the same workspace before saving GitHub data.
 
-For example, suppose a project is configured as:
-
-```text
-Project key: ALPHA
-Repository: acme/application
-```
+For example, suppose a project has key `ALPHA` and the user linked GitHub repository `acme/application` from the repository selector.
 
 Accepted values include:
 
@@ -41,7 +54,7 @@ The `pull_request` webhook searches:
 - PR body;
 - source branch name.
 
-A PR can link more than one Work Item, but every detected key must use the configured key of the project mapped to that repository.
+A PR can link more than one Work Item, but every detected key must use the configured key of the project linked to that repository.
 
 Example for a project configured with key `ALPHA`:
 
@@ -78,16 +91,10 @@ The `pull_request_review` webhook updates the detailed review status for each Wo
 No link is created when:
 
 - the GitHub App installation is not connected;
-- the webhook repository is not mapped to a Tasks Dash project;
-- the key prefix differs from the mapped project's configured `key`;
+- the selected repository ID is not available to the installation;
+- the webhook repository has not been linked to a Tasks Dash project;
+- the key prefix differs from the linked project's configured `key`;
 - the matching Work Item does not exist in the workspace.
-
-A project must therefore have both values configured correctly:
-
-```text
-key: the prefix used by Work Items, such as ALPHA
-repositoryFullName: the GitHub repository, such as acme/application
-```
 
 ## Stored GitHub data
 
@@ -140,16 +147,21 @@ CI includes tests proving that:
 
 1. A project configured as `ALPHA` links `ALPHA-2` and ignores `LCSP-1` and `ABC-7` in the same PR payload.
 2. A project configured as `FARM` links `FARM-9` from the branch and `FARM-10` from a commit message, while ignoring `LCSP-1`.
-3. A repository not mapped to any project creates no Work Item link.
+3. A repository not linked to any project creates no Work Item link.
+4. Linking a repository stores the canonical `full_name` returned by GitHub for the selected repository ID.
+5. A repository ID outside the installation is rejected.
+6. A repository already linked to another project is rejected.
 
 ## Production verification matrix
 
 For any configured project, substitute its actual key for `<PROJECT_KEY>`:
 
-1. Open a PR titled `<PROJECT_KEY>-1 add login` and confirm task 1 is linked.
-2. Open a PR from branch `feature/<PROJECT_KEY>-2-login` with no key in title/body and confirm task 2 is linked.
-3. Push commit `<PROJECT_KEY>-3 validate token` from a branch without a key and confirm task 3 is linked.
-4. Push any commit from branch `fix/<PROJECT_KEY>-4-timeout` and confirm task 4 is linked.
-5. Mention a different prefix in the same repository and confirm it is ignored.
-6. Mark a linked PR as draft, ready for review, approved, changes requested, merged, and closed; confirm the status changes in the task.
-7. Redeliver the same webhook and confirm no duplicate delivery processing or duplicate PR/commit record appears.
+1. Install the GitHub App and open the project screen.
+2. Select a repository from the GitHub repository list and confirm its canonical `owner/repository` name appears on the project.
+3. Open a PR titled `<PROJECT_KEY>-1 add login` and confirm task 1 is linked.
+4. Open a PR from branch `feature/<PROJECT_KEY>-2-login` with no key in title/body and confirm task 2 is linked.
+5. Push commit `<PROJECT_KEY>-3 validate token` from a branch without a key and confirm task 3 is linked.
+6. Push any commit from branch `fix/<PROJECT_KEY>-4-timeout` and confirm task 4 is linked.
+7. Mention a different prefix in the same repository and confirm it is ignored.
+8. Mark a linked PR as draft, ready for review, approved, changes requested, merged, and closed; confirm the status changes in the task.
+9. Redeliver the same webhook and confirm no duplicate delivery processing or duplicate PR/commit record appears.
