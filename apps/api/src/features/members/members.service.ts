@@ -1,0 +1,378 @@
+import {
+  BadRequestException,
+  ConflictException,
+  ForbiddenException,
+  Injectable,
+  NotFoundException,
+  UnauthorizedException,
+} from "@nestjs/common";
+import { ConfigService } from "@nestjs/config";
+import { InjectConnection, InjectModel } from "@nestjs/mongoose";
+import { Connection, isValidObjectId, Model } from "mongoose";
+import { createHash, randomBytes, randomUUID, timingSafeEqual } from "node:crypto";
+import {
+  MemberRole,
+  MEMBER_INVITATION_STATUSES,
+  MEMBER_PRESENCE,
+  MEMBER_ROLES,
+} from "@tasks-dash/contracts";
+import { BootstrapWorkspaceDto, InviteWorkspaceMemberDto } from "./members.dto";
+import { InvitationMailerService } from "./invitation-mailer.service";
+import { MemberDocument, MemberHydratedDocument } from "./member.schema";
+import {
+  WorkspaceInvitationDocument,
+  WorkspaceInvitationHydratedDocument,
+} from "./workspace-invitation.schema";
+import { WorkspaceDocument, WorkspaceHydratedDocument } from "./workspace.schema";
+
+interface InvitationProfile {
+  name: string;
+  avatarUrl: string;
+}
+
+@Injectable()
+export class MembersService {
+  constructor(
+    private readonly config: ConfigService,
+    private readonly mailer: InvitationMailerService,
+    @InjectConnection() private readonly connection: Connection,
+    @InjectModel(MemberDocument.name)
+    private readonly members: Model<MemberHydratedDocument>,
+    @InjectModel(WorkspaceInvitationDocument.name)
+    private readonly invitations: Model<WorkspaceInvitationHydratedDocument>,
+    @InjectModel(WorkspaceDocument.name)
+    private readonly workspaces: Model<WorkspaceHydratedDocument>,
+  ) {}
+
+  private normalizeEmail(email: string): string {
+    return email.trim().toLowerCase();
+  }
+
+  private tokenHash(token: string): string {
+    return createHash("sha256").update(token).digest("hex");
+  }
+
+  private inviteExpiry(): Date {
+    const hours = this.config.get<number>("INVITE_TTL_HOURS", 72);
+    return new Date(Date.now() + hours * 60 * 60 * 1000);
+  }
+
+  private async workspaceName(workspaceId: string): Promise<string> {
+    const workspace = await this.workspaces.findOne({ workspaceId }).lean().exec();
+    return workspace?.name ?? `Workspace ${workspaceId}`;
+  }
+
+  async list(workspaceId: string): Promise<Record<string, unknown>> {
+    await this.invitations.updateMany(
+      {
+        workspaceId,
+        status: MEMBER_INVITATION_STATUSES.pending,
+        expiresAt: { $lte: new Date() },
+      },
+      { status: MEMBER_INVITATION_STATUSES.expired },
+    );
+    const [workspace, members, invitations] = await Promise.all([
+      this.workspaces.findOne({ workspaceId }).lean().exec(),
+      this.members.find({ workspaceId }).sort({ role: 1, name: 1 }).lean().exec(),
+      this.invitations
+        .find({ workspaceId })
+        .select({ tokenHash: 0 })
+        .sort({ createdAt: -1 })
+        .lean()
+        .exec(),
+    ]);
+    return {
+      workspace: workspace ?? { workspaceId, name: `Workspace ${workspaceId}` },
+      members,
+      invitations,
+    };
+  }
+
+  async bootstrap(
+    providedSecret: string | undefined,
+    dto: BootstrapWorkspaceDto,
+  ): Promise<Record<string, unknown>> {
+    const expected = Buffer.from(
+      this.config.getOrThrow<string>("WORKSPACE_BOOTSTRAP_SECRET"),
+    );
+    const actual = Buffer.from(providedSecret ?? "");
+    if (
+      expected.length !== actual.length ||
+      !timingSafeEqual(expected, actual)
+    ) {
+      throw new UnauthorizedException("Invalid workspace bootstrap secret.");
+    }
+    const email = this.normalizeEmail(dto.ownerEmail);
+    const slugBase =
+      dto.workspaceSlug ??
+      dto.workspaceName
+        .toLowerCase()
+        .replace(/[^a-z0-9]+/g, "-")
+        .replace(/^-|-$/g, "")
+        .slice(0, 42);
+    if (!slugBase) throw new BadRequestException("Workspace slug is invalid.");
+    const slug = `${slugBase}-${randomBytes(3).toString("hex")}`;
+    const workspaceId = `ws_${randomUUID().replaceAll("-", "")}`;
+    await this.workspaces.create({
+      workspaceId,
+      name: dto.workspaceName.trim(),
+      slug,
+      createdByEmail: email,
+    });
+    const invitation = await this.createInvitation(
+      workspaceId,
+      email,
+      MEMBER_ROLES.owner,
+      undefined,
+    );
+    return {
+      workspaceId,
+      workspaceName: dto.workspaceName.trim(),
+      invitationId: String(invitation._id),
+      ownerEmail: email,
+      expiresAt: invitation.expiresAt,
+    };
+  }
+
+  async invite(
+    workspaceId: string,
+    invitedByMemberId: string,
+    dto: InviteWorkspaceMemberDto,
+  ): Promise<Record<string, unknown>> {
+    const email = this.normalizeEmail(dto.email);
+    if (await this.members.exists({ workspaceId, email })) {
+      throw new ConflictException("This email is already a workspace member.");
+    }
+    const invitation = await this.createInvitation(
+      workspaceId,
+      email,
+      dto.role,
+      invitedByMemberId,
+    );
+    return this.publicInvitation(invitation);
+  }
+
+  private async createInvitation(
+    workspaceId: string,
+    email: string,
+    role: MemberRole,
+    invitedByMemberId: string | undefined,
+  ): Promise<WorkspaceInvitationHydratedDocument> {
+    await this.invitations.updateMany(
+      {
+        workspaceId,
+        email,
+        status: MEMBER_INVITATION_STATUSES.pending,
+      },
+      {
+        status: MEMBER_INVITATION_STATUSES.revoked,
+        revokedAt: new Date(),
+      },
+    );
+    const token = randomBytes(32).toString("base64url");
+    const invitation = await this.invitations.create({
+      workspaceId,
+      email,
+      role,
+      tokenHash: this.tokenHash(token),
+      status: MEMBER_INVITATION_STATUSES.pending,
+      expiresAt: this.inviteExpiry(),
+      invitedByMemberId,
+    });
+    const inviteUrl = `${this.config
+      .getOrThrow<string>("WEB_APP_URL")
+      .replace(/\/$/, "")}/invite?token=${encodeURIComponent(token)}`;
+    await this.mailer.send({
+      email,
+      workspaceName: await this.workspaceName(workspaceId),
+      role,
+      inviteUrl,
+    });
+    invitation.lastSentAt = new Date();
+    await invitation.save();
+    return invitation;
+  }
+
+  async resend(
+    workspaceId: string,
+    invitationId: string,
+  ): Promise<Record<string, unknown>> {
+    const invitation = await this.invitationById(workspaceId, invitationId);
+    if (invitation.status === MEMBER_INVITATION_STATUSES.accepted) {
+      throw new ConflictException("Accepted invitations cannot be resent.");
+    }
+    const replacement = await this.createInvitation(
+      workspaceId,
+      invitation.email,
+      invitation.role,
+      invitation.invitedByMemberId,
+    );
+    return this.publicInvitation(replacement);
+  }
+
+  async revoke(workspaceId: string, invitationId: string): Promise<void> {
+    const invitation = await this.invitationById(workspaceId, invitationId);
+    if (invitation.status === MEMBER_INVITATION_STATUSES.accepted) {
+      throw new ConflictException("Accepted invitations cannot be revoked.");
+    }
+    invitation.status = MEMBER_INVITATION_STATUSES.revoked;
+    invitation.revokedAt = new Date();
+    await invitation.save();
+  }
+
+  async acceptInvitation(
+    rawToken: string,
+    emailInput: string,
+    profile: InvitationProfile,
+  ): Promise<MemberHydratedDocument> {
+    const email = this.normalizeEmail(emailInput);
+    const hash = this.tokenHash(rawToken);
+    let acceptedMember: MemberHydratedDocument | null = null;
+
+    await this.connection.transaction(async (session) => {
+      const invitation = await this.invitations
+        .findOne({
+          tokenHash: hash,
+          status: MEMBER_INVITATION_STATUSES.pending,
+          expiresAt: { $gt: new Date() },
+        })
+        .session(session)
+        .exec();
+      if (!invitation) {
+        throw new UnauthorizedException(
+          "A valid workspace invitation is required before GitHub login.",
+        );
+      }
+      if (invitation.email !== email) {
+        throw new ForbiddenException(
+          "The verified GitHub email does not match this invitation.",
+        );
+      }
+      const existing = await this.members
+        .findOne({ workspaceId: invitation.workspaceId, email })
+        .session(session)
+        .exec();
+      if (existing) {
+        acceptedMember = existing;
+      } else {
+        const created = await this.members.create(
+          [
+            {
+              workspaceId: invitation.workspaceId,
+              name: profile.name,
+              email,
+              avatarUrl: profile.avatarUrl,
+              role: invitation.role,
+              status: MEMBER_PRESENCE.online,
+              lastLoginAt: new Date(),
+            },
+          ],
+          { session },
+        );
+        acceptedMember = created[0];
+      }
+      invitation.status = MEMBER_INVITATION_STATUSES.accepted;
+      invitation.acceptedByMemberId = String(acceptedMember._id);
+      invitation.acceptedAt = new Date();
+      await invitation.save({ session });
+    });
+
+    if (!acceptedMember) {
+      throw new UnauthorizedException("Workspace invitation acceptance failed.");
+    }
+    return acceptedMember;
+  }
+
+  findMemberById(
+    workspaceId: string,
+    memberId: string,
+  ): Promise<MemberHydratedDocument | null> {
+    if (!isValidObjectId(memberId)) return Promise.resolve(null);
+    return this.members.findOne({ _id: memberId, workspaceId }).exec();
+  }
+
+  async touchLogin(member: MemberHydratedDocument, profile: InvitationProfile): Promise<void> {
+    member.name = profile.name;
+    member.avatarUrl = profile.avatarUrl;
+    member.status = MEMBER_PRESENCE.online;
+    member.lastLoginAt = new Date();
+    await member.save();
+  }
+
+  async updateRole(
+    workspaceId: string,
+    actorMemberId: string,
+    memberId: string,
+    role: MemberRole,
+  ): Promise<MemberHydratedDocument> {
+    const member = await this.memberById(workspaceId, memberId);
+    if (member.role === MEMBER_ROLES.owner && role !== MEMBER_ROLES.owner) {
+      const owners = await this.members.countDocuments({
+        workspaceId,
+        role: MEMBER_ROLES.owner,
+      });
+      if (owners <= 1) throw new ConflictException("The workspace must keep at least one owner.");
+    }
+    if (memberId === actorMemberId && role === MEMBER_ROLES.viewer) {
+      throw new ConflictException("You cannot change yourself to viewer.");
+    }
+    member.role = role;
+    await member.save();
+    return member;
+  }
+
+  async removeMember(
+    workspaceId: string,
+    actorMemberId: string,
+    memberId: string,
+  ): Promise<void> {
+    if (memberId === actorMemberId) {
+      throw new ConflictException("You cannot remove yourself from the workspace.");
+    }
+    const member = await this.memberById(workspaceId, memberId);
+    if (member.role === MEMBER_ROLES.owner) {
+      const owners = await this.members.countDocuments({
+        workspaceId,
+        role: MEMBER_ROLES.owner,
+      });
+      if (owners <= 1) throw new ConflictException("The workspace must keep at least one owner.");
+    }
+    await this.members.deleteOne({ _id: member._id, workspaceId }).exec();
+  }
+
+  private async memberById(
+    workspaceId: string,
+    memberId: string,
+  ): Promise<MemberHydratedDocument> {
+    const member = await this.findMemberById(workspaceId, memberId);
+    if (!member) throw new NotFoundException("Workspace member was not found.");
+    return member;
+  }
+
+  private async invitationById(
+    workspaceId: string,
+    invitationId: string,
+  ): Promise<WorkspaceInvitationHydratedDocument> {
+    if (!isValidObjectId(invitationId)) {
+      throw new BadRequestException("Invalid invitation id.");
+    }
+    const invitation = await this.invitations
+      .findOne({ _id: invitationId, workspaceId })
+      .exec();
+    if (!invitation) throw new NotFoundException("Workspace invitation was not found.");
+    return invitation;
+  }
+
+  private publicInvitation(
+    invitation: WorkspaceInvitationDocument & { _id?: unknown },
+  ): Record<string, unknown> {
+    return {
+      id: String(invitation._id),
+      email: invitation.email,
+      role: invitation.role,
+      status: invitation.status,
+      expiresAt: invitation.expiresAt,
+      lastSentAt: invitation.lastSentAt ?? null,
+    };
+  }
+}

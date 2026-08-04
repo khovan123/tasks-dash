@@ -6,6 +6,7 @@ import { AuthSession } from "../../common/auth-context";
 
 export const SESSION_COOKIE = "tasks_dash_session";
 export const OAUTH_STATE_COOKIE = "tasks_dash_oauth_state";
+export const INVITATION_COOKIE = "tasks_dash_invitation";
 const SESSION_DURATION_SECONDS = 60 * 60 * 24 * 7;
 
 export function parseCookies(header: string | undefined): Record<string, string> {

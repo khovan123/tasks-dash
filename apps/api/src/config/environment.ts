@@ -4,6 +4,9 @@ const REQUIRED_KEYS = [
   "API_PUBLIC_URL",
   "SESSION_SECRET",
   "INTEGRATION_ENCRYPTION_KEY",
+  "WORKSPACE_BOOTSTRAP_SECRET",
+  "RESEND_API_KEY",
+  "INVITE_EMAIL_FROM",
   "GITHUB_OAUTH_CLIENT_ID",
   "GITHUB_OAUTH_CLIENT_SECRET",
   "GITHUB_OAUTH_CALLBACK_URL",
@@ -50,6 +53,7 @@ export function validateEnvironment(input: Record<string, unknown>): Record<stri
   numberValue("API_PORT", 4000);
   numberValue("MONGODB_MIN_POOL_SIZE", 2);
   numberValue("MONGODB_MAX_POOL_SIZE", 20);
+  numberValue("INVITE_TTL_HOURS", 72);
 
   if (config.NODE_ENV === "test") return config;
 
@@ -67,6 +71,11 @@ export function validateEnvironment(input: Record<string, unknown>): Record<stri
 
   const sessionSecret = requiredString(config, "SESSION_SECRET");
   if (sessionSecret.length < 32) throw new Error("SESSION_SECRET must contain at least 32 characters.");
+
+  const bootstrapSecret = requiredString(config, "WORKSPACE_BOOTSTRAP_SECRET");
+  if (bootstrapSecret.length < 32) {
+    throw new Error("WORKSPACE_BOOTSTRAP_SECRET must contain at least 32 characters.");
+  }
 
   const encryptionKey = Buffer.from(requiredString(config, "INTEGRATION_ENCRYPTION_KEY"), "base64");
   if (encryptionKey.length !== 32) {

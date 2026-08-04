@@ -25,12 +25,15 @@ interface Project {
   totalItems: number;
   completedItems: number;
   openPrItems: number;
-  members: Member[];
 }
 interface Dashboard {
   projects: Project[];
   members: Member[];
-  dailyActivity: Array<{ _id: { projectKey: string; day: string }; created: number; completed: number }>;
+  dailyActivity: Array<{
+    _id: { projectKey: string; day: string };
+    created: number;
+    completed: number;
+  }>;
 }
 
 export default async function HomePage() {
@@ -43,17 +46,20 @@ export default async function HomePage() {
       <main className="auth-page">
         <section className="auth-card">
           <div className="brand-mark">TD</div>
-          <span className="eyebrow">PRODUCTION WORKSPACE</span>
+          <span className="eyebrow">INVITE-ONLY WORKSPACE</span>
           <h1>Tasks Dash</h1>
-          <p>Đăng nhập bằng GitHub để tạo workspace thật. Không có seed data hoặc tài khoản demo.</p>
-          <a className="primary link-button" href={`${browserApi.replace(/\/$/, "")}/auth/github/login`}>Đăng nhập với GitHub</a>
-          <small>Phiên đăng nhập được lưu trong cookie HttpOnly và workspace được lấy từ session phía server.</small>
+          <p>Chỉ email đã được mời vào workspace mới có thể liên kết tài khoản GitHub. Người dùng mới đăng nhập OAuth không có invite sẽ bị chặn.</p>
+          <a className="primary link-button" href={`${browserApi.replace(/\/$/, "")}/auth/github/login`}>Đăng nhập thành viên hiện tại</a>
+          <small>Thành viên mới phải mở link invitation được gửi qua email.</small>
         </section>
       </main>
     );
   }
 
-  const sessionPayload = await sessionResponse.json() as { ok: true; data: Session };
+  const sessionPayload = (await sessionResponse.json()) as {
+    ok: true;
+    data: Session;
+  };
   const session = sessionPayload.data;
   const dashboard = await apiData<Dashboard>("/dashboard/overview");
 
@@ -61,14 +67,19 @@ export default async function HomePage() {
     <main className="app-page">
       <header className="topbar">
         <div><span className="eyebrow">TASKS DASH</span><strong>Production workspace</strong></div>
-        <nav><Link href="/">Tổng quan</Link><Link href="/settings/integrations">Tích hợp</Link><LogoutButton /></nav>
+        <nav>
+          <Link href="/">Tổng quan</Link>
+          <Link href="/workspace/members">Thành viên ({dashboard.members.length})</Link>
+          <Link href="/settings/integrations">Tích hợp</Link>
+          <LogoutButton />
+        </nav>
       </header>
 
       <section className="hero-panel">
         <div>
           <span className="eyebrow">WORKSPACE {session.workspaceId}</span>
           <h1>Xin chào, {session.name || session.login}</h1>
-          <p>Dữ liệu dưới đây được đọc trực tiếp từ MongoDB thông qua API đã xác thực.</p>
+          <p>Thành viên được quản lý ở cấp workspace; project dùng chung danh sách này cho lead và assignee.</p>
         </div>
         <img className="profile-avatar" src={session.avatarUrl} alt="" />
       </section>
@@ -77,7 +88,7 @@ export default async function HomePage() {
         <section className="empty-state">
           <span className="eyebrow">EMPTY WORKSPACE</span>
           <h2>Chưa có dự án</h2>
-          <p>Đây là trạng thái thật của workspace mới. Tạo dự án đầu tiên và kết nối GitHub App, Drive, Discord.</p>
+          <p>Tạo dự án đầu tiên, sau đó thêm work item, Designer Catalog và automation.</p>
           <Link className="secondary link-button" href="/settings/integrations">Cấu hình tích hợp</Link>
         </section>
       ) : (

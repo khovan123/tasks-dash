@@ -8,7 +8,7 @@ import {
 import { ConfigService } from "@nestjs/config";
 import { Reflector } from "@nestjs/core";
 import { InjectModel } from "@nestjs/mongoose";
-import { HydratedDocument, Model } from "mongoose";
+import { Model } from "mongoose";
 import type { Request } from "express";
 import { MemberRole, MEMBER_ROLES } from "@tasks-dash/contracts";
 import {
@@ -16,7 +16,10 @@ import {
   PUBLIC_ROUTE_KEY,
   REQUIRED_ROLES_KEY,
 } from "../../common/auth-context";
-import { MemberDocument } from "../members/members.module";
+import {
+  MemberDocument,
+  MemberHydratedDocument,
+} from "../members/member.schema";
 import { SessionService } from "./session.service";
 
 @Injectable()
@@ -26,7 +29,7 @@ export class SessionAuthGuard implements CanActivate {
     private readonly sessions: SessionService,
     private readonly config: ConfigService,
     @InjectModel(MemberDocument.name)
-    private readonly members: Model<HydratedDocument<MemberDocument>>,
+    private readonly members: Model<MemberHydratedDocument>,
   ) {}
 
   async canActivate(context: ExecutionContext): Promise<boolean> {
