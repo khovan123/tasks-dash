@@ -4,8 +4,8 @@ import {
   type GithubWorkItemView,
 } from "@/components/github-work-item-links";
 import {
-  GithubRepositoryOption,
   RepositoryLinkForm,
+  type GithubRepositoryOption,
 } from "@/components/repository-link-form";
 import { WorkItemCreateForm } from "@/components/work-item-create-form";
 import { apiData } from "@/lib/server/api-data";
