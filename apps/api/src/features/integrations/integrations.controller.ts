@@ -1,4 +1,5 @@
 import {
+  BadRequestException,
   Body,
   Controller,
   Delete,
@@ -12,8 +13,11 @@ import {
   Req,
   Res,
   UnauthorizedException,
+  UploadedFile,
+  UseInterceptors,
 } from "@nestjs/common";
 import { ConfigService } from "@nestjs/config";
+import { FileInterceptor } from "@nestjs/platform-express";
 import type { Request, Response } from "express";
 import { MEMBER_ROLES } from "@tasks-dash/contracts";
 import {
@@ -30,12 +34,24 @@ import {
   IntegrationStateService,
 } from "./github-app.service";
 import { GithubWebhookService } from "./github-webhook.service";
-import { GoogleDriveAdapter } from "./google-drive.adapter";
+import {
+  GoogleDriveAdapter,
+  UploadedDriveFile,
+} from "./google-drive.adapter";
 import {
   ConnectDiscordDto,
+  CreateDriveFolderDto,
   DiscordMessageDto,
   LinkGithubRepositoryDto,
+  RenameDriveItemDto,
 } from "./integration.schemas";
+
+const DRIVE_EDITOR_ROLES = [
+  MEMBER_ROLES.owner,
+  MEMBER_ROLES.admin,
+  MEMBER_ROLES.projectLead,
+  MEMBER_ROLES.member,
+] as const;
 
 @Controller("integrations")
 export class IntegrationsController {
@@ -154,12 +170,16 @@ export class IntegrationsController {
   }
 
   @Get("google-drive/connect")
-  @RequireRoles(MEMBER_ROLES.owner, MEMBER_ROLES.admin)
+  @RequireRoles(MEMBER_ROLES.owner)
   @Redirect()
   async driveConnect(
     @WorkspaceId() workspaceId: string,
+    @CurrentSession() session: AuthSession,
   ): Promise<{ url: string; statusCode: number }> {
-    return { url: await this.drive.connectUrl(workspaceId), statusCode: 302 };
+    return {
+      url: await this.drive.connectUrl(workspaceId, session.userId),
+      statusCode: 302,
+    };
   }
 
   @PublicRoute()
@@ -186,6 +206,64 @@ export class IntegrationsController {
     @Param("projectKey") projectKey: string,
   ): Promise<Record<string, unknown>> {
     return this.drive.listTree(workspaceId, projectKey);
+  }
+
+  @Post("google-drive/projects/:projectKey/folders")
+  @RequireRoles(...DRIVE_EDITOR_ROLES)
+  createDriveFolder(
+    @WorkspaceId() workspaceId: string,
+    @Param("projectKey") projectKey: string,
+    @Body() body: CreateDriveFolderDto,
+  ): Promise<Record<string, unknown>> {
+    return this.drive.createFolder(
+      workspaceId,
+      projectKey,
+      body.name,
+      body.parentId,
+    );
+  }
+
+  @Patch("google-drive/projects/:projectKey/items/:fileId")
+  @RequireRoles(...DRIVE_EDITOR_ROLES)
+  renameDriveItem(
+    @WorkspaceId() workspaceId: string,
+    @Param("projectKey") projectKey: string,
+    @Param("fileId") fileId: string,
+    @Body() body: RenameDriveItemDto,
+  ): Promise<Record<string, unknown>> {
+    return this.drive.renameItem(
+      workspaceId,
+      projectKey,
+      fileId,
+      body.name,
+    );
+  }
+
+  @Delete("google-drive/projects/:projectKey/items/:fileId")
+  @RequireRoles(...DRIVE_EDITOR_ROLES)
+  async deleteDriveItem(
+    @WorkspaceId() workspaceId: string,
+    @Param("projectKey") projectKey: string,
+    @Param("fileId") fileId: string,
+  ): Promise<void> {
+    await this.drive.deleteItem(workspaceId, projectKey, fileId);
+  }
+
+  @Post("google-drive/projects/:projectKey/upload")
+  @RequireRoles(...DRIVE_EDITOR_ROLES)
+  @UseInterceptors(
+    FileInterceptor("file", {
+      limits: { files: 1, fileSize: 25 * 1024 * 1024 },
+    }),
+  )
+  uploadDriveFile(
+    @WorkspaceId() workspaceId: string,
+    @Param("projectKey") projectKey: string,
+    @UploadedFile() file: UploadedDriveFile | undefined,
+    @Body("parentId") parentId?: string,
+  ): Promise<Record<string, unknown>> {
+    if (!file) throw new BadRequestException("File is required.");
+    return this.drive.uploadFile(workspaceId, projectKey, file, parentId);
   }
 
   @Get("discord/status")
