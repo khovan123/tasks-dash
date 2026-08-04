@@ -13,8 +13,8 @@ import { CredentialEncryptionService } from "../../common/security/credential-en
 import {
   PROJECT_CREATED_EVENT,
   ProjectCreatedEvent,
+  ProjectsService,
 } from "../projects/projects.service";
-import { ProjectsService } from "../projects/projects.service";
 import {
   ConfigureDiscordWorkspaceDto,
   ConnectDiscordDto,
@@ -141,7 +141,10 @@ export class DiscordAdapter {
       headers.set("content-type", "application/json");
     }
     if (auditReason) {
-      headers.set("x-audit-log-reason", encodeURIComponent(auditReason).slice(0, 512));
+      headers.set(
+        "x-audit-log-reason",
+        encodeURIComponent(auditReason).slice(0, 512),
+      );
     }
 
     const request = () =>
@@ -184,10 +187,12 @@ export class DiscordAdapter {
 
   async workspaceStatus(workspaceId: string): Promise<Record<string, unknown>> {
     const integration = await this.workspaces.findOne({ workspaceId }).exec();
+    const botConfigured = Boolean(
+      this.config.get<string>("DISCORD_APPLICATION_ID") &&
+        this.config.get<string>("DISCORD_BOT_TOKEN"),
+    );
     return {
-      botConfigured: Boolean(
-        this.config.get<string>("DISCORD_APPLICATION_ID") &&
-          this.config.get<string>("DISCORD_BOT_TOKEN"),
+      botConfigured,
       configured: Boolean(integration),
       guildId: integration?.guildId ?? null,
       guildName: integration?.guildName ?? null,
@@ -198,7 +203,7 @@ export class DiscordAdapter {
       enabled: integration?.enabled ?? false,
       lastProvisionedAt: integration?.lastProvisionedAt ?? null,
       lastError: integration?.lastError ?? null,
-      installUrl: this.installUrl(),
+      installUrl: botConfigured ? this.installUrl() : null,
     };
   }
 
@@ -234,22 +239,27 @@ export class DiscordAdapter {
       );
     }
 
+    const setValues: Record<string, unknown> = {
+      workspaceId,
+      guildId: guild.id,
+      guildName: guild.name,
+      channelNameTemplate,
+      enabled: true,
+      configuredAt: new Date(),
+    };
+    const unsetValues: Record<string, 1> = { lastError: 1 };
+    if (category) {
+      setValues.categoryId = category.id;
+      setValues.categoryName = category.name;
+    } else {
+      unsetValues.categoryId = 1;
+      unsetValues.categoryName = 1;
+    }
+
     const integration = await this.workspaces
       .findOneAndUpdate(
         { workspaceId },
-        {
-          $set: {
-            workspaceId,
-            guildId: guild.id,
-            guildName: guild.name,
-            categoryId: category?.id,
-            categoryName: category?.name,
-            channelNameTemplate,
-            enabled: true,
-            configuredAt: new Date(),
-          },
-          $unset: { lastError: 1 },
-        },
+        { $set: setValues, $unset: unsetValues },
         { upsert: true, new: true, setDefaultsOnInsert: true },
       )
       .exec();
@@ -302,7 +312,19 @@ export class DiscordAdapter {
     const existing = await this.integrations
       .findOne({ workspaceId, projectKey: project.key })
       .exec();
-    if (existing?.enabled) return this.statusOf(existing);
+    if (
+      existing?.enabled &&
+      (existing.provisionedBy === "MANUAL" ||
+        existing.guildId === workspace.guildId)
+    ) {
+      await this.events.emitAsync(DISCORD_PROJECT_PROVISIONED_EVENT, {
+        workspaceId,
+        projectKey: project.key,
+        guildId: existing.guildId ?? workspace.guildId,
+        channelId: existing.channelId,
+      } satisfies DiscordProjectProvisionedEvent);
+      return this.statusOf(existing);
+    }
 
     try {
       const channels = await this.botRequest<DiscordChannel[]>(
