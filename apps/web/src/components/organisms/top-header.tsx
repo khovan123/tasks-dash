@@ -1,0 +1,3 @@
+import { CalendarDays, Command, Plus } from "lucide-react";
+import { Button } from "@/components/atoms/button";
+export function TopHeader({ title, subtitle }: { title: string; subtitle: string }) { return <header className="sticky top-0 z-20 flex h-16 items-center justify-between border-b bg-white/95 px-7 backdrop-blur"><div><h1 className="text-lg font-bold">{title}</h1><p className="text-xs text-slate-500">{subtitle}</p></div><div className="flex items-center gap-3"><div className="hidden items-center gap-2 rounded-md border px-3 py-2 text-xs text-slate-500 md:flex"><Command size={14}/>K</div><Button variant="secondary" size="sm"><CalendarDays size={15}/>This sprint</Button><Button size="sm"><Plus size={15}/>Create</Button></div></header>; }

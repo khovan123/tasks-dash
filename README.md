@@ -1,50 +1,60 @@
 # Tasks Dash
 
-Tasks Dash là giao diện quản lý đa dự án theo mô hình Jira, được thiết kế để tập trung tiến độ, work item, sprint, board, tài liệu và hoạt động phát triển phần mềm vào một workspace.
+A Jira-inspired multi-project management dashboard with configurable workflows, work items, modules, sprints, boards, project documentation, members, automation rules, and GitHub/Discord/Google Drive integration adapters.
 
-## Chức năng đã triển khai
+## Stack
 
-- Dashboard tổng quan đa dự án, progress, trạng thái rủi ro và thành viên hiện tại.
-- Sidebar liệt kê toàn bộ dự án; mỗi dự án có project key duy nhất như `STK`, `FWM`, `SSW`.
-- Work item theo metadata kiểu Jira: type, status, priority, assignee, story point, sprint, module, due date, PR.
-- Module hoạt động như Epic: gom work item và theo dõi tiến độ theo nhóm chức năng.
-- Board kéo-thả, sprint hiện tại, backlog và danh sách sprint.
-- Workflow/automation builder với trigger, condition và action.
-- Liên kết GitHub repository, pull request, Google Drive folder và Discord channel theo dự án.
-- Docs explorer mô phỏng cây thư mục Google Drive đã filter theo từng dự án.
-- Báo cáo throughput, completion rate, velocity, workload và pull request.
-- Quản lý thành viên và vai trò workspace.
-- Tạo project, work item và mời thành viên; dữ liệu demo được lưu bằng `localStorage`.
-- Giao diện responsive cho desktop, tablet và mobile.
+- **Web:** Next.js, React, Tailwind CSS, shadcn-style primitives, Atomic Design, feature-based modules
+- **API:** NestJS, CQRS, dependency injection, Clean Architecture boundaries, DDD-oriented domain models, cron/webhook/workflow jobs
+- **Database:** MongoDB via Mongoose
+- **Contracts:** shared canonical constants, DTOs, and success/problem envelopes
 
-## Chạy dự án
+## Implemented MVP
 
-Đây là static web app không cần build:
+- Portfolio overview with progress, activity, member presence, project health, and daily work-item statistics
+- Sidebar containing every project and Jira-style project keys
+- Project overview, backlog, sprint board, configurable workflow builder, docs explorer, members, and automation screens
+- Work item types: Module, Story, Task, Bug, Sub-task
+- Jira-like metadata: status, priority, labels, sprint, module, reporter, assignee, dates, points, linked GitHub PR
+- GitHub webhook ingestion and PR/work-item key linking
+- Discord webhook notification adapter
+- Google Drive project-root/folder tree adapter
+- Scheduled automation runner and event-driven automation rule model
+- MongoDB seed endpoint for local/demo data
+
+## Start locally
 
 ```bash
-python3 -m http.server 8080
+cp .env.example .env
+npm install
+docker compose up -d mongodb
+npm run dev
 ```
 
-Mở `http://localhost:8080`.
+Open `http://localhost:3000`. API Swagger is at `http://localhost:4000/api/docs`.
 
-Có thể dùng extension Live Server hoặc deploy trực tiếp lên GitHub Pages, Netlify, Vercel.
+Seed demo database:
 
-## Tích hợp thật
+```bash
+curl -X POST http://localhost:4000/api/demo/seed
+```
 
-Giao diện đã chuẩn bị sẵn vị trí và trạng thái kết nối. Để đồng bộ dữ liệu thật cần bổ sung backend hoặc serverless API cho:
+## Integration setup
 
-1. **GitHub App/OAuth**: repository, issue, pull request, webhook.
-2. **Google OAuth + Drive API**: folder picker, folder tree và file permissions.
-3. **Discord webhook/bot**: gửi thông báo theo automation.
-4. **Database**: lưu workspace, role, project, workflow, sprint và work item.
-5. **Job/automation worker**: xử lý trigger theo lịch và webhook.
+The UI remains usable in demo mode. For live connections, configure the environment variables in `.env` and register the corresponding callback/webhook URLs:
 
-## Cấu trúc
+- GitHub webhook: `POST /api/integrations/github/webhook`
+- Google Drive callback: `GET /api/integrations/google-drive/callback`
+- Discord: use `DISCORD_WEBHOOK_URL`
+
+## Architecture
 
 ```text
-.
-├── index.html    # Toàn bộ screen và modal
-├── styles.css    # Design system, layout và responsive
-├── app.js        # Dữ liệu, navigation, CRUD demo, drag/drop, filter
-└── README.md
+apps/
+  api/   NestJS feature modules, CQRS handlers, domain and infrastructure boundaries
+  web/   Next.js App Router, Atomic Design components, feature modules, BFF helpers
+packages/
+  contracts/ canonical shared values and API contracts
 ```
+
+See `docs/ARCHITECTURE.md`, `docs/DATA_MODEL.md`, and `docs/INTEGRATIONS.md`.
