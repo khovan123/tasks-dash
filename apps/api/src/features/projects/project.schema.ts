@@ -12,6 +12,9 @@ export class ProjectDocument extends BaseMongoDocument {
   @Prop() leadId?: string;
   @Prop({ trim: true }) repositoryFullName?: string;
   @Prop() driveRootFolderId?: string;
+  @Prop() driveRootFolderName?: string;
+  @Prop() driveRootWebViewLink?: string;
+  @Prop() driveProvisionedAt?: Date;
   @Prop() workflowId?: string;
   @Prop() activeSprintId?: string;
   @Prop({ default: 0 }) sequence!: number;
@@ -26,6 +29,15 @@ ProjectSchema.index(
     unique: true,
     partialFilterExpression: {
       repositoryFullName: { $type: "string" },
+    },
+  },
+);
+ProjectSchema.index(
+  { workspaceId: 1, driveRootFolderId: 1 },
+  {
+    unique: true,
+    partialFilterExpression: {
+      driveRootFolderId: { $type: "string" },
     },
   },
 );

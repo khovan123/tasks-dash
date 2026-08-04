@@ -3,6 +3,7 @@ import {
   Injectable,
   NotFoundException,
 } from "@nestjs/common";
+import { EventEmitter2 } from "@nestjs/event-emitter";
 import { InjectModel } from "@nestjs/mongoose";
 import { Model } from "mongoose";
 import { Project } from "./project.domain";
@@ -12,11 +13,18 @@ import {
 } from "./project.schema";
 import { CreateProjectDto } from "./projects.dto";
 
+export const PROJECT_CREATED_EVENT = "projects.created";
+export interface ProjectCreatedEvent {
+  workspaceId: string;
+  projectKey: string;
+}
+
 @Injectable()
 export class ProjectsService {
   constructor(
     @InjectModel(ProjectDocument.name)
     private readonly projects: Model<ProjectHydratedDocument>,
+    private readonly events: EventEmitter2,
   ) {}
 
   async create(
@@ -33,7 +41,17 @@ export class ProjectsService {
     if (exists) {
       throw new ConflictException(`Project key ${project.key} already exists.`);
     }
-    return this.projects.create(project);
+    const created = await this.projects.create(project);
+    try {
+      await this.events.emitAsync(PROJECT_CREATED_EVENT, {
+        workspaceId,
+        projectKey: created.key,
+      } satisfies ProjectCreatedEvent);
+    } catch {
+      // Project creation must remain durable when Drive is temporarily unavailable.
+      // The Docs screen retries provisioning through ensureProjectFolder().
+    }
+    return created;
   }
 
   list(workspaceId: string): Promise<ProjectHydratedDocument[]> {
@@ -79,6 +97,30 @@ export class ProjectsService {
   ): Promise<ProjectHydratedDocument> {
     const project = await this.getByKey(workspaceId, projectKey);
     project.repositoryFullName = undefined;
+    await project.save();
+    return project;
+  }
+
+  async linkDriveFolder(
+    workspaceId: string,
+    projectKey: string,
+    folder: { id: string; name: string; webViewLink?: string },
+  ): Promise<ProjectHydratedDocument> {
+    const project = await this.getByKey(workspaceId, projectKey);
+    const linkedElsewhere = await this.projects.exists({
+      workspaceId,
+      driveRootFolderId: folder.id,
+      _id: { $ne: project._id },
+    });
+    if (linkedElsewhere) {
+      throw new ConflictException(
+        "The managed Google Drive folder is already assigned to another project.",
+      );
+    }
+    project.driveRootFolderId = folder.id;
+    project.driveRootFolderName = folder.name;
+    project.driveRootWebViewLink = folder.webViewLink;
+    project.driveProvisionedAt = new Date();
     await project.save();
     return project;
   }
