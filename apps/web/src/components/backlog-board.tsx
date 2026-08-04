@@ -2,6 +2,10 @@
 
 import type { DragEvent } from "react";
 import { useState } from "react";
+import {
+  GithubWorkItemLinks,
+  type GithubWorkItemView,
+} from "@/components/github-work-item-links";
 import { apiRequest } from "@/lib/api/api-request";
 
 interface BacklogItem {
@@ -11,6 +15,7 @@ interface BacklogItem {
   priority: string;
   statusId: string;
   rank: number;
+  github?: GithubWorkItemView;
 }
 
 export function BacklogBoard({
@@ -91,7 +96,11 @@ export function BacklogBoard({
               onDrop={(event) => drop(event, index)}
             >
               <span className="drag-handle" aria-hidden="true">⋮⋮</span>
-              <div className="backlog-main"><strong>{item.key} · {item.summary}</strong><span>{item.type} · {item.priority} · {statusNames[item.statusId] ?? item.statusId}</span></div>
+              <div className="backlog-main">
+                <strong>{item.key} · {item.summary}</strong>
+                <span>{item.type} · {item.priority} · {statusNames[item.statusId] ?? item.statusId}</span>
+                <GithubWorkItemLinks github={item.github} compact />
+              </div>
               <div className="backlog-actions">
                 <button className="ghost compact" type="button" disabled={index === 0 || saving} onClick={() => move(item.key, index - 1)}>↑</button>
                 <button className="ghost compact" type="button" disabled={index === items.length - 1 || saving} onClick={() => move(item.key, index + 1)}>↓</button>
