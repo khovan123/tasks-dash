@@ -20,8 +20,8 @@ import {
 import { CredentialEncryptionService } from "../../common/security/credential-encryption.service";
 import { MembersService } from "../members/members.service";
 import {
-  AuthUserDocument,
-  AuthUserHydratedDocument,
+  AuthIdentityDocument,
+  AuthIdentityHydratedDocument,
 } from "./auth.schemas";
 import {
   expiresAt,
@@ -57,8 +57,8 @@ export class AuthController {
     private readonly githubTokens: GithubUserTokenService,
     private readonly encryption: CredentialEncryptionService,
     private readonly members: MembersService,
-    @InjectModel(AuthUserDocument.name)
-    private readonly users: Model<AuthUserHydratedDocument>,
+    @InjectModel(AuthIdentityDocument.name)
+    private readonly identities: Model<AuthIdentityHydratedDocument>,
   ) {}
 
   @PublicRoute()
@@ -105,8 +105,7 @@ export class AuthController {
     @Res() response: Response,
   ): Promise<void> {
     const cookies = parseCookies(request.headers.cookie);
-    const cookieState = cookies[OAUTH_STATE_COOKIE];
-    const expected = Buffer.from(cookieState ?? "");
+    const expected = Buffer.from(cookies[OAUTH_STATE_COOKIE] ?? "");
     const actual = Buffer.from(state ?? "");
     if (
       !code ||
@@ -155,29 +154,8 @@ export class AuthController {
       name: githubUser.name ?? githubUser.login,
       avatarUrl: githubUser.avatar_url,
     };
-    const existing = await this.users.findOne({ githubId: githubUser.id }).exec();
-    let member = existing
-      ? await this.members.findMemberById(existing.workspaceId, existing.memberId)
-      : null;
 
-    if (!member) {
-      const invitationToken = cookies[INVITATION_COOKIE];
-      if (!invitationToken) {
-        throw new UnauthorizedException(
-          "A workspace invitation is required before GitHub login.",
-        );
-      }
-      member = await this.members.acceptInvitation(
-        invitationToken,
-        normalizedEmail,
-        profile,
-      );
-    } else {
-      await this.members.touchLogin(member, profile);
-    }
-    response.clearCookie(INVITATION_COOKIE, this.sessions.cookieOptions());
-
-    const user = await this.users
+    const identity = await this.identities
       .findOneAndUpdate(
         { githubId: githubUser.id },
         {
@@ -187,8 +165,6 @@ export class AuthController {
             name: profile.name,
             email: normalizedEmail,
             avatarUrl: profile.avatarUrl,
-            workspaceId: member.workspaceId,
-            memberId: String(member._id),
             encryptedGithubAccessToken: this.encryption.encrypt(
               token.access_token!,
             ),
@@ -209,18 +185,55 @@ export class AuthController {
         { upsert: true, new: true, setDefaultsOnInsert: true },
       )
       .exec();
+    const identityId = String(identity._id);
 
-    const sessionToken = this.sessions.sign({
-      userId: String(member._id),
-      githubId: user.githubId,
-      login: user.login,
-      name: user.name,
-      avatarUrl: user.avatarUrl,
-      workspaceId: user.workspaceId,
-    });
+    await this.members.linkIdentityToExistingMemberships(
+      identityId,
+      githubUser.id,
+      normalizedEmail,
+    );
+
+    const invitationToken = cookies[INVITATION_COOKIE];
+    const member = invitationToken
+      ? await this.members.acceptInvitation(
+          invitationToken,
+          normalizedEmail,
+          profile,
+          identityId,
+          githubUser.id,
+        )
+      : await this.members.resolveLoginMembership(
+          identityId,
+          identity.lastWorkspaceId,
+        );
+
+    if (!member) {
+      throw new UnauthorizedException(
+        "A workspace invitation is required before GitHub login.",
+      );
+    }
+    if (!invitationToken) {
+      await this.members.touchLogin(member, profile);
+    }
+    response.clearCookie(INVITATION_COOKIE, this.sessions.cookieOptions());
+
+    identity.lastWorkspaceId = member.workspaceId;
+    await identity.save();
+
+    const memberId = String(member._id);
     response.cookie(
       SESSION_COOKIE,
-      sessionToken,
+      this.sessions.sign({
+        identityId,
+        memberId,
+        userId: memberId,
+        githubId: identity.githubId,
+        login: identity.login,
+        name: identity.name,
+        email: identity.email,
+        avatarUrl: identity.avatarUrl,
+        workspaceId: member.workspaceId,
+      }),
       this.sessions.cookieOptions(),
     );
     response.redirect(this.config.getOrThrow<string>("WEB_APP_URL"));

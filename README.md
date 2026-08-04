@@ -1,21 +1,36 @@
 # Tasks Dash
 
-Tasks Dash is a production-oriented multi-project delivery workspace built with Next.js, NestJS, MongoDB, GitHub Apps, Google Drive OAuth, Discord webhooks, and invite-only workspace access.
+Tasks Dash is a production-oriented multi-project delivery workspace built with Next.js, NestJS, MongoDB, GitHub Apps, Google Drive OAuth, Discord webhooks, invite-only access, and multi-workspace membership per GitHub account.
 
 The repository does not ship dashboard mock JSON, demo seed routes, integration demo mode, or client-controlled workspace IDs.
 
 ## Current capabilities
 
-- Invite-only GitHub OAuth: a new user cannot create or link an account until a one-time email invitation has been issued.
+- One GitHub identity can belong to multiple workspaces with a separate member record and role in each workspace.
+- Invite-only GitHub OAuth: a new identity cannot access any workspace until a one-time email invitation has been accepted.
+- Workspace selector, server-validated switching, and Owner-created additional workspaces.
 - Workspace-level member management with invitation queue, resend, revoke, role update, and member removal.
 - Owner bootstrap through a secret-protected API that creates and emails the first Owner invitation.
 - GitHub App installation tokens, raw-body webhook verification, delivery idempotency, and PR/work-item linking.
-- Google Drive read-only OAuth and project folder trees.
+- Owner-managed Google Drive OAuth using `drive.file`, one application-managed workspace root, and one folder per project.
 - Per-project encrypted Discord webhooks and event/scheduled automation rules.
 - Projects, workflows, sprints, Modules, Stories, Tasks, Bugs, Sub-tasks, and Jira-style project keys.
 - Work-item Figma component links and document links, each supporting multiple optional entries.
 - Project Designer Catalog for Figma files, pages, components, and FigJam boards.
 - Persistent backlog ranking with drag-and-drop and accessible up/down controls.
+
+## Multi-workspace identity model
+
+```text
+GitHub identity
+├── Workspace A membership · OWNER
+├── Workspace B membership · ADMIN
+└── Workspace C membership · MEMBER
+```
+
+The OAuth identity and encrypted GitHub user tokens are stored once. Every workspace membership has its own member ID and role. Switching workspace signs a new HttpOnly session containing the selected `workspaceId` and `memberId`; project data and integrations remain isolated by workspace.
+
+Owners can create another workspace at `/workspaces`. Existing GitHub identities can accept invitations to additional workspaces with the same verified GitHub email.
 
 ## Architecture
 
@@ -31,7 +46,7 @@ GitHub Pages publishes only a static product page. The authenticated application
 
 ## First workspace bootstrap
 
-All new OAuth users require an invitation, including the first Owner. After deploying the API and configuring email delivery, create the first workspace invitation:
+All new OAuth identities require an invitation, including the first Owner. After deploying the API and configuring email delivery, create the first workspace invitation:
 
 ```bash
 curl -X POST https://api.example.com/api/workspace/bootstrap \
@@ -46,7 +61,7 @@ curl -X POST https://api.example.com/api/workspace/bootstrap \
 
 The API sends a one-time invitation email. The Owner must open that link and sign in with a GitHub account whose verified email exactly matches `ownerEmail`.
 
-After login, workspace invitations are managed at `/workspace/members`.
+After login, workspace invitations are managed at `/workspace/members`, and workspace creation/switching is managed at `/workspaces`.
 
 ## Development
 
@@ -58,12 +73,13 @@ docker compose up -d mongodb
 npm run dev
 ```
 
-There is no seed command. A newly bootstrapped workspace starts empty.
+There is no seed command. A newly created workspace starts empty.
 
 ## Build
 
 ```bash
 npm run typecheck
+npm test
 npm run build
 ```
 

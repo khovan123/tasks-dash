@@ -1,15 +1,18 @@
 import { Prop, Schema, SchemaFactory } from "@nestjs/mongoose";
 import { HydratedDocument } from "mongoose";
 
-@Schema({ collection: "auth_users", timestamps: true })
-export class AuthUserDocument {
+/**
+ * One record per GitHub account. Workspace membership is stored separately in
+ * the members collection so one identity can belong to many workspaces.
+ */
+@Schema({ collection: "auth_identities", timestamps: true })
+export class AuthIdentityDocument {
   @Prop({ required: true, unique: true, index: true }) githubId!: number;
   @Prop({ required: true }) login!: string;
   @Prop({ required: true }) name!: string;
-  @Prop({ required: true }) email!: string;
+  @Prop({ required: true, lowercase: true, trim: true, index: true }) email!: string;
   @Prop({ default: "" }) avatarUrl!: string;
-  @Prop({ required: true, index: true }) workspaceId!: string;
-  @Prop({ required: true, unique: true, index: true }) memberId!: string;
+  @Prop() lastWorkspaceId?: string;
   @Prop({ required: true }) encryptedGithubAccessToken!: string;
   @Prop() encryptedGithubRefreshToken?: string;
   @Prop() githubAccessTokenExpiresAt?: Date;
@@ -17,5 +20,8 @@ export class AuthUserDocument {
   @Prop() lastLoginAt?: Date;
 }
 
-export const AuthUserSchema = SchemaFactory.createForClass(AuthUserDocument);
-export type AuthUserHydratedDocument = HydratedDocument<AuthUserDocument>;
+export const AuthIdentitySchema = SchemaFactory.createForClass(
+  AuthIdentityDocument,
+);
+export type AuthIdentityHydratedDocument =
+  HydratedDocument<AuthIdentityDocument>;
