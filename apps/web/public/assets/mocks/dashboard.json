@@ -1,0 +1,526 @@
+{
+  "projects": [
+    {
+      "key": "TD",
+      "name": "Tasks Dash",
+      "description": "Multi-project delivery platform",
+      "color": "#4f46e5",
+      "health": "ON_TRACK",
+      "repositoryFullName": "khovan123/tasks-dash",
+      "driveRootFolderId": "drive-td",
+      "progress": 56,
+      "completedItems": 5,
+      "totalItems": 9,
+      "openPrItems": 3,
+      "activeSprint": "Sprint 1",
+      "memberIds": [
+        "u-minh",
+        "u-an",
+        "u-linh"
+      ]
+    },
+    {
+      "key": "SK",
+      "name": "StayKey",
+      "description": "Homestay operations platform",
+      "color": "#0f766e",
+      "health": "AT_RISK",
+      "repositoryFullName": "khovan123/staykey",
+      "driveRootFolderId": "drive-sk",
+      "progress": 40,
+      "completedItems": 2,
+      "totalItems": 5,
+      "openPrItems": 2,
+      "activeSprint": "MVP Sprint",
+      "memberIds": [
+        "u-minh",
+        "u-an"
+      ]
+    },
+    {
+      "key": "FW",
+      "name": "FarmWatch",
+      "description": "Farm simulation game",
+      "color": "#65a30d",
+      "health": "ON_TRACK",
+      "repositoryFullName": "khovan123/farmwatch",
+      "driveRootFolderId": "drive-fw",
+      "progress": 50,
+      "completedItems": 2,
+      "totalItems": 4,
+      "openPrItems": 1,
+      "activeSprint": "Demo 20/07",
+      "memberIds": [
+        "u-minh",
+        "u-linh"
+      ]
+    }
+  ],
+  "members": [
+    {
+      "id": "u-minh",
+      "name": "Minh Phan",
+      "email": "minh@example.com",
+      "avatarUrl": "https://api.dicebear.com/9.x/initials/svg?seed=MP",
+      "role": "OWNER",
+      "status": "ONLINE",
+      "projectKeys": [
+        "TD",
+        "SK",
+        "FW"
+      ]
+    },
+    {
+      "id": "u-an",
+      "name": "An Nguyen",
+      "email": "an@example.com",
+      "avatarUrl": "https://api.dicebear.com/9.x/initials/svg?seed=AN",
+      "role": "PROJECT_LEAD",
+      "status": "ONLINE",
+      "projectKeys": [
+        "TD",
+        "SK"
+      ]
+    },
+    {
+      "id": "u-linh",
+      "name": "Linh Tran",
+      "email": "linh@example.com",
+      "avatarUrl": "https://api.dicebear.com/9.x/initials/svg?seed=LT",
+      "role": "MEMBER",
+      "status": "AWAY",
+      "projectKeys": [
+        "TD",
+        "FW"
+      ]
+    }
+  ],
+  "statuses": [
+    {
+      "id": "backlog",
+      "name": "Backlog",
+      "category": "TO_DO",
+      "color": "#64748b",
+      "order": 0
+    },
+    {
+      "id": "todo",
+      "name": "To do",
+      "category": "TO_DO",
+      "color": "#3b82f6",
+      "order": 1
+    },
+    {
+      "id": "progress",
+      "name": "In progress",
+      "category": "IN_PROGRESS",
+      "color": "#f59e0b",
+      "order": 2
+    },
+    {
+      "id": "review",
+      "name": "Code review",
+      "category": "IN_PROGRESS",
+      "color": "#8b5cf6",
+      "order": 3
+    },
+    {
+      "id": "done",
+      "name": "Done",
+      "category": "DONE",
+      "color": "#22c55e",
+      "order": 4
+    }
+  ],
+  "workItems": [
+    {
+      "id": "td1",
+      "key": "TD-1",
+      "projectKey": "TD",
+      "type": "MODULE",
+      "summary": "Portfolio & project foundation",
+      "description": "Project shell and navigation",
+      "statusId": "done",
+      "priority": "HIGH",
+      "assigneeId": "u-an",
+      "reporterId": "u-minh",
+      "moduleId": null,
+      "parentId": null,
+      "sprintId": "td-s1",
+      "labels": [
+        "platform"
+      ],
+      "storyPoints": 8,
+      "dueDate": null,
+      "githubPullRequest": null
+    },
+    {
+      "id": "td2",
+      "key": "TD-2",
+      "projectKey": "TD",
+      "type": "STORY",
+      "summary": "Render multi-project overview",
+      "description": "Project progress and members",
+      "statusId": "done",
+      "priority": "HIGH",
+      "assigneeId": "u-linh",
+      "reporterId": "u-minh",
+      "moduleId": "td1",
+      "parentId": null,
+      "sprintId": "td-s1",
+      "labels": [
+        "dashboard"
+      ],
+      "storyPoints": 5,
+      "dueDate": null,
+      "githubPullRequest": {
+        "number": 12,
+        "url": "#",
+        "state": "MERGED"
+      }
+    },
+    {
+      "id": "td3",
+      "key": "TD-3",
+      "projectKey": "TD",
+      "type": "TASK",
+      "summary": "Create configurable workflow builder",
+      "description": "Status and transition editor",
+      "statusId": "progress",
+      "priority": "HIGH",
+      "assigneeId": "u-an",
+      "reporterId": "u-minh",
+      "moduleId": "td1",
+      "parentId": null,
+      "sprintId": "td-s1",
+      "labels": [
+        "workflow"
+      ],
+      "storyPoints": 8,
+      "dueDate": "2026-08-10",
+      "githubPullRequest": {
+        "number": 18,
+        "url": "#",
+        "state": "OPEN"
+      }
+    },
+    {
+      "id": "td4",
+      "key": "TD-4",
+      "projectKey": "TD",
+      "type": "TASK",
+      "summary": "Link Google Drive folder tree",
+      "description": "Project-filtered Drive docs",
+      "statusId": "review",
+      "priority": "MEDIUM",
+      "assigneeId": "u-linh",
+      "reporterId": "u-minh",
+      "moduleId": "td1",
+      "parentId": null,
+      "sprintId": "td-s1",
+      "labels": [
+        "drive"
+      ],
+      "storyPoints": 5,
+      "dueDate": null,
+      "githubPullRequest": {
+        "number": 21,
+        "url": "#",
+        "state": "OPEN"
+      }
+    },
+    {
+      "id": "td5",
+      "key": "TD-5",
+      "projectKey": "TD",
+      "type": "BUG",
+      "summary": "PR counters do not refresh after merge",
+      "description": "Webhook aggregation issue",
+      "statusId": "todo",
+      "priority": "HIGHEST",
+      "assigneeId": "u-an",
+      "reporterId": "u-minh",
+      "moduleId": null,
+      "parentId": null,
+      "sprintId": "td-s1",
+      "labels": [
+        "github",
+        "bug"
+      ],
+      "storyPoints": 3,
+      "dueDate": null,
+      "githubPullRequest": {
+        "number": 24,
+        "url": "#",
+        "state": "OPEN"
+      }
+    },
+    {
+      "id": "td6",
+      "key": "TD-6",
+      "projectKey": "TD",
+      "type": "STORY",
+      "summary": "Add Discord automation actions",
+      "description": "Send project events to Discord",
+      "statusId": "backlog",
+      "priority": "MEDIUM",
+      "assigneeId": null,
+      "reporterId": "u-minh",
+      "moduleId": null,
+      "parentId": null,
+      "sprintId": null,
+      "labels": [
+        "discord"
+      ],
+      "storyPoints": 5,
+      "dueDate": null,
+      "githubPullRequest": null
+    },
+    {
+      "id": "sk1",
+      "key": "SK-1",
+      "projectKey": "SK",
+      "type": "MODULE",
+      "summary": "Revenue dashboard",
+      "description": "Revenue reporting",
+      "statusId": "done",
+      "priority": "HIGH",
+      "assigneeId": "u-an",
+      "reporterId": "u-minh",
+      "moduleId": null,
+      "parentId": null,
+      "sprintId": "sk-s1",
+      "labels": [
+        "revenue"
+      ],
+      "storyPoints": 8,
+      "dueDate": null,
+      "githubPullRequest": null
+    },
+    {
+      "id": "sk2",
+      "key": "SK-2",
+      "projectKey": "SK",
+      "type": "STORY",
+      "summary": "Track paid and unpaid revenue",
+      "description": "Split revenue recognition",
+      "statusId": "progress",
+      "priority": "HIGH",
+      "assigneeId": "u-an",
+      "reporterId": "u-minh",
+      "moduleId": "sk1",
+      "parentId": null,
+      "sprintId": "sk-s1",
+      "labels": [
+        "finance"
+      ],
+      "storyPoints": 5,
+      "dueDate": null,
+      "githubPullRequest": {
+        "number": 7,
+        "url": "#",
+        "state": "OPEN"
+      }
+    },
+    {
+      "id": "sk3",
+      "key": "SK-3",
+      "projectKey": "SK",
+      "type": "TASK",
+      "summary": "Add owner portfolio filters",
+      "description": "Property and source filters",
+      "statusId": "todo",
+      "priority": "MEDIUM",
+      "assigneeId": "u-minh",
+      "reporterId": "u-minh",
+      "moduleId": "sk1",
+      "parentId": null,
+      "sprintId": "sk-s1",
+      "labels": [
+        "filters"
+      ],
+      "storyPoints": 3,
+      "dueDate": null,
+      "githubPullRequest": null
+    },
+    {
+      "id": "fw1",
+      "key": "FW-1",
+      "projectKey": "FW",
+      "type": "MODULE",
+      "summary": "Core farming loop",
+      "description": "Main farming gameplay",
+      "statusId": "done",
+      "priority": "HIGH",
+      "assigneeId": "u-minh",
+      "reporterId": "u-minh",
+      "moduleId": null,
+      "parentId": null,
+      "sprintId": "fw-s1",
+      "labels": [
+        "gameplay"
+      ],
+      "storyPoints": 13,
+      "dueDate": null,
+      "githubPullRequest": null
+    },
+    {
+      "id": "fw2",
+      "key": "FW-2",
+      "projectKey": "FW",
+      "type": "STORY",
+      "summary": "Weather care flow",
+      "description": "Weather-aware care",
+      "statusId": "progress",
+      "priority": "HIGH",
+      "assigneeId": "u-linh",
+      "reporterId": "u-minh",
+      "moduleId": "fw1",
+      "parentId": null,
+      "sprintId": "fw-s1",
+      "labels": [
+        "weather"
+      ],
+      "storyPoints": 8,
+      "dueDate": null,
+      "githubPullRequest": {
+        "number": 4,
+        "url": "#",
+        "state": "OPEN"
+      }
+    },
+    {
+      "id": "fw3",
+      "key": "FW-3",
+      "projectKey": "FW",
+      "type": "TASK",
+      "summary": "Disease cure success flow",
+      "description": "Complete missing use case",
+      "statusId": "todo",
+      "priority": "HIGH",
+      "assigneeId": "u-linh",
+      "reporterId": "u-minh",
+      "moduleId": "fw1",
+      "parentId": null,
+      "sprintId": "fw-s1",
+      "labels": [
+        "disease"
+      ],
+      "storyPoints": 5,
+      "dueDate": null,
+      "githubPullRequest": null
+    }
+  ],
+  "sprints": [
+    {
+      "id": "td-s1",
+      "projectKey": "TD",
+      "name": "Sprint 1",
+      "goal": "Deliver the management dashboard MVP",
+      "state": "ACTIVE",
+      "startDate": "2026-07-28",
+      "endDate": "2026-08-11",
+      "capacity": 40
+    },
+    {
+      "id": "sk-s1",
+      "projectKey": "SK",
+      "name": "MVP Sprint",
+      "goal": "Ship owner revenue reporting",
+      "state": "ACTIVE",
+      "startDate": "2026-07-28",
+      "endDate": "2026-08-08",
+      "capacity": 28
+    },
+    {
+      "id": "fw-s1",
+      "projectKey": "FW",
+      "name": "Demo 20/07",
+      "goal": "Close missing demo mechanics",
+      "state": "COMPLETED",
+      "startDate": "2026-07-10",
+      "endDate": "2026-07-20",
+      "capacity": 26
+    }
+  ],
+  "automations": [
+    {
+      "id": "a1",
+      "projectKey": "TD",
+      "name": "Notify Discord when PR is opened",
+      "enabled": true,
+      "trigger": "PULL_REQUEST_OPENED",
+      "executionMode": "EVENT",
+      "runCount": 18,
+      "actions": [
+        {
+          "type": "NOTIFY_DISCORD",
+          "config": {
+            "message": "New pull request opened"
+          }
+        }
+      ]
+    },
+    {
+      "id": "a2",
+      "projectKey": "TD",
+      "name": "Move item to review when PR opens",
+      "enabled": true,
+      "trigger": "PULL_REQUEST_OPENED",
+      "executionMode": "EVENT",
+      "runCount": 11,
+      "actions": [
+        {
+          "type": "TRANSITION_WORK_ITEM",
+          "config": {
+            "statusId": "review"
+          }
+        }
+      ]
+    }
+  ],
+  "dailyActivity": [
+    {
+      "day": "Mon",
+      "TD": 3,
+      "SK": 2,
+      "FW": 1
+    },
+    {
+      "day": "Tue",
+      "TD": 5,
+      "SK": 1,
+      "FW": 2
+    },
+    {
+      "day": "Wed",
+      "TD": 4,
+      "SK": 3,
+      "FW": 3
+    },
+    {
+      "day": "Thu",
+      "TD": 7,
+      "SK": 4,
+      "FW": 2
+    },
+    {
+      "day": "Fri",
+      "TD": 6,
+      "SK": 2,
+      "FW": 4
+    },
+    {
+      "day": "Sat",
+      "TD": 2,
+      "SK": 1,
+      "FW": 1
+    },
+    {
+      "day": "Sun",
+      "TD": 4,
+      "SK": 2,
+      "FW": 2
+    }
+  ]
+}

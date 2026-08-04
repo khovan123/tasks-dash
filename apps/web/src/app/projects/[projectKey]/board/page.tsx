@@ -1,0 +1,4 @@
+import { ProjectShell } from "@/components/organisms/project-shell";
+import { KanbanBoard } from "@/components/organisms/kanban-board";
+import { projectData } from "@/features/demo/demo-data";
+export default async function BoardPage({ params }: { params: Promise<{ projectKey: string }> }) { const {projectKey}=await params; const {project,members,items,statuses,sprint}=projectData(projectKey); return <ProjectShell project={project} active="board"><div className="mb-5 flex items-end justify-between"><div><h2 className="text-xl font-bold">{sprint?.name ?? "Board"}</h2><p className="mt-1 text-sm text-slate-500">{sprint?.goal}</p></div><p className="text-sm text-slate-500">{items.length} work items</p></div><div className="overflow-x-auto pb-4"><KanbanBoard statuses={statuses} items={items} members={members}/></div></ProjectShell>; }
