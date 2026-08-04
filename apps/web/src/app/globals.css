@@ -51,6 +51,8 @@ dd { margin: 4px 0 0; font-size: 20px; font-weight: 800; }
 .form-grid { display: grid; grid-template-columns: repeat(2, 1fr); gap: 16px; }
 .form-grid label { display: flex; flex-direction: column; gap: 7px; color: #414b62; font-size: 13px; font-weight: 700; }
 .form-grid .wide { grid-column: 1 / -1; }
+.form-actions { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
+.form-actions .secondary { margin-top: 18px; }
 input, textarea, select { width: 100%; border: 1px solid var(--line); border-radius: 12px; background: rgba(255,255,255,.92); padding: 12px 13px; color: var(--text); outline: none; }
 textarea { min-height: 100px; resize: vertical; }
 input:focus, textarea:focus, select:focus { border-color: var(--primary); box-shadow: 0 0 0 3px rgba(98,86,245,.12); }
