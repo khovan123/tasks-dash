@@ -5,7 +5,11 @@
     "jsx": "preserve",
     "incremental": true,
     "plugins": [{ "name": "next" }],
-    "paths": { "@/*": ["./src/*"], "@tasks-dash/contracts": ["../../packages/contracts/src/index.ts"] },
+    "baseUrl": ".",
+    "paths": {
+      "@/*": ["./src/*"],
+      "@tasks-dash/contracts": ["../../packages/contracts/src/index.ts"]
+    },
     "noEmit": true
   },
   "include": ["next-env.d.ts", "**/*.ts", "**/*.tsx", ".next/types/**/*.ts"],
