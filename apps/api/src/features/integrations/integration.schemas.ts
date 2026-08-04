@@ -1,6 +1,7 @@
 import { Type } from "class-transformer";
 import {
   IsInt,
+  IsOptional,
   IsString,
   IsUrl,
   Matches,
@@ -51,8 +52,14 @@ DiscordIntegrationSchema.index(
 @Schema({ collection: "google_drive_integrations", timestamps: true })
 export class GoogleDriveIntegrationDocument extends BaseMongoDocument {
   @Prop({ required: true }) encryptedRefreshToken!: string;
-  @Prop({ required: true }) accountEmail!: string;
+  @Prop({ required: true, lowercase: true, trim: true }) accountEmail!: string;
+  @Prop({ required: true }) connectedByMemberId!: string;
+  @Prop({ required: true }) workspaceRootFolderId!: string;
+  @Prop({ required: true }) workspaceRootFolderName!: string;
+  @Prop({ required: true }) scope!: string;
   @Prop({ required: true }) connectedAt!: Date;
+  @Prop() synchronizedAt?: Date;
+  @Prop() lastError?: string;
 }
 export const GoogleDriveIntegrationSchema = SchemaFactory.createForClass(
   GoogleDriveIntegrationDocument,
@@ -63,6 +70,8 @@ GoogleDriveIntegrationSchema.index({ workspaceId: 1 }, { unique: true });
 export class IntegrationOauthStateDocument {
   @Prop({ required: true, unique: true, index: true }) state!: string;
   @Prop({ required: true }) workspaceId!: string;
+  @Prop() memberId?: string;
+  @Prop() provider?: string;
   @Prop({ required: true, expires: 0 }) expiresAt!: Date;
 }
 export const IntegrationOauthStateSchema = SchemaFactory.createForClass(
@@ -88,6 +97,25 @@ export class LinkGithubRepositoryDto {
   @IsInt()
   @Min(1)
   repositoryId!: number;
+}
+
+export class CreateDriveFolderDto {
+  @IsString()
+  @MinLength(1)
+  @MaxLength(180)
+  name!: string;
+
+  @IsString()
+  @MaxLength(256)
+  @IsOptional()
+  parentId?: string;
+}
+
+export class RenameDriveItemDto {
+  @IsString()
+  @MinLength(1)
+  @MaxLength(180)
+  name!: string;
 }
 
 export class ConnectDiscordDto {
