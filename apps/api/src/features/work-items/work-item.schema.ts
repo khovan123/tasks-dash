@@ -1,16 +1,56 @@
 import { Prop, Schema, SchemaFactory } from "@nestjs/mongoose";
 import { HydratedDocument } from "mongoose";
 import {
+  GithubLinkSource,
   GithubPullRequestState,
+  GithubPullRequestStatus,
+  GithubReviewState,
   Priority,
   WorkItemType,
 } from "@tasks-dash/contracts";
 import { BaseMongoDocument } from "../../common/base.schema";
 
 @Schema({ _id: false })
-export class GithubLinkDocument {
+export class GithubCommitLinkDocument {
+  @Prop({ required: true }) sha!: string;
+  @Prop({ default: "" }) message!: string;
+  @Prop() url?: string;
   @Prop() branch?: string;
-  @Prop({ type: [String], default: [] }) commitShas!: string[];
+  @Prop() committedAt?: Date;
+  @Prop({ type: [String], default: [] }) sources!: GithubLinkSource[];
+}
+
+@Schema({ _id: false })
+export class GithubPullRequestLinkDocument {
+  @Prop({ required: true }) number!: number;
+  @Prop({ required: true }) title!: string;
+  @Prop({ required: true }) url!: string;
+  @Prop({ required: true }) state!: GithubPullRequestState;
+  @Prop({ required: true }) status!: GithubPullRequestStatus;
+  @Prop({ default: false }) draft!: boolean;
+  @Prop({ default: "" }) headBranch!: string;
+  @Prop({ default: "" }) baseBranch!: string;
+  @Prop({ default: "" }) headSha!: string;
+  @Prop({ default: "" }) action!: string;
+  @Prop() reviewState?: GithubReviewState;
+  @Prop() authorLogin?: string;
+  @Prop() updatedAt?: Date;
+  @Prop() closedAt?: Date;
+  @Prop() mergedAt?: Date;
+  @Prop({ type: [String], default: [] }) sources!: GithubLinkSource[];
+}
+
+@Schema({ _id: false })
+export class GithubLinkDocument {
+  @Prop({ type: [String], default: [] }) branches!: string[];
+  @Prop({ type: [GithubCommitLinkDocument], default: [] })
+  commits!: GithubCommitLinkDocument[];
+  @Prop({ type: [GithubPullRequestLinkDocument], default: [] })
+  pullRequests!: GithubPullRequestLinkDocument[];
+
+  // Legacy fields are retained so existing MongoDB records remain readable.
+  @Prop() branch?: string;
+  @Prop({ type: [String], default: [] }) commitShas?: string[];
   @Prop() pullRequestNumber?: number;
   @Prop() pullRequestUrl?: string;
   @Prop() pullRequestState?: GithubPullRequestState;

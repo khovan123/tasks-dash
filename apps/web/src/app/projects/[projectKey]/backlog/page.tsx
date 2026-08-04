@@ -1,5 +1,6 @@
 import Link from "next/link";
 import { BacklogBoard } from "@/components/backlog-board";
+import type { GithubWorkItemView } from "@/components/github-work-item-links";
 import { apiData } from "@/lib/server/api-data";
 export const dynamic = "force-dynamic";
 
@@ -10,6 +11,7 @@ interface WorkItem {
   priority: string;
   statusId: string;
   rank: number;
+  github?: GithubWorkItemView;
 }
 interface Workflow {
   statuses: Array<{ id: string; name: string }>;

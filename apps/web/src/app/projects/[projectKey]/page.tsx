@@ -1,4 +1,8 @@
 import Link from "next/link";
+import {
+  GithubWorkItemLinks,
+  type GithubWorkItemView,
+} from "@/components/github-work-item-links";
 import { WorkItemCreateForm } from "@/components/work-item-create-form";
 import { apiData } from "@/lib/server/api-data";
 export const dynamic = "force-dynamic";
@@ -23,11 +27,7 @@ interface WorkItem {
   assigneeId?: string;
   figmaLinks: ExternalLink[];
   documentLinks: ExternalLink[];
-  github?: {
-    pullRequestNumber?: number;
-    pullRequestUrl?: string;
-    pullRequestState?: string;
-  };
+  github?: GithubWorkItemView;
 }
 interface WorkflowStatus {
   id: string;
@@ -104,7 +104,7 @@ export default async function ProjectPage({
               <thead>
                 <tr>
                   <th>Key</th><th>Summary</th><th>Type</th><th>Status</th>
-                  <th>Assignee</th><th>Figma</th><th>Docs</th><th>GitHub PR</th>
+                  <th>Assignee</th><th>Figma</th><th>Docs</th><th>GitHub</th>
                 </tr>
               </thead>
               <tbody>
@@ -117,7 +117,7 @@ export default async function ProjectPage({
                     <td>{item.assigneeId ? memberNames[item.assigneeId] ?? "Unknown member" : "—"}</td>
                     <td>{item.figmaLinks?.length ? <div className="inline-links">{item.figmaLinks.map((link, index) => <a key={`${link.url}-${index}`} href={link.url} target="_blank" rel="noreferrer">{link.label || `Figma ${index + 1}`}</a>)}</div> : "—"}</td>
                     <td>{item.documentLinks?.length ? <div className="inline-links">{item.documentLinks.map((link, index) => <a key={`${link.url}-${index}`} href={link.url} target="_blank" rel="noreferrer">{link.label || `Doc ${index + 1}`}</a>)}</div> : "—"}</td>
-                    <td>{item.github?.pullRequestUrl ? <a href={item.github.pullRequestUrl} target="_blank" rel="noreferrer">#{item.github.pullRequestNumber} · {item.github.pullRequestState}</a> : "—"}</td>
+                    <td><GithubWorkItemLinks github={item.github} /></td>
                   </tr>
                 ))}
               </tbody>

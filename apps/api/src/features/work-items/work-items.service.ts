@@ -7,11 +7,19 @@ import { InjectModel } from "@nestjs/mongoose";
 import { Model } from "mongoose";
 import {
   DEFAULT_WORKFLOW_STATUS_IDS,
+  GithubLinkSource,
+  GithubPullRequestState,
+  GithubPullRequestStatus,
+  GithubReviewState,
+  GITHUB_PR_STATUSES,
   WORKFLOW_CATEGORIES,
 } from "@tasks-dash/contracts";
 import { ProjectsService } from "../projects/projects.service";
 import { WorkflowsService } from "../workflows/workflows.controller";
 import {
+  GithubCommitLinkDocument,
+  GithubLinkDocument,
+  GithubPullRequestLinkDocument,
   WorkItemDocument,
   WorkItemHydratedDocument,
 } from "./work-item.schema";
@@ -19,6 +27,38 @@ import {
   CreateWorkItemDto,
   ReorderWorkItemsDto,
 } from "./work-items.dto";
+
+export interface GithubCommitLinkInput {
+  sha: string;
+  message: string;
+  url?: string;
+  branch?: string;
+  committedAt?: Date;
+  sources: GithubLinkSource[];
+}
+
+export interface GithubPullRequestLinkInput {
+  number: number;
+  title: string;
+  url: string;
+  state: GithubPullRequestState;
+  status?: GithubPullRequestStatus;
+  draft: boolean;
+  headBranch: string;
+  baseBranch: string;
+  headSha: string;
+  action: string;
+  reviewState?: GithubReviewState;
+  authorLogin?: string;
+  updatedAt?: Date;
+  closedAt?: Date;
+  mergedAt?: Date;
+  sources: GithubLinkSource[];
+}
+
+function uniqueValues<T extends string>(values: T[]): T[] {
+  return [...new Set(values.filter(Boolean))];
+}
 
 @Injectable()
 export class WorkItemsService {
@@ -226,17 +266,194 @@ export class WorkItemsService {
     return item;
   }
 
-  linkPullRequest(
+  async linkGithubCommits(
     workspaceId: string,
     key: string,
-    github: WorkItemDocument["github"],
-  ) {
-    return this.items
-      .findOneAndUpdate(
-        { workspaceId, key: key.toUpperCase() },
-        { github },
-        { new: true },
+    branch: string,
+    commits: GithubCommitLinkInput[],
+  ): Promise<WorkItemHydratedDocument | null> {
+    const item = await this.findOptional(workspaceId, key);
+    if (!item) return null;
+    const github = this.githubSnapshot(item);
+    github.branches = uniqueValues([
+      ...github.branches,
+      ...(branch ? [branch] : []),
+    ]);
+
+    for (const commit of commits) {
+      const index = github.commits.findIndex((entry) => entry.sha === commit.sha);
+      const existing = index >= 0 ? github.commits[index] : undefined;
+      const next: GithubCommitLinkDocument = {
+        sha: commit.sha,
+        message: commit.message || existing?.message || "",
+        url: commit.url ?? existing?.url,
+        branch: commit.branch ?? existing?.branch ?? branch,
+        committedAt: commit.committedAt ?? existing?.committedAt,
+        sources: uniqueValues([
+          ...(existing?.sources ?? []),
+          ...commit.sources,
+        ]),
+      };
+      if (index >= 0) github.commits[index] = next;
+      else github.commits.push(next);
+    }
+
+    github.commits = github.commits
+      .sort(
+        (left, right) =>
+          (right.committedAt?.getTime?.() ?? 0) -
+          (left.committedAt?.getTime?.() ?? 0),
       )
+      .slice(0, 100);
+    github.branch = branch || github.branch;
+    github.commitShas = uniqueValues([
+      ...(github.commitShas ?? []),
+      ...commits.map((commit) => commit.sha),
+    ]).slice(-100);
+    item.set("github", github);
+    await item.save();
+    return item;
+  }
+
+  async upsertGithubPullRequest(
+    workspaceId: string,
+    key: string,
+    input: GithubPullRequestLinkInput,
+  ): Promise<WorkItemHydratedDocument | null> {
+    const item = await this.findOptional(workspaceId, key);
+    if (!item) return null;
+    const github = this.githubSnapshot(item);
+    const index = github.pullRequests.findIndex(
+      (pullRequest) => pullRequest.number === input.number,
+    );
+    const existing = index >= 0 ? github.pullRequests[index] : undefined;
+    const defaultStatus =
+      input.state === "MERGED"
+        ? GITHUB_PR_STATUSES.merged
+        : input.state === "CLOSED"
+          ? GITHUB_PR_STATUSES.closed
+          : input.draft
+            ? GITHUB_PR_STATUSES.draft
+            : GITHUB_PR_STATUSES.open;
+    const next: GithubPullRequestLinkDocument = {
+      number: input.number,
+      title: input.title || existing?.title || `Pull request #${input.number}`,
+      url: input.url || existing?.url || "",
+      state: input.state,
+      status: input.status ?? existing?.status ?? defaultStatus,
+      draft: input.draft,
+      headBranch: input.headBranch || existing?.headBranch || "",
+      baseBranch: input.baseBranch || existing?.baseBranch || "",
+      headSha: input.headSha || existing?.headSha || "",
+      action: input.action || existing?.action || "",
+      reviewState: input.reviewState ?? existing?.reviewState,
+      authorLogin: input.authorLogin ?? existing?.authorLogin,
+      updatedAt: input.updatedAt ?? existing?.updatedAt,
+      closedAt: input.closedAt ?? existing?.closedAt,
+      mergedAt: input.mergedAt ?? existing?.mergedAt,
+      sources: uniqueValues([
+        ...(existing?.sources ?? []),
+        ...input.sources,
+      ]),
+    };
+    if (index >= 0) github.pullRequests[index] = next;
+    else github.pullRequests.push(next);
+    github.pullRequests = github.pullRequests
+      .sort((left, right) => right.number - left.number)
+      .slice(0, 20);
+    github.branches = uniqueValues([
+      ...github.branches,
+      ...(input.headBranch ? [input.headBranch] : []),
+    ]);
+    github.branch = input.headBranch || github.branch;
+    github.pullRequestNumber = input.number;
+    github.pullRequestUrl = input.url;
+    github.pullRequestState = input.state;
+    item.set("github", github);
+    await item.save();
+    return item;
+  }
+
+  private githubSnapshot(item: WorkItemHydratedDocument): GithubLinkDocument {
+    const current = item.github;
+    const commits = (current?.commits ?? []).map(
+      (commit): GithubCommitLinkDocument => ({
+        sha: commit.sha,
+        message: commit.message,
+        url: commit.url,
+        branch: commit.branch,
+        committedAt: commit.committedAt,
+        sources: [...(commit.sources ?? [])],
+      }),
+    );
+    const pullRequests = (current?.pullRequests ?? []).map(
+      (pullRequest): GithubPullRequestLinkDocument => ({
+        number: pullRequest.number,
+        title: pullRequest.title,
+        url: pullRequest.url,
+        state: pullRequest.state,
+        status: pullRequest.status,
+        draft: pullRequest.draft,
+        headBranch: pullRequest.headBranch,
+        baseBranch: pullRequest.baseBranch,
+        headSha: pullRequest.headSha,
+        action: pullRequest.action,
+        reviewState: pullRequest.reviewState,
+        authorLogin: pullRequest.authorLogin,
+        updatedAt: pullRequest.updatedAt,
+        closedAt: pullRequest.closedAt,
+        mergedAt: pullRequest.mergedAt,
+        sources: [...(pullRequest.sources ?? [])],
+      }),
+    );
+
+    if (
+      current?.pullRequestNumber &&
+      !pullRequests.some(
+        (pullRequest) => pullRequest.number === current.pullRequestNumber,
+      )
+    ) {
+      pullRequests.push({
+        number: current.pullRequestNumber,
+        title: `Pull request #${current.pullRequestNumber}`,
+        url: current.pullRequestUrl ?? "",
+        state: current.pullRequestState ?? "OPEN",
+        status:
+          current.pullRequestState === "MERGED"
+            ? GITHUB_PR_STATUSES.merged
+            : current.pullRequestState === "CLOSED"
+              ? GITHUB_PR_STATUSES.closed
+              : GITHUB_PR_STATUSES.open,
+        draft: false,
+        headBranch: current.branch ?? "",
+        baseBranch: "",
+        headSha: "",
+        action: "legacy",
+        sources: [],
+      });
+    }
+
+    return {
+      branches: uniqueValues([
+        ...(current?.branches ?? []),
+        ...(current?.branch ? [current.branch] : []),
+      ]),
+      commits,
+      pullRequests,
+      branch: current?.branch,
+      commitShas: [...(current?.commitShas ?? [])],
+      pullRequestNumber: current?.pullRequestNumber,
+      pullRequestUrl: current?.pullRequestUrl,
+      pullRequestState: current?.pullRequestState,
+    };
+  }
+
+  private findOptional(
+    workspaceId: string,
+    key: string,
+  ): Promise<WorkItemHydratedDocument | null> {
+    return this.items
+      .findOne({ workspaceId, key: key.toUpperCase() })
       .exec();
   }
 
@@ -244,9 +461,7 @@ export class WorkItemsService {
     workspaceId: string,
     key: string,
   ): Promise<WorkItemHydratedDocument> {
-    const item = await this.items
-      .findOne({ workspaceId, key: key.toUpperCase() })
-      .exec();
+    const item = await this.findOptional(workspaceId, key);
     if (!item) throw new NotFoundException(`Work item ${key} was not found.`);
     return item;
   }
