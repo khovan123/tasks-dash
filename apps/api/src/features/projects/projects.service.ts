@@ -1,8 +1,15 @@
-import { ConflictException, Injectable, NotFoundException } from "@nestjs/common";
+import {
+  ConflictException,
+  Injectable,
+  NotFoundException,
+} from "@nestjs/common";
 import { InjectModel } from "@nestjs/mongoose";
 import { Model } from "mongoose";
 import { Project } from "./project.domain";
-import { ProjectDocument, ProjectHydratedDocument } from "./project.schema";
+import {
+  ProjectDocument,
+  ProjectHydratedDocument,
+} from "./project.schema";
 import { CreateProjectDto } from "./projects.dto";
 
 @Injectable()
@@ -41,6 +48,38 @@ export class ProjectsService {
       .findOne({ workspaceId, key: key.toUpperCase() })
       .exec();
     if (!project) throw new NotFoundException(`Project ${key} was not found.`);
+    return project;
+  }
+
+  async linkRepository(
+    workspaceId: string,
+    projectKey: string,
+    repositoryFullName: string,
+  ): Promise<ProjectHydratedDocument> {
+    const normalizedRepository = repositoryFullName.trim();
+    const project = await this.getByKey(workspaceId, projectKey);
+    const linkedElsewhere = await this.projects.exists({
+      workspaceId,
+      repositoryFullName: normalizedRepository,
+      _id: { $ne: project._id },
+    });
+    if (linkedElsewhere) {
+      throw new ConflictException(
+        `Repository ${normalizedRepository} is already linked to another project.`,
+      );
+    }
+    project.repositoryFullName = normalizedRepository;
+    await project.save();
+    return project;
+  }
+
+  async unlinkRepository(
+    workspaceId: string,
+    projectKey: string,
+  ): Promise<ProjectHydratedDocument> {
+    const project = await this.getByKey(workspaceId, projectKey);
+    project.repositoryFullName = undefined;
+    await project.save();
     return project;
   }
 

@@ -10,7 +10,7 @@ export class ProjectDocument extends BaseMongoDocument {
   @Prop({ default: "#4f46e5" }) color!: string;
   @Prop({ default: "Layers3" }) icon!: string;
   @Prop() leadId?: string;
-  @Prop() repositoryFullName?: string;
+  @Prop({ trim: true }) repositoryFullName?: string;
   @Prop() driveRootFolderId?: string;
   @Prop() workflowId?: string;
   @Prop() activeSprintId?: string;
@@ -20,3 +20,12 @@ export class ProjectDocument extends BaseMongoDocument {
 export type ProjectHydratedDocument = HydratedDocument<ProjectDocument>;
 export const ProjectSchema = SchemaFactory.createForClass(ProjectDocument);
 ProjectSchema.index({ workspaceId: 1, key: 1 }, { unique: true });
+ProjectSchema.index(
+  { workspaceId: 1, repositoryFullName: 1 },
+  {
+    unique: true,
+    partialFilterExpression: {
+      repositoryFullName: { $type: "string" },
+    },
+  },
+);
