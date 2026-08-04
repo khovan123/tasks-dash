@@ -31,13 +31,38 @@ GithubInstallationSchema.index(
   { unique: true },
 );
 
+@Schema({ collection: "discord_workspace_integrations", timestamps: true })
+export class DiscordWorkspaceDocument extends BaseMongoDocument {
+  @Prop({ required: true, trim: true }) guildId!: string;
+  @Prop({ required: true, trim: true }) guildName!: string;
+  @Prop({ trim: true }) categoryId?: string;
+  @Prop({ trim: true }) categoryName?: string;
+  @Prop({ required: true, default: "{{projectKey}}-updates" })
+  channelNameTemplate!: string;
+  @Prop({ default: true }) enabled!: boolean;
+  @Prop({ required: true }) configuredAt!: Date;
+  @Prop() lastProvisionedAt?: Date;
+  @Prop() lastError?: string;
+}
+export const DiscordWorkspaceSchema = SchemaFactory.createForClass(
+  DiscordWorkspaceDocument,
+);
+DiscordWorkspaceSchema.index({ workspaceId: 1 }, { unique: true });
+DiscordWorkspaceSchema.index({ guildId: 1 });
+
 @Schema({ collection: "discord_integrations", timestamps: true })
 export class DiscordIntegrationDocument extends BaseMongoDocument {
   @Prop({ required: true, uppercase: true, trim: true }) projectKey!: string;
   @Prop({ required: true }) encryptedWebhookUrl!: string;
   @Prop({ required: true }) webhookName!: string;
+  @Prop({ trim: true }) webhookId?: string;
   @Prop({ required: true }) channelId!: string;
+  @Prop({ trim: true }) channelName?: string;
+  @Prop({ trim: true }) guildId?: string;
+  @Prop({ enum: ["BOT", "MANUAL"], default: "MANUAL" })
+  provisionedBy!: "BOT" | "MANUAL";
   @Prop({ default: true }) enabled!: boolean;
+  @Prop() provisionedAt?: Date;
   @Prop() lastSuccessAt?: Date;
   @Prop() lastError?: string;
 }
@@ -48,6 +73,7 @@ DiscordIntegrationSchema.index(
   { workspaceId: 1, projectKey: 1 },
   { unique: true },
 );
+DiscordIntegrationSchema.index({ workspaceId: 1, channelId: 1 });
 
 @Schema({ collection: "google_drive_integrations", timestamps: true })
 export class GoogleDriveIntegrationDocument extends BaseMongoDocument {
@@ -118,6 +144,36 @@ export class RenameDriveItemDto {
   name!: string;
 }
 
+export class ConfigureDiscordWorkspaceDto {
+  @IsString()
+  @Matches(/^\d{17,20}$/)
+  guildId!: string;
+
+  @IsString()
+  @Matches(/^\d{17,20}$/)
+  @IsOptional()
+  categoryId?: string;
+
+  @IsString()
+  @MinLength(3)
+  @MaxLength(100)
+  @IsOptional()
+  channelNameTemplate?: string;
+}
+
+export class ProvisionDiscordProjectDto {
+  @IsString()
+  @MinLength(1)
+  @MaxLength(100)
+  @IsOptional()
+  channelName?: string;
+
+  @IsString()
+  @MaxLength(1024)
+  @IsOptional()
+  topic?: string;
+}
+
 export class ConnectDiscordDto {
   @IsString()
   @Matches(/^[A-Z][A-Z0-9]{1,9}$/)
@@ -142,6 +198,8 @@ export class DiscordMessageDto {
 
 export type GithubInstallationHydratedDocument =
   HydratedDocument<GithubInstallationDocument>;
+export type DiscordWorkspaceHydratedDocument =
+  HydratedDocument<DiscordWorkspaceDocument>;
 export type DiscordIntegrationHydratedDocument =
   HydratedDocument<DiscordIntegrationDocument>;
 export type GoogleDriveIntegrationHydratedDocument =

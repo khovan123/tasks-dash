@@ -71,6 +71,8 @@ Events:
 - Pull request review
 - Push
 
+The webhook endpoint requires `X-GitHub-Delivery`, verifies `X-Hub-Signature-256` against the raw request body, stores delivery idempotency state, and resolves the workspace/project through the GitHub App installation plus the repository canonical `full_name`.
+
 Projects do not accept free-text `repositoryFullName`. The project screen sends a numeric `repositoryId`; the backend verifies it through the installation and stores GitHub's canonical `full_name`.
 
 ## 5. Google Drive workspace root
@@ -139,9 +141,61 @@ PATCH  /api/integrations/google-drive/projects/:projectKey/items/:fileId
 DELETE /api/integrations/google-drive/projects/:projectKey/items/:fileId
 ```
 
-## 6. Discord
+## 6. Discord bot, project channels, and GitHub delivery
 
-Create an incoming webhook in the target Discord channel and connect it from **Settings → Integrations**. Webhook URLs are verified, encrypted with AES-256-GCM, and never returned to the frontend.
+Create a Discord application with a bot user, then set:
+
+```text
+DISCORD_APPLICATION_ID=123456789012345678
+DISCORD_BOT_TOKEN=store-only-in-secret-manager
+```
+
+The token is server-side only and is never stored in MongoDB or returned to the browser. From **Settings → Integrations**, an Owner/Admin installs the bot and configures:
+
+- Discord Guild ID;
+- optional Category ID;
+- channel template, default `{{projectKey}}-updates`.
+
+The bot authorization requests only `MANAGE_CHANNELS` and `MANAGE_WEBHOOKS`. The server validates that the guild is accessible and that the optional category belongs to that guild.
+
+On configuration, Tasks Dash provisions every existing project. New `projects.created` events automatically provision later projects. Provisioning is idempotent at the database level and will reuse a matching text channel in the configured category before creating a new one.
+
+For each project, Tasks Dash:
+
+1. renders and normalizes the channel name to Discord's lowercase 100-character limit;
+2. creates or reuses the text channel;
+3. creates an incoming webhook in that channel;
+4. encrypts the webhook URL with AES-256-GCM;
+5. sends a connection test message;
+6. creates default `Pull request opened` and `Pull request merged` Discord automation rules.
+
+GitHub events then flow as:
+
+```text
+GitHub App webhook
+→ raw-body HMAC verification and delivery deduplication
+→ repository mapped to the configured workspace project
+→ project key extracted from PR title/body/branch or commit message
+→ work item updated with branch, commit and PR status
+→ event automation runs
+→ encrypted project Discord webhook posts into that project's channel
+```
+
+Only events matching a real work item key for the repository's configured project trigger the default PR notifications.
+
+Endpoints:
+
+```text
+GET  /api/integrations/discord/install
+GET  /api/integrations/discord/workspace/status
+POST /api/integrations/discord/workspace/configure
+POST /api/integrations/discord/workspace/provision-all
+POST /api/integrations/discord/projects/:projectKey/provision
+GET  /api/integrations/discord/status
+POST /api/integrations/discord/projects/:projectKey/test
+```
+
+`POST /discord/projects/:projectKey/provision` accepts optional `channelName` and `topic` for a project-specific override. Manual incoming webhook connection remains available only as a compatibility fallback.
 
 ## 7. Project delivery data
 
@@ -189,5 +243,8 @@ Health: `GET https://api.example.com/api/health`.
 8. Attempt the same mutation with a file or folder ID from another project and confirm HTTP 403.
 9. Confirm the project root cannot be renamed or deleted.
 10. Confirm a Viewer cannot mutate Drive content.
-11. Link a GitHub repository by repository ID and verify PR/commit task matching.
-12. Connect Discord and verify automation delivery.
+11. Install the GitHub App and link a repository by repository ID.
+12. Install the Discord bot, configure Guild/Category/template, and verify existing project channels are provisioned.
+13. Create a new project and confirm its Discord channel and webhook are created automatically.
+14. Create a task, include its exact project key in a branch and PR title, then confirm the task displays the PR state.
+15. Open and merge the PR and confirm the project's Discord channel receives both default automation messages exactly once per GitHub delivery/work item.

@@ -4,6 +4,7 @@ import { MembersModule } from "../members/members.module";
 import { ProjectsModule } from "../projects/projects.module";
 import { WorkItemsModule } from "../work-items/work-items.module";
 import { DiscordAdapter } from "./discord.adapter";
+import { DiscordDefaultAutomationsService } from "./discord-default-automations.service";
 import { DriveOauthStateService } from "./drive-oauth-state.service";
 import { GithubAppService, IntegrationStateService } from "./github-app.service";
 import { GithubWebhookService } from "./github-webhook.service";
@@ -12,6 +13,8 @@ import { IntegrationsController } from "./integrations.controller";
 import {
   DiscordIntegrationDocument,
   DiscordIntegrationSchema,
+  DiscordWorkspaceDocument,
+  DiscordWorkspaceSchema,
   GithubInstallationDocument,
   GithubInstallationSchema,
   GithubWebhookDeliveryDocument,
@@ -29,6 +32,7 @@ import {
     WorkItemsModule,
     MongooseModule.forFeature([
       { name: GithubInstallationDocument.name, schema: GithubInstallationSchema },
+      { name: DiscordWorkspaceDocument.name, schema: DiscordWorkspaceSchema },
       { name: DiscordIntegrationDocument.name, schema: DiscordIntegrationSchema },
       {
         name: GoogleDriveIntegrationDocument.name,
@@ -49,6 +53,7 @@ import {
     IntegrationStateService,
     DriveOauthStateService,
     DiscordAdapter,
+    DiscordDefaultAutomationsService,
     GithubAppService,
     GoogleDriveAdapter,
     GithubWebhookService,

@@ -16,6 +16,8 @@ const REQUIRED_KEYS = [
   "GOOGLE_DRIVE_CLIENT_ID",
   "GOOGLE_DRIVE_CLIENT_SECRET",
   "GOOGLE_DRIVE_REDIRECT_URI",
+  "DISCORD_APPLICATION_ID",
+  "DISCORD_BOT_TOKEN",
 ] as const;
 
 function requiredString(config: Record<string, unknown>, key: string): string {
@@ -80,6 +82,10 @@ export function validateEnvironment(input: Record<string, unknown>): Record<stri
   const encryptionKey = Buffer.from(requiredString(config, "INTEGRATION_ENCRYPTION_KEY"), "base64");
   if (encryptionKey.length !== 32) {
     throw new Error("INTEGRATION_ENCRYPTION_KEY must be a base64-encoded 32-byte key.");
+  }
+
+  if (!/^\d{17,20}$/.test(requiredString(config, "DISCORD_APPLICATION_ID"))) {
+    throw new Error("DISCORD_APPLICATION_ID must be a Discord snowflake.");
   }
 
   validateUrl(requiredString(config, "WEB_APP_URL"), "WEB_APP_URL");
