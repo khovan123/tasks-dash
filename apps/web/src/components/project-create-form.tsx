@@ -14,7 +14,6 @@ const DEFAULT_VALUES: ProjectFormValues = {
   key: "",
   name: "",
   description: "",
-  repositoryFullName: "",
   driveRootFolderId: "",
 };
 
@@ -33,7 +32,6 @@ export function ProjectCreateForm() {
         body: JSON.stringify({
           ...values,
           color: "#6256f5",
-          repositoryFullName: values.repositoryFullName || undefined,
           driveRootFolderId: values.driveRootFolderId || undefined,
         }),
       });
@@ -50,17 +48,57 @@ export function ProjectCreateForm() {
     <FormProvider {...form}>
       <form className="form-card" onSubmit={form.handleSubmit(submit)} noValidate>
         <div className="section-heading">
-          <div><span>CREATE PROJECT</span><h2>Tạo dự án thật</h2></div>
+          <div>
+            <span>CREATE PROJECT</span>
+            <h2>Tạo dự án thật</h2>
+          </div>
         </div>
+        <p className="form-message">
+          Repository được liên kết sau khi tạo project bằng danh sách repository
+          lấy trực tiếp từ GitHub App.
+        </p>
         <div className="form-grid">
-          <label>Project key<input {...form.register("key")} placeholder="TD" aria-invalid={Boolean(form.formState.errors.key)} /></label>
-          <label>Tên dự án<input {...form.register("name")} placeholder="Tasks Dash" aria-invalid={Boolean(form.formState.errors.name)} /></label>
-          <label className="wide">Mô tả<textarea {...form.register("description")} placeholder="Mục tiêu và phạm vi dự án" aria-invalid={Boolean(form.formState.errors.description)} /></label>
-          <label>GitHub repository<input {...form.register("repositoryFullName")} placeholder="owner/repository" aria-invalid={Boolean(form.formState.errors.repositoryFullName)} /></label>
-          <label>Google Drive folder ID<input {...form.register("driveRootFolderId")} placeholder="1AbCd..." aria-invalid={Boolean(form.formState.errors.driveRootFolderId)} /></label>
+          <label>
+            Project key
+            <input
+              {...form.register("key")}
+              placeholder="TD"
+              aria-invalid={Boolean(form.formState.errors.key)}
+            />
+          </label>
+          <label>
+            Tên dự án
+            <input
+              {...form.register("name")}
+              placeholder="Tasks Dash"
+              aria-invalid={Boolean(form.formState.errors.name)}
+            />
+          </label>
+          <label className="wide">
+            Mô tả
+            <textarea
+              {...form.register("description")}
+              placeholder="Mục tiêu và phạm vi dự án"
+              aria-invalid={Boolean(form.formState.errors.description)}
+            />
+          </label>
+          <label className="wide">
+            Google Drive folder ID
+            <input
+              {...form.register("driveRootFolderId")}
+              placeholder="1AbCd..."
+              aria-invalid={Boolean(form.formState.errors.driveRootFolderId)}
+            />
+          </label>
         </div>
-        {Object.values(form.formState.errors)[0]?.message ? <p className="error">{String(Object.values(form.formState.errors)[0]?.message)}</p> : null}
-        <button className="primary" disabled={form.formState.isSubmitting}>{form.formState.isSubmitting ? "Đang tạo…" : "Tạo dự án"}</button>
+        {Object.values(form.formState.errors)[0]?.message ? (
+          <p className="error">
+            {String(Object.values(form.formState.errors)[0]?.message)}
+          </p>
+        ) : null}
+        <button className="primary" disabled={form.formState.isSubmitting}>
+          {form.formState.isSubmitting ? "Đang tạo…" : "Tạo dự án"}
+        </button>
       </form>
     </FormProvider>
   );
