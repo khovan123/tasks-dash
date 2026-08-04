@@ -92,6 +92,8 @@ Subscribe to:
 - Installation
 - Installation repositories
 - Pull request
+- Pull request review
+- Push
 
 Generate a private key and store the PEM as base64:
 
@@ -100,6 +102,37 @@ base64 -w 0 tasks-dash.private-key.pem
 ```
 
 Set `GITHUB_APP_ID`, `GITHUB_APP_SLUG`, `GITHUB_APP_PRIVATE_KEY_BASE64`, `GITHUB_APP_WEBHOOK_SECRET`, `GITHUB_OAUTH_CLIENT_ID`, and `GITHUB_OAUTH_CLIENT_SECRET`.
+
+### Link a repository to a project
+
+Do not enter `repositoryFullName` when creating a project.
+
+After installing the GitHub App:
+
+1. Create the project with its project key and project information.
+2. Open that project.
+3. Choose **Liên kết repository**.
+4. Select one repository returned by the GitHub App installation.
+
+The browser sends only the numeric GitHub `repositoryId`. The API verifies that the ID is available to the workspace installation, reads the current canonical GitHub `full_name`, and stores that value on the project. A repository already linked to another project in the workspace cannot be selected.
+
+Endpoints:
+
+```text
+GET    /api/integrations/github/repositories
+PATCH  /api/integrations/github/projects/:projectKey/repository
+DELETE /api/integrations/github/projects/:projectKey/repository
+```
+
+PATCH payload:
+
+```json
+{
+  "repositoryId": 123456789
+}
+```
+
+The client never submits `owner/repository` text.
 
 ## 5. Google Drive
 
@@ -127,8 +160,9 @@ Create an incoming webhook in the target Discord channel and connect it to a pro
 
 ## 7. Project delivery data
 
-Each project now supports:
+Each project supports:
 
+- GitHub repository selection directly from the connected GitHub App installation;
 - Designer Catalog entries linking to Figma files, pages, components, and FigJam boards;
 - work items with optional many-value `figmaLinks` and `documentLinks`;
 - Task, Module, Bug, Story, and Sub-task creation forms;
@@ -173,9 +207,12 @@ GET https://api.example.com/api/health
 2. Bootstrap the first Owner and confirm the email arrives.
 3. Open the invite link and confirm only the matching verified GitHub email is accepted.
 4. Invite another member from `/workspace/members` and verify resend/revoke/role/remove actions.
-5. Create a project and create Module, Task, and Bug work items.
-6. Add multiple Figma component links and document links to a work item and open them from the project table.
-7. Add Figma links to Designer Catalog.
-8. Drag work items in Backlog, refresh, and confirm order persists.
-9. Install the GitHub App and verify a PR containing a work item key is linked.
-10. Connect Discord and Google Drive and inspect integration errors/automation runs.
+5. Create a project and confirm there is no free-text repository field.
+6. Install the GitHub App, select a repository from the project screen, and confirm the canonical GitHub `owner/repository` value appears.
+7. Try linking the same repository to another project and confirm HTTP 409.
+8. Create Module, Task, and Bug work items.
+9. Add multiple Figma component links and document links to a work item and open them from the project table.
+10. Add Figma links to Designer Catalog.
+11. Drag work items in Backlog, refresh, and confirm order persists.
+12. Open a PR or push a commit containing the linked project's key and confirm the task link and PR state update.
+13. Connect Discord and Google Drive and inspect integration errors/automation runs.
