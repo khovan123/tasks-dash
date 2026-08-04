@@ -10,7 +10,6 @@ export const projectFormSchema = z.object({
     .transform((value) => value.toUpperCase()),
   name: z.string().trim().min(2).max(120),
   description: z.string().trim().min(1).max(1000),
-  driveRootFolderId: z.string().trim().max(256),
 });
 
 export type ProjectFormValues = z.input<typeof projectFormSchema>;
