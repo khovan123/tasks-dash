@@ -2,6 +2,12 @@
 
 A Jira-inspired multi-project management dashboard with configurable workflows, work items, modules, sprints, boards, project documentation, members, automation rules, and GitHub/Discord/Google Drive integration adapters.
 
+## Live demo
+
+GitHub Pages: https://khovan123.github.io/tasks-dash/
+
+The Pages workflow publishes the static interactive prototype from the repository root. It redeploys automatically whenever `index.html`, `styles.css`, `app.js`, or the Pages workflow changes on `main`.
+
 ## Stack
 
 - **Web:** Next.js, React, Tailwind CSS, shadcn-style primitives, Atomic Design, feature-based modules
