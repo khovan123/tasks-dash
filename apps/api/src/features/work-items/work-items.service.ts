@@ -176,7 +176,12 @@ export class WorkItemsService {
   async transition(workspaceId: string, key: string, statusId: string) {
     const item = await this.find(workspaceId, key);
     const workflow = await this.workflows.get(workspaceId, item.projectKey);
-    const target = workflow?.statuses.find((status) => status.id === statusId);
+    if (!workflow) {
+      throw new NotFoundException(
+        `Workflow for project ${item.projectKey} was not found.`,
+      );
+    }
+    const target = workflow.statuses.find((status) => status.id === statusId);
     if (!target) {
       throw new NotFoundException(`Workflow status ${statusId} was not found.`);
     }
