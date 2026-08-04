@@ -1,33 +1,52 @@
 # Tasks Dash
 
-Tasks Dash is a production-oriented multi-project delivery workspace built with Next.js, NestJS, MongoDB, GitHub Apps, Google Drive OAuth, and Discord webhooks.
+Tasks Dash is a production-oriented multi-project delivery workspace built with Next.js, NestJS, MongoDB, GitHub Apps, Google Drive OAuth, Discord webhooks, and invite-only workspace access.
 
-The repository does **not** ship dashboard mock JSON, a demo seed endpoint, integration demo mode, or a client-controlled workspace fallback. Outside the test environment, the API fails during startup when mandatory database, OAuth, encryption, or GitHub App configuration is missing.
+The repository does not ship dashboard mock JSON, demo seed routes, integration demo mode, or client-controlled workspace IDs.
+
+## Current capabilities
+
+- Invite-only GitHub OAuth: a new user cannot create or link an account until a one-time email invitation has been issued.
+- Workspace-level member management with invitation queue, resend, revoke, role update, and member removal.
+- Owner bootstrap through a secret-protected API that creates and emails the first Owner invitation.
+- GitHub App installation tokens, raw-body webhook verification, delivery idempotency, and PR/work-item linking.
+- Google Drive read-only OAuth and project folder trees.
+- Per-project encrypted Discord webhooks and event/scheduled automation rules.
+- Projects, workflows, sprints, Modules, Stories, Tasks, Bugs, Sub-tasks, and Jira-style project keys.
+- Work-item Figma component links and document links, each supporting multiple optional entries.
+- Project Designer Catalog for Figma files, pages, components, and FigJam boards.
+- Persistent backlog ranking with drag-and-drop and accessible up/down controls.
 
 ## Architecture
 
 ```text
 apps/
-  api/   NestJS API, MongoDB models, GitHub/Drive/Discord integrations, automation workers
+  api/   NestJS API, MongoDB models, OAuth, integrations, automation workers
   web/   Authenticated Next.js application and BFF proxy
 packages/
   contracts/ canonical domain values and API envelopes
 ```
 
-GitHub Pages publishes only the static product/architecture page. The authenticated application must be deployed as the Next.js service.
+GitHub Pages publishes only a static product page. The authenticated application must be deployed as the Next.js service.
 
-## Production capabilities
+## First workspace bootstrap
 
-- GitHub user authorization with a signed HttpOnly session cookie.
-- Encrypted GitHub user tokens with refresh-token rotation.
-- GitHub App JWT and one-hour installation access tokens.
-- Installation ownership verification before linking a workspace.
-- Raw-body HMAC verification and idempotent GitHub webhook processing.
-- Pull-request/work-item linking from project keys in titles, bodies, or branches.
-- Per-project Discord webhooks encrypted with AES-256-GCM.
-- Event and scheduled automation rules with execution locks and run history.
-- Google Drive read-only OAuth with encrypted refresh tokens and project folder trees.
-- MongoDB-backed projects, workflows, work items, sprints, members, integrations, and automation runs.
+All new OAuth users require an invitation, including the first Owner. After deploying the API and configuring email delivery, create the first workspace invitation:
+
+```bash
+curl -X POST https://api.example.com/api/workspace/bootstrap \
+  -H 'content-type: application/json' \
+  -H 'x-workspace-bootstrap-secret: YOUR_BOOTSTRAP_SECRET' \
+  -d '{
+    "workspaceName": "My Workspace",
+    "workspaceSlug": "my-workspace",
+    "ownerEmail": "owner@example.com"
+  }'
+```
+
+The API sends a one-time invitation email. The Owner must open that link and sign in with a GitHub account whose verified email exactly matches `ownerEmail`.
+
+After login, workspace invitations are managed at `/workspace/members`.
 
 ## Development
 
@@ -39,7 +58,7 @@ docker compose up -d mongodb
 npm run dev
 ```
 
-There is no seed command. A newly authenticated workspace starts empty by design.
+There is no seed command. A newly bootstrapped workspace starts empty.
 
 ## Build
 
@@ -58,4 +77,4 @@ docker build \
   -t tasks-dash-web .
 ```
 
-See [`docs/PRODUCTION_SETUP.md`](docs/PRODUCTION_SETUP.md) for GitHub App permissions, callback URLs, Google OAuth, Discord, MongoDB, cookie-domain requirements, secret generation, and verification steps.
+See [`docs/PRODUCTION_SETUP.md`](docs/PRODUCTION_SETUP.md) for environment variables, invitation email configuration, GitHub App permissions, callbacks, and deployment verification.

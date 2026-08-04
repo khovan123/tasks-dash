@@ -2,6 +2,8 @@ export const WORK_ITEM_TYPES = { module: "MODULE", story: "STORY", task: "TASK",
 export type WorkItemType = (typeof WORK_ITEM_TYPES)[keyof typeof WORK_ITEM_TYPES];
 export const WORKFLOW_CATEGORIES = { toDo: "TO_DO", inProgress: "IN_PROGRESS", done: "DONE" } as const;
 export type WorkflowCategory = (typeof WORKFLOW_CATEGORIES)[keyof typeof WORKFLOW_CATEGORIES];
+export const DEFAULT_WORKFLOW_STATUS_IDS = { toDo: "TO_DO", inProgress: "IN_PROGRESS", done: "DONE" } as const;
+export type DefaultWorkflowStatusId = (typeof DEFAULT_WORKFLOW_STATUS_IDS)[keyof typeof DEFAULT_WORKFLOW_STATUS_IDS];
 export const PRIORITIES = { lowest: "LOWEST", low: "LOW", medium: "MEDIUM", high: "HIGH", highest: "HIGHEST" } as const;
 export type Priority = (typeof PRIORITIES)[keyof typeof PRIORITIES];
 export const SPRINT_STATES = { planned: "PLANNED", active: "ACTIVE", completed: "COMPLETED" } as const;
@@ -10,6 +12,10 @@ export const MEMBER_ROLES = { owner: "OWNER", admin: "ADMIN", projectLead: "PROJ
 export type MemberRole = (typeof MEMBER_ROLES)[keyof typeof MEMBER_ROLES];
 export const MEMBER_PRESENCE = { online: "ONLINE", away: "AWAY", offline: "OFFLINE" } as const;
 export type MemberPresence = (typeof MEMBER_PRESENCE)[keyof typeof MEMBER_PRESENCE];
+export const MEMBER_INVITATION_STATUSES = { pending: "PENDING", accepted: "ACCEPTED", revoked: "REVOKED", expired: "EXPIRED" } as const;
+export type MemberInvitationStatus = (typeof MEMBER_INVITATION_STATUSES)[keyof typeof MEMBER_INVITATION_STATUSES];
+export const DESIGN_CATALOG_TYPES = { figmaFile: "FIGMA_FILE", figmaPage: "FIGMA_PAGE", figmaComponent: "FIGMA_COMPONENT", figjamBoard: "FIGJAM_BOARD", other: "OTHER" } as const;
+export type DesignCatalogType = (typeof DESIGN_CATALOG_TYPES)[keyof typeof DESIGN_CATALOG_TYPES];
 export const PROJECT_HEALTH = { onTrack: "ON_TRACK", atRisk: "AT_RISK", offTrack: "OFF_TRACK" } as const;
 export type ProjectHealth = (typeof PROJECT_HEALTH)[keyof typeof PROJECT_HEALTH];
 export const GITHUB_WEBHOOK_EVENTS = { pullRequest: "pull_request", push: "push", issues: "issues", workflowRun: "workflow_run", installation: "installation", installationRepositories: "installation_repositories" } as const;
@@ -42,8 +48,9 @@ export interface ApiProblem { type: string; status: number; code: ProblemCode; t
 export interface ApiSuccess<T> { ok: true; data: T }
 export interface ApiFailure { ok: false; problem: ApiProblem }
 export type ApiResult<T> = ApiSuccess<T> | ApiFailure;
-export interface ProjectSummary { id: string; key: string; name: string; description: string; color: string; progress: number; completedItems: number; totalItems: number; activeSprint: string | null; repositoryFullName: string | null; members: MemberSummary[]; health: string; }
+export interface ProjectSummary { id: string; key: string; name: string; description: string; color: string; progress: number; completedItems: number; totalItems: number; activeSprint: string | null; repositoryFullName: string | null; health: string; }
 export interface MemberSummary { id: string; name: string; email: string; avatarUrl: string; role: MemberRole; status: string; }
+export interface ExternalLinkContract { label: string; url: string; }
 export interface WorkflowStatusContract { id: string; name: string; category: WorkflowCategory; color: string; order: number; }
 export interface WorkflowTransitionContract { id: string; name: string; fromStatusId: string; toStatusId: string; }
-export interface WorkItemContract { id: string; key: string; projectKey: string; type: WorkItemType; summary: string; description: string; statusId: string; priority: Priority; assigneeId: string | null; reporterId: string; moduleId: string | null; parentId: string | null; sprintId: string | null; labels: string[]; storyPoints: number | null; dueDate: string | null; githubPullRequest: { number: number; url: string; state: GithubPullRequestState } | null; }
+export interface WorkItemContract { id: string; key: string; projectKey: string; type: WorkItemType; summary: string; description: string; statusId: string; priority: Priority; assigneeId: string | null; reporterId: string; moduleId: string | null; parentId: string | null; sprintId: string | null; labels: string[]; storyPoints: number | null; dueDate: string | null; rank: number; figmaLinks: ExternalLinkContract[]; documentLinks: ExternalLinkContract[]; githubPullRequest: { number: number; url: string; state: GithubPullRequestState } | null; }

@@ -9,17 +9,16 @@ import {
 } from "@nestjs/common";
 import { ConfigService } from "@nestjs/config";
 import { InjectModel } from "@nestjs/mongoose";
-import { HydratedDocument, Model } from "mongoose";
+import { Model } from "mongoose";
 import { randomBytes, timingSafeEqual } from "node:crypto";
 import type { Request, Response } from "express";
-import { MEMBER_PRESENCE, MEMBER_ROLES } from "@tasks-dash/contracts";
 import {
   AuthSession,
   CurrentSession,
   PublicRoute,
 } from "../../common/auth-context";
 import { CredentialEncryptionService } from "../../common/security/credential-encryption.service";
-import { MemberDocument } from "../members/members.module";
+import { MembersService } from "../members/members.service";
 import {
   AuthUserDocument,
   AuthUserHydratedDocument,
@@ -30,6 +29,7 @@ import {
   GithubUserTokenService,
 } from "./github-user-token.service";
 import {
+  INVITATION_COOKIE,
   OAUTH_STATE_COOKIE,
   parseCookies,
   SESSION_COOKIE,
@@ -56,20 +56,33 @@ export class AuthController {
     private readonly sessions: SessionService,
     private readonly githubTokens: GithubUserTokenService,
     private readonly encryption: CredentialEncryptionService,
+    private readonly members: MembersService,
     @InjectModel(AuthUserDocument.name)
     private readonly users: Model<AuthUserHydratedDocument>,
-    @InjectModel(MemberDocument.name)
-    private readonly members: Model<HydratedDocument<MemberDocument>>,
   ) {}
 
   @PublicRoute()
   @Get("github/login")
-  login(@Res() response: Response): void {
+  login(
+    @Query("invite") inviteToken: string | undefined,
+    @Res() response: Response,
+  ): void {
     const state = randomBytes(32).toString("base64url");
     response.cookie(OAUTH_STATE_COOKIE, state, {
       ...this.sessions.cookieOptions(),
       maxAge: 10 * 60 * 1000,
     });
+    if (inviteToken) {
+      if (inviteToken.length < 20 || inviteToken.length > 256) {
+        throw new UnauthorizedException("Invalid workspace invitation token.");
+      }
+      response.cookie(INVITATION_COOKIE, inviteToken, {
+        ...this.sessions.cookieOptions(),
+        maxAge: 15 * 60 * 1000,
+      });
+    } else {
+      response.clearCookie(INVITATION_COOKIE, this.sessions.cookieOptions());
+    }
     const authorize = new URL("https://github.com/login/oauth/authorize");
     authorize.searchParams.set(
       "client_id",
@@ -91,7 +104,8 @@ export class AuthController {
     @Req() request: Request,
     @Res() response: Response,
   ): Promise<void> {
-    const cookieState = parseCookies(request.headers.cookie)[OAUTH_STATE_COOKIE];
+    const cookies = parseCookies(request.headers.cookie);
+    const cookieState = cookies[OAUTH_STATE_COOKIE];
     const expected = Buffer.from(cookieState ?? "");
     const actual = Buffer.from(state ?? "");
     if (
@@ -136,47 +150,32 @@ export class AuthController {
         "A verified GitHub email address is required.",
       );
     }
-    const normalizedEmail = email.toLowerCase();
+    const normalizedEmail = email.trim().toLowerCase();
+    const profile = {
+      name: githubUser.name ?? githubUser.login,
+      avatarUrl: githubUser.avatar_url,
+    };
     const existing = await this.users.findOne({ githubId: githubUser.id }).exec();
-    const existingMember = existing
-      ? await this.members
-          .findOne({ _id: existing.memberId, workspaceId: existing.workspaceId })
-          .exec()
+    let member = existing
+      ? await this.members.findMemberById(existing.workspaceId, existing.memberId)
       : null;
-    if (existing && !existingMember) {
-      throw new UnauthorizedException(
-        "Workspace membership is no longer active.",
-      );
-    }
-    const invitedMember =
-      existingMember ??
-      (await this.members
-        .findOne({ email: normalizedEmail })
-        .sort({ createdAt: 1 })
-        .exec());
-    const workspaceId =
-      existing?.workspaceId ??
-      invitedMember?.workspaceId ??
-      `ws_github_${githubUser.id}`;
 
-    const member =
-      invitedMember ??
-      (await this.members.create({
-        workspaceId,
-        name: githubUser.name ?? githubUser.login,
-        email: normalizedEmail,
-        avatarUrl: githubUser.avatar_url,
-        role: MEMBER_ROLES.owner,
-        projectKeys: [],
-        status: MEMBER_PRESENCE.online,
-      }));
-    if (invitedMember) {
-      invitedMember.name = githubUser.name ?? githubUser.login;
-      invitedMember.email = normalizedEmail;
-      invitedMember.avatarUrl = githubUser.avatar_url;
-      invitedMember.status = MEMBER_PRESENCE.online;
-      await invitedMember.save();
+    if (!member) {
+      const invitationToken = cookies[INVITATION_COOKIE];
+      if (!invitationToken) {
+        throw new UnauthorizedException(
+          "A workspace invitation is required before GitHub login.",
+        );
+      }
+      member = await this.members.acceptInvitation(
+        invitationToken,
+        normalizedEmail,
+        profile,
+      );
+    } else {
+      await this.members.touchLogin(member, profile);
     }
+    response.clearCookie(INVITATION_COOKIE, this.sessions.cookieOptions());
 
     const user = await this.users
       .findOneAndUpdate(
@@ -185,10 +184,10 @@ export class AuthController {
           $set: {
             githubId: githubUser.id,
             login: githubUser.login,
-            name: githubUser.name ?? githubUser.login,
+            name: profile.name,
             email: normalizedEmail,
-            avatarUrl: githubUser.avatar_url,
-            workspaceId,
+            avatarUrl: profile.avatarUrl,
+            workspaceId: member.workspaceId,
             memberId: String(member._id),
             encryptedGithubAccessToken: this.encryption.encrypt(
               token.access_token!,
