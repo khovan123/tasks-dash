@@ -19,7 +19,7 @@ export function AppPage({
   return (
     <main
       className={cn(
-        "mx-auto min-h-screen w-full max-w-7xl space-y-6 px-4 py-5 sm:px-6 lg:px-8",
+        "mx-auto min-h-[calc(100vh-4rem)] w-full max-w-[1600px] space-y-6 px-4 py-6 sm:px-6 lg:px-8",
         className,
       )}
     >
@@ -30,7 +30,7 @@ export function AppPage({
 
 export function AppTopbar({ children }: { children: ReactNode }) {
   return (
-    <header className="flex min-h-14 flex-col gap-4 border-b pb-4 sm:flex-row sm:items-center sm:justify-between">
+    <header className="flex min-h-12 flex-col gap-3 border-b pb-4 sm:flex-row sm:items-center sm:justify-between">
       {children}
     </header>
   );
