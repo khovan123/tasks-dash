@@ -52,9 +52,9 @@ interface JiraAppShellProps {
 
 const GLOBAL_LINKS = [
   { href: "/", label: "Tổng quan", icon: LayoutDashboard, exact: true },
-  { href: "/workspaces", label: "Workspaces", icon: Workflow },
-  { href: "/workspace/members", label: "Thành viên", icon: Users },
-  { href: "/settings/integrations", label: "Tích hợp", icon: Settings },
+  { href: "/workspaces", label: "Workspaces", icon: Workflow, exact: false },
+  { href: "/workspace/members", label: "Thành viên", icon: Users, exact: false },
+  { href: "/settings/integrations", label: "Tích hợp", icon: Settings, exact: false },
 ] as const;
 
 const PROJECT_LINKS = [
@@ -212,7 +212,10 @@ export function JiraAppShell({
                   </span>
                   <span className="min-w-0 flex-1 truncate">{project.name}</span>
                   <ChevronRight
-                    className={cn("size-3.5 text-slate-600 transition", active && "rotate-90 text-slate-400")}
+                    className={cn(
+                      "size-3.5 text-slate-600 transition",
+                      active && "rotate-90 text-slate-400",
+                    )}
                   />
                 </Link>
                 {active ? (
@@ -261,12 +264,18 @@ export function JiraAppShell({
               {session.name || session.login}
             </p>
             <div className="mt-0.5 flex items-center gap-2">
-              <Badge className="border-white/10 bg-white/10 text-[10px] text-slate-300" variant="outline">
+              <Badge
+                className="border-white/10 bg-white/10 text-[10px] text-slate-300"
+                variant="outline"
+              >
                 {activeWorkspace?.role ?? "MEMBER"}
               </Badge>
             </div>
           </div>
-          <LogoutButton className="size-8 px-0 text-slate-400 hover:bg-white/10 hover:text-white" iconOnly />
+          <LogoutButton
+            className="size-8 px-0 text-slate-400 hover:bg-white/10 hover:text-white"
+            iconOnly
+          />
         </div>
       </div>
     </aside>
