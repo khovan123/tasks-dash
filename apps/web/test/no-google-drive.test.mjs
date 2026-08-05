@@ -12,7 +12,7 @@ async function walk(directory) {
   const files = [];
   for (const entry of entries) {
     const full = path.join(directory, entry.name);
-    if (entry.isDirectory()) files.push(...(await walk(full));
+    if (entry.isDirectory()) files.push(...(await walk(full)));
     else if (/\.(ts|tsx|mjs|json)$/.test(entry.name) && full !== currentFile) {
       files.push(full);
     }
