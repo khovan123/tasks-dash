@@ -9,10 +9,9 @@
     "experimentalDecorators": true,
     "sourceMap": true,
     "outDir": "./dist",
-    "rootDir": "src",
     "baseUrl": ".",
     "paths": {
-      "@tasks-dash/contracts": ["../../packages/contracts/dist/index.d.ts"]
+      "@tasks-dash/contracts": ["../../packages/contracts/src/index.ts"]
     }
   },
   "include": ["src/**/*.ts"]
