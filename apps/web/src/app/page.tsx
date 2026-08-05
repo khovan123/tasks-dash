@@ -94,8 +94,10 @@ function aggregateActivity(activity: DailyActivity[]) {
 
 export default async function HomePage() {
   const sessionResponse = await apiResponse("/auth/me");
-  const browserApi = process.env.NEXT_PUBLIC_API_BASE_URL;
-  if (!browserApi) throw new Error("NEXT_PUBLIC_API_BASE_URL is required.");
+  const browserApi =
+    process.env.NEXT_PUBLIC_API_BASE_URL ||
+    process.env.TASKS_DASH_API_BASE_URL ||
+    "/api";
 
   if (sessionResponse.status === 401) {
     return (

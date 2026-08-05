@@ -7,8 +7,12 @@ import { AppModule } from "./app.module";
 import { ApiEnvelopeInterceptor } from "./common/api-envelope.interceptor";
 import { GlobalProblemFilter } from "./common/global-problem.filter";
 
+import { NestExpressApplication } from "@nestjs/platform-express";
+import { join } from "node:path";
+import { existsSync } from "node:fs";
+
 async function bootstrap(): Promise<void> {
-  const app = await NestFactory.create(AppModule, {
+  const app = await NestFactory.create<NestExpressApplication>(AppModule, {
     rawBody: true,
     abortOnError: true,
   });
@@ -17,7 +21,15 @@ async function bootstrap(): Promise<void> {
     config.getOrThrow<string>("WEB_APP_URL"),
   ).origin;
 
-  app.setGlobalPrefix("api");
+  app.setGlobalPrefix("api", { exclude: ["/", "public/(.*)"] });
+
+  const publicDir = existsSync(join(process.cwd(), "apps/api/public"))
+    ? join(process.cwd(), "apps/api/public")
+    : join(__dirname, "..", "public");
+
+  app.useStaticAssets(publicDir, {
+    prefix: "/public/",
+  });
   app.enableCors({
     origin: [webAppUrl],
     credentials: true,

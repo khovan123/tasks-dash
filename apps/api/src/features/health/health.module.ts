@@ -21,5 +21,7 @@ export class HealthController {
   }
 }
 
-@Module({ controllers: [HealthController] })
+import { RootController } from "./root.controller";
+
+@Module({ controllers: [HealthController, RootController] })
 export class HealthModule {}
