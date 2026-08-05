@@ -8,11 +8,10 @@
     "emitDecoratorMetadata": true,
     "experimentalDecorators": true,
     "sourceMap": true,
-    "rootDir": "src",
     "outDir": "./dist",
     "baseUrl": ".",
     "paths": {
-      "@tasks-dash/contracts": ["../../packages/contracts/dist/index.d.ts"]
+      "@tasks-dash/contracts": ["../../packages/contracts/src/index.ts"]
     }
   },
   "include": ["src/**/*.ts"]
