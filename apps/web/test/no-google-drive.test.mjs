@@ -5,6 +5,7 @@ import path from "node:path";
 import { fileURLToPath } from "node:url";
 
 const repoRoot = fileURLToPath(new URL("../../../", import.meta.url));
+const currentFile = fileURLToPath(import.meta.url);
 
 async function walk(directory) {
   const entries = await readdir(directory, { withFileTypes: true });
@@ -12,7 +13,9 @@ async function walk(directory) {
   for (const entry of entries) {
     const full = path.join(directory, entry.name);
     if (entry.isDirectory()) files.push(...(await walk(full));
-    else if (/\.(ts|tsx|mjs|json)$/.test(entry.name)) files.push(full);
+    else if (/\.(ts|tsx|mjs|json)$/.test(entry.name) && full !== currentFile) {
+      files.push(full);
+    }
   }
   return files;
 }
