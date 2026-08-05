@@ -4,6 +4,7 @@ import { InvitationMailerService } from "./invitation-mailer.service";
 import { MemberDocument, MemberSchema } from "./member.schema";
 import { MembersController } from "./members.controller";
 import { MembersService } from "./members.service";
+import { WorkspaceLifecycleService } from "./workspace-lifecycle.service";
 import {
   WorkspaceInvitationDocument,
   WorkspaceInvitationSchema,
@@ -22,7 +23,11 @@ import { WorkspaceDocument, WorkspaceSchema } from "./workspace.schema";
     ]),
   ],
   controllers: [MembersController],
-  providers: [MembersService, InvitationMailerService],
-  exports: [MembersService, MongooseModule],
+  providers: [
+    MembersService,
+    WorkspaceLifecycleService,
+    InvitationMailerService,
+  ],
+  exports: [MembersService, WorkspaceLifecycleService, MongooseModule],
 })
 export class MembersModule {}
