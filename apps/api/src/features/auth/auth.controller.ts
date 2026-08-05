@@ -10,7 +10,7 @@ import {
 import { ConfigService } from "@nestjs/config";
 import { InjectModel } from "@nestjs/mongoose";
 import { Model } from "mongoose";
-import { randomBytes, timingSafeEqual } from "node:crypto";
+import { randomBytes } from "node:crypto";
 import type { Request, Response } from "express";
 import {
   AuthSession,
@@ -35,11 +35,13 @@ import {
   SESSION_COOKIE,
   SessionService,
 } from "./session.service";
-
 import {
   IntegrationOauthStateDocument,
   IntegrationOauthStateHydratedDocument,
 } from "../integrations/integration.schemas";
+
+const WORKSPACE_SETUP_PROVIDER = "workspace_setup";
+const WORKSPACE_SETUP_CONTEXT = "pending_workspace";
 
 interface GithubOAuthUser {
   id: number;
@@ -128,10 +130,9 @@ export class AuthController {
         validState = true;
         await this.oauthStates.deleteOne({ state, provider: "github" }).exec();
       } else {
-        const dbState = await this.oauthStates.findOneAndDelete({
-          state,
-          provider: "github",
-        }).exec();
+        const dbState = await this.oauthStates
+          .findOneAndDelete({ state, provider: "github" })
+          .exec();
         if (dbState && dbState.expiresAt > new Date()) {
           validState = true;
         }
@@ -219,7 +220,7 @@ export class AuthController {
     );
 
     const invitationToken = cookies[INVITATION_COOKIE];
-    let member = invitationToken
+    const member = invitationToken
       ? await this.members.acceptInvitation(
           invitationToken,
           normalizedEmail,
@@ -232,26 +233,29 @@ export class AuthController {
           identity.lastWorkspaceId,
         );
 
-    if (!member && normalizedEmail === "minhpnq1807@gmail.com") {
-      const seeded = await this.members.createWorkspaceForOwner(
-        identityId,
-        githubUser.id,
-        normalizedEmail,
-        profile,
-        { workspaceName: "Tasks Dash Workspace" },
-      );
-      member = seeded.member;
-    }
+    response.clearCookie(INVITATION_COOKIE, this.sessions.cookieOptions());
 
     if (!member) {
-      throw new UnauthorizedException(
-        "A workspace invitation is required before GitHub login.",
+      const setupToken = randomBytes(32).toString("base64url");
+      await this.oauthStates.create({
+        state: setupToken,
+        workspaceId: WORKSPACE_SETUP_CONTEXT,
+        memberId: identityId,
+        provider: WORKSPACE_SETUP_PROVIDER,
+        expiresAt: new Date(Date.now() + 15 * 60 * 1000),
+      });
+      const setupUrl = new URL(
+        "/workspaces/new",
+        this.config.getOrThrow<string>("WEB_APP_URL"),
       );
+      setupUrl.searchParams.set("setup", setupToken);
+      response.redirect(setupUrl.toString());
+      return;
     }
+
     if (!invitationToken) {
       await this.members.touchLogin(member, profile);
     }
-    response.clearCookie(INVITATION_COOKIE, this.sessions.cookieOptions());
 
     identity.lastWorkspaceId = member.workspaceId;
     await identity.save();
