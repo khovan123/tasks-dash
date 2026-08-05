@@ -1,13 +1,13 @@
 # Tasks Dash
 
-Tasks Dash is a production-oriented multi-project delivery workspace built with Next.js, NestJS, MongoDB, GitHub Apps, Google Drive OAuth, Discord webhooks, invite-only access, and multi-workspace membership per GitHub account.
+Tasks Dash is a production-oriented multi-project delivery workspace built with Next.js, NestJS, MongoDB, GitHub Apps, Google Drive OAuth, Discord webhooks, SMTP invitation email, invite-only access, and multi-workspace membership per GitHub account.
 
 The repository does not ship dashboard mock JSON, demo seed routes, integration demo mode, or client-controlled workspace IDs.
 
 ## Current capabilities
 
 - One GitHub identity can belong to multiple workspaces with a separate member record and role in each workspace.
-- Invite-only GitHub OAuth: a new identity cannot access any workspace until a one-time email invitation has been accepted.
+- Invite-only GitHub OAuth: a new identity cannot access any workspace until a one-time SMTP email invitation has been accepted.
 - Workspace selector, server-validated switching, and Owner-created additional workspaces.
 - Workspace-level member management with invitation queue, resend, revoke, role update, and member removal.
 - Owner bootstrap through a secret-protected API that creates and emails the first Owner invitation.
@@ -43,7 +43,7 @@ Owners can create another workspace at `/workspaces`. Existing GitHub identities
 
 ```text
 apps/
-  api/   NestJS API, MongoDB models, OAuth, integrations, automation workers
+  api/   NestJS API, MongoDB models, OAuth, SMTP invitations, integrations, automation workers
   web/   Authenticated Next.js application, Tailwind v4, shadcn/ui source components, BFF proxy
 packages/
   contracts/ canonical domain values and API envelopes
@@ -53,7 +53,7 @@ GitHub Pages publishes only a static product page. The authenticated application
 
 ## First workspace bootstrap
 
-All new OAuth identities require an invitation, including the first Owner. After deploying the API and configuring email delivery, create the first workspace invitation:
+All new OAuth identities require an invitation, including the first Owner. After deploying the API and configuring SMTP delivery, create the first workspace invitation:
 
 ```bash
 curl -X POST https://api.example.com/api/workspace/bootstrap \
@@ -100,4 +100,4 @@ docker build \
   -t tasks-dash-web .
 ```
 
-See [`docs/PRODUCTION_SETUP.md`](docs/PRODUCTION_SETUP.md) for environment variables, invitation email configuration, GitHub App permissions, callbacks, and deployment verification.
+See [`docs/PRODUCTION_SETUP.md`](docs/PRODUCTION_SETUP.md) for SMTP variables, invitation configuration, GitHub App permissions, callbacks, and deployment verification.
