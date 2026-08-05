@@ -19,11 +19,38 @@ export class UpdateWorkspaceMemberRoleDto {
 }
 
 export class CreateWorkspaceDto {
-  @IsString() @MinLength(2) @MaxLength(80) workspaceName!: string;
+  @IsString()
+  @MinLength(2)
+  @MaxLength(80)
+  @Matches(/\S/, { message: "Workspace name must contain visible characters." })
+  workspaceName!: string;
+
   @IsString()
   @Matches(/^[a-z0-9][a-z0-9-]{1,47}[a-z0-9]$/)
   @IsOptional()
   workspaceSlug?: string;
+}
+
+export class SetupFirstWorkspaceDto extends CreateWorkspaceDto {
+  @IsString()
+  @MinLength(32)
+  @MaxLength(256)
+  setupToken!: string;
+}
+
+export class UpdateWorkspaceDto {
+  @IsString()
+  @MinLength(2)
+  @MaxLength(80)
+  @Matches(/\S/, { message: "Workspace name must contain visible characters." })
+  workspaceName!: string;
+}
+
+export class DeleteWorkspaceDto {
+  @IsString()
+  @MinLength(2)
+  @MaxLength(80)
+  confirmWorkspaceName!: string;
 }
 
 export class BootstrapWorkspaceDto extends CreateWorkspaceDto {
