@@ -26,6 +26,11 @@ import { HealthModule } from "./features/health/health.module";
       cache: true,
       expandVariables: true,
       validate: validateEnvironment,
+      envFilePath: [
+        process.env.DOTENV_CONFIG_PATH || "",
+        "../../.env",
+        ".env",
+      ].filter(Boolean),
     }),
     CqrsModule.forRoot(),
     EventEmitterModule.forRoot({ wildcard: false, ignoreErrors: false }),

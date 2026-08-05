@@ -7,6 +7,10 @@ import {
   AuthIdentityDocument,
   AuthIdentitySchema,
 } from "./auth.schemas";
+import {
+  IntegrationOauthStateDocument,
+  IntegrationOauthStateSchema,
+} from "../integrations/integration.schemas";
 import { GithubUserTokenService } from "./github-user-token.service";
 import { SessionAuthGuard } from "./session-auth.guard";
 import { SessionService } from "./session.service";
@@ -18,6 +22,10 @@ import { WorkspacesController } from "./workspaces.controller";
     MembersModule,
     MongooseModule.forFeature([
       { name: AuthIdentityDocument.name, schema: AuthIdentitySchema },
+      {
+        name: IntegrationOauthStateDocument.name,
+        schema: IntegrationOauthStateSchema,
+      },
     ]),
   ],
   controllers: [AuthController, WorkspacesController],

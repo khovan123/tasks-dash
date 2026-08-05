@@ -69,8 +69,10 @@ interface Dashboard {
 
 export default async function HomePage() {
   const sessionResponse = await apiResponse("/auth/me");
-  const browserApi = process.env.NEXT_PUBLIC_API_BASE_URL;
-  if (!browserApi) throw new Error("NEXT_PUBLIC_API_BASE_URL is required.");
+  const browserApi =
+    process.env.NEXT_PUBLIC_API_BASE_URL ||
+    process.env.TASKS_DASH_API_BASE_URL ||
+    "http://localhost:4000/api";
 
   if (sessionResponse.status === 401) {
     return (

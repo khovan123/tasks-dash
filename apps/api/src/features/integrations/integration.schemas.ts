@@ -23,8 +23,13 @@ export class GithubInstallationDocument extends BaseMongoDocument {
   @Prop({ default: false }) suspended!: boolean;
   @Prop() synchronizedAt?: Date;
 }
-export const GithubInstallationSchema = SchemaFactory.createForClass(GithubInstallationDocument);
-GithubInstallationSchema.index({ workspaceId: 1, installationId: 1 }, { unique: true });
+export const GithubInstallationSchema = SchemaFactory.createForClass(
+  GithubInstallationDocument,
+);
+GithubInstallationSchema.index(
+  { workspaceId: 1, installationId: 1 },
+  { unique: true },
+);
 
 @Schema({ collection: "discord_workspace_integrations", timestamps: true })
 export class DiscordWorkspaceDocument extends BaseMongoDocument {
@@ -41,7 +46,9 @@ export class DiscordWorkspaceDocument extends BaseMongoDocument {
   @Prop() lastProvisionedAt?: Date;
   @Prop() lastError?: string;
 }
-export const DiscordWorkspaceSchema = SchemaFactory.createForClass(DiscordWorkspaceDocument);
+export const DiscordWorkspaceSchema = SchemaFactory.createForClass(
+  DiscordWorkspaceDocument,
+);
 DiscordWorkspaceSchema.index({ workspaceId: 1 }, { unique: true });
 DiscordWorkspaceSchema.index({ guildId: 1 });
 
@@ -63,12 +70,20 @@ export class DiscordIntegrationDocument extends BaseMongoDocument {
   @Prop() lastSuccessAt?: Date;
   @Prop() lastError?: string;
 }
-export const DiscordIntegrationSchema = SchemaFactory.createForClass(DiscordIntegrationDocument);
-DiscordIntegrationSchema.index({ workspaceId: 1, projectKey: 1 }, { unique: true });
+export const DiscordIntegrationSchema = SchemaFactory.createForClass(
+  DiscordIntegrationDocument,
+);
+DiscordIntegrationSchema.index(
+  { workspaceId: 1, projectKey: 1 },
+  { unique: true },
+);
 DiscordIntegrationSchema.index({ workspaceId: 1, channelId: 1 });
 DiscordIntegrationSchema.index(
   { workspaceId: 1, docsChannelId: 1 },
-  { unique: true, partialFilterExpression: { docsChannelId: { $type: "string" } } },
+  {
+    unique: true,
+    partialFilterExpression: { docsChannelId: { $type: "string" } },
+  },
 );
 
 @Schema({ collection: "integration_oauth_states", timestamps: true })
@@ -79,7 +94,9 @@ export class IntegrationOauthStateDocument {
   @Prop() provider?: string;
   @Prop({ required: true, expires: 0 }) expiresAt!: Date;
 }
-export const IntegrationOauthStateSchema = SchemaFactory.createForClass(IntegrationOauthStateDocument);
+export const IntegrationOauthStateSchema = SchemaFactory.createForClass(
+  IntegrationOauthStateDocument,
+);
 
 @Schema({ collection: "github_webhook_deliveries", timestamps: true })
 export class GithubWebhookDeliveryDocument {
@@ -91,7 +108,9 @@ export class GithubWebhookDeliveryDocument {
   @Prop() failedAt?: Date;
   @Prop() lastError?: string;
 }
-export const GithubWebhookDeliverySchema = SchemaFactory.createForClass(GithubWebhookDeliveryDocument);
+export const GithubWebhookDeliverySchema = SchemaFactory.createForClass(
+  GithubWebhookDeliveryDocument,
+);
 
 export class LinkGithubRepositoryDto {
   @Type(() => Number)
@@ -164,8 +183,13 @@ export class DiscordMessageDto {
   description!: string;
 }
 
-export type GithubInstallationHydratedDocument = HydratedDocument<GithubInstallationDocument>;
-export type DiscordWorkspaceHydratedDocument = HydratedDocument<DiscordWorkspaceDocument>;
-export type DiscordIntegrationHydratedDocument = HydratedDocument<DiscordIntegrationDocument>;
-export type IntegrationOauthStateHydratedDocument = HydratedDocument<IntegrationOauthStateDocument>;
-export type GithubWebhookDeliveryHydratedDocument = HydratedDocument<GithubWebhookDeliveryDocument>;
+export type GithubInstallationHydratedDocument =
+  HydratedDocument<GithubInstallationDocument>;
+export type DiscordWorkspaceHydratedDocument =
+  HydratedDocument<DiscordWorkspaceDocument>;
+export type DiscordIntegrationHydratedDocument =
+  HydratedDocument<DiscordIntegrationDocument>;
+export type IntegrationOauthStateHydratedDocument =
+  HydratedDocument<IntegrationOauthStateDocument>;
+export type GithubWebhookDeliveryHydratedDocument =
+  HydratedDocument<GithubWebhookDeliveryDocument>;

@@ -31,8 +31,10 @@ async function proxy(
     "content-type",
     response.headers.get("content-type") ?? "application/json",
   );
-  const setCookie = response.headers.get("set-cookie");
-  if (setCookie) responseHeaders.set("set-cookie", setCookie);
+  const setCookies = response.headers.getSetCookie();
+  for (const cookie of setCookies) {
+    responseHeaders.append("set-cookie", cookie);
+  }
   const location = response.headers.get("location");
   if (location) responseHeaders.set("location", location);
   return new Response(await response.arrayBuffer(), {

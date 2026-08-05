@@ -9,7 +9,9 @@ export const OAUTH_STATE_COOKIE = "tasks_dash_oauth_state";
 export const INVITATION_COOKIE = "tasks_dash_invitation";
 const SESSION_DURATION_SECONDS = 60 * 60 * 24 * 7;
 
-export function parseCookies(header: string | undefined): Record<string, string> {
+export function parseCookies(
+  header: string | undefined,
+): Record<string, string> {
   if (!header) return {};
   return header.split(";").reduce<Record<string, string>>((cookies, entry) => {
     const separator = entry.indexOf("=");
@@ -101,10 +103,18 @@ export class SessionService {
     path: string;
     domain?: string;
   } {
-    const domain = this.config.get<string>("COOKIE_DOMAIN")?.trim();
+    const rawDomain = this.config.get<string>("COOKIE_DOMAIN")?.trim();
+    const domain =
+      rawDomain && rawDomain !== "localhost" && rawDomain !== "127.0.0.1"
+        ? rawDomain
+        : undefined;
+    const publicUrl = this.config.get<string>("API_PUBLIC_URL") || "";
+    const isHttps =
+      publicUrl.startsWith("https://") ||
+      this.config.get<string>("NODE_ENV") === "production";
     return {
       httpOnly: true,
-      secure: this.config.get<string>("NODE_ENV") === "production",
+      secure: isHttps,
       sameSite: "lax",
       maxAge: SESSION_DURATION_SECONDS * 1000,
       path: "/",
