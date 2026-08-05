@@ -1,5 +1,4 @@
 import {
-  BadRequestException,
   Body,
   Controller,
   Delete,
@@ -13,11 +12,8 @@ import {
   Req,
   Res,
   UnauthorizedException,
-  UploadedFile,
-  UseInterceptors,
 } from "@nestjs/common";
 import { ConfigService } from "@nestjs/config";
-import { FileInterceptor } from "@nestjs/platform-express";
 import type { Request, Response } from "express";
 import { MEMBER_ROLES } from "@tasks-dash/contracts";
 import {
@@ -35,41 +31,25 @@ import {
 } from "./github-app.service";
 import { GithubWebhookService } from "./github-webhook.service";
 import {
-  GoogleDriveAdapter,
-  UploadedDriveFile,
-} from "./google-drive.adapter";
-import {
   ConfigureDiscordWorkspaceDto,
   ConnectDiscordDto,
-  CreateDriveFolderDto,
   DiscordMessageDto,
   LinkGithubRepositoryDto,
   ProvisionDiscordProjectDto,
-  RenameDriveItemDto,
 } from "./integration.schemas";
-
-const DRIVE_EDITOR_ROLES = [
-  MEMBER_ROLES.owner,
-  MEMBER_ROLES.admin,
-  MEMBER_ROLES.projectLead,
-  MEMBER_ROLES.member,
-] as const;
 
 @Controller("integrations")
 export class IntegrationsController {
   constructor(
     private readonly webhook: GithubWebhookService,
     private readonly github: GithubAppService,
-    private readonly drive: GoogleDriveAdapter,
     private readonly discord: DiscordAdapter,
     private readonly states: IntegrationStateService,
     private readonly config: ConfigService,
   ) {}
 
   @Get("github/status")
-  githubStatus(
-    @WorkspaceId() workspaceId: string,
-  ): Promise<Record<string, unknown>[]> {
+  githubStatus(@WorkspaceId() workspaceId: string): Promise<Record<string, unknown>[]> {
     return this.github.listStatus(workspaceId);
   }
 
@@ -93,50 +73,32 @@ export class IntegrationsController {
   ): Promise<void> {
     const id = Number(value);
     if (!Number.isSafeInteger(id) || id <= 0 || !state) {
-      throw new UnauthorizedException(
-        "A valid GitHub installation response is required.",
-      );
+      throw new UnauthorizedException("A valid GitHub installation response is required.");
     }
     const workspaceId = await this.states.consume(state);
     await this.github.connectInstallation(workspaceId, id, session.userId);
     response.redirect(
-      `${this.config.getOrThrow<string>(
-        "WEB_APP_URL",
-      )}/settings/integrations?github=connected`,
+      `${this.config.getOrThrow<string>("WEB_APP_URL")}/settings/integrations?github=connected`,
     );
   }
 
   @Get("github/repositories")
-  githubRepositories(
-    @WorkspaceId() workspaceId: string,
-  ): Promise<GithubRepositoryResponse[]> {
+  githubRepositories(@WorkspaceId() workspaceId: string): Promise<GithubRepositoryResponse[]> {
     return this.github.repositories(workspaceId);
   }
 
   @Patch("github/projects/:projectKey/repository")
-  @RequireRoles(
-    MEMBER_ROLES.owner,
-    MEMBER_ROLES.admin,
-    MEMBER_ROLES.projectLead,
-  )
+  @RequireRoles(MEMBER_ROLES.owner, MEMBER_ROLES.admin, MEMBER_ROLES.projectLead)
   linkGithubRepository(
     @WorkspaceId() workspaceId: string,
     @Param("projectKey") projectKey: string,
     @Body() body: LinkGithubRepositoryDto,
   ): Promise<Record<string, unknown>> {
-    return this.github.linkProjectRepository(
-      workspaceId,
-      projectKey,
-      body.repositoryId,
-    );
+    return this.github.linkProjectRepository(workspaceId, projectKey, body.repositoryId);
   }
 
   @Delete("github/projects/:projectKey/repository")
-  @RequireRoles(
-    MEMBER_ROLES.owner,
-    MEMBER_ROLES.admin,
-    MEMBER_ROLES.projectLead,
-  )
+  @RequireRoles(MEMBER_ROLES.owner, MEMBER_ROLES.admin, MEMBER_ROLES.projectLead)
   unlinkGithubRepository(
     @WorkspaceId() workspaceId: string,
     @Param("projectKey") projectKey: string,
@@ -146,13 +108,9 @@ export class IntegrationsController {
 
   @PublicRoute()
   @Post("github/webhook")
-  githubWebhook(
-    @Req() request: RawBodyRequest<Request>,
-  ): Promise<Record<string, unknown>> {
+  githubWebhook(@Req() request: RawBodyRequest<Request>): Promise<Record<string, unknown>> {
     const delivery = String(request.headers["x-github-delivery"] ?? "");
-    if (!delivery) {
-      throw new UnauthorizedException("GitHub delivery id is required.");
-    }
+    if (!delivery) throw new UnauthorizedException("GitHub delivery id is required.");
     this.webhook.verify(
       request.rawBody,
       request.headers["x-hub-signature-256"] as string | undefined,
@@ -164,114 +122,8 @@ export class IntegrationsController {
     );
   }
 
-  @Get("google-drive/status")
-  driveStatus(
-    @WorkspaceId() workspaceId: string,
-  ): Promise<Record<string, unknown>> {
-    return this.drive.status(workspaceId);
-  }
-
-  @Get("google-drive/connect")
-  @RequireRoles(MEMBER_ROLES.owner)
-  @Redirect()
-  async driveConnect(
-    @WorkspaceId() workspaceId: string,
-    @CurrentSession() session: AuthSession,
-  ): Promise<{ url: string; statusCode: number }> {
-    return {
-      url: await this.drive.connectUrl(workspaceId, session.userId),
-      statusCode: 302,
-    };
-  }
-
-  @PublicRoute()
-  @Get("google-drive/callback")
-  async driveCallback(
-    @Query("code") code: string,
-    @Query("state") state: string,
-    @Res() response: Response,
-  ): Promise<void> {
-    if (!code || !state) {
-      throw new UnauthorizedException("Google OAuth callback is incomplete.");
-    }
-    await this.drive.callback(code, state);
-    response.redirect(
-      `${this.config.getOrThrow<string>(
-        "WEB_APP_URL",
-      )}/settings/integrations?googleDrive=connected`,
-    );
-  }
-
-  @Get("google-drive/projects/:projectKey/tree")
-  driveTree(
-    @WorkspaceId() workspaceId: string,
-    @Param("projectKey") projectKey: string,
-  ): Promise<Record<string, unknown>> {
-    return this.drive.listTree(workspaceId, projectKey);
-  }
-
-  @Post("google-drive/projects/:projectKey/folders")
-  @RequireRoles(...DRIVE_EDITOR_ROLES)
-  createDriveFolder(
-    @WorkspaceId() workspaceId: string,
-    @Param("projectKey") projectKey: string,
-    @Body() body: CreateDriveFolderDto,
-  ): Promise<Record<string, unknown>> {
-    return this.drive.createFolder(
-      workspaceId,
-      projectKey,
-      body.name,
-      body.parentId,
-    );
-  }
-
-  @Patch("google-drive/projects/:projectKey/items/:fileId")
-  @RequireRoles(...DRIVE_EDITOR_ROLES)
-  renameDriveItem(
-    @WorkspaceId() workspaceId: string,
-    @Param("projectKey") projectKey: string,
-    @Param("fileId") fileId: string,
-    @Body() body: RenameDriveItemDto,
-  ): Promise<Record<string, unknown>> {
-    return this.drive.renameItem(
-      workspaceId,
-      projectKey,
-      fileId,
-      body.name,
-    );
-  }
-
-  @Delete("google-drive/projects/:projectKey/items/:fileId")
-  @RequireRoles(...DRIVE_EDITOR_ROLES)
-  async deleteDriveItem(
-    @WorkspaceId() workspaceId: string,
-    @Param("projectKey") projectKey: string,
-    @Param("fileId") fileId: string,
-  ): Promise<void> {
-    await this.drive.deleteItem(workspaceId, projectKey, fileId);
-  }
-
-  @Post("google-drive/projects/:projectKey/upload")
-  @RequireRoles(...DRIVE_EDITOR_ROLES)
-  @UseInterceptors(
-    FileInterceptor("file", {
-      limits: { files: 1, fileSize: 25 * 1024 * 1024 },
-    }),
-  )
-  uploadDriveFile(
-    @WorkspaceId() workspaceId: string,
-    @Param("projectKey") projectKey: string,
-    @UploadedFile() file: UploadedDriveFile | undefined,
-    @Body("parentId") parentId?: string,
-  ): Promise<Record<string, unknown>> {
-    if (!file) throw new BadRequestException("File is required.");
-    return this.drive.uploadFile(workspaceId, projectKey, file, parentId);
-  }
-
   @Get("discord/workspace/status")
-  discordWorkspaceStatus(
-    @WorkspaceId() workspaceId: string,
-  ): Promise<Record<string, unknown>> {
+  discordWorkspaceStatus(@WorkspaceId() workspaceId: string): Promise<Record<string, unknown>> {
     return this.discord.workspaceStatus(workspaceId);
   }
 
@@ -293,21 +145,12 @@ export class IntegrationsController {
 
   @Post("discord/workspace/provision-all")
   @RequireRoles(MEMBER_ROLES.owner, MEMBER_ROLES.admin)
-  discordProvisionAll(
-    @WorkspaceId() workspaceId: string,
-  ): Promise<{
-    provisionedProjects: string[];
-    failedProjects: Array<{ projectKey: string; error: string }>;
-  }> {
+  discordProvisionAll(@WorkspaceId() workspaceId: string) {
     return this.discord.provisionAll(workspaceId);
   }
 
   @Post("discord/projects/:projectKey/provision")
-  @RequireRoles(
-    MEMBER_ROLES.owner,
-    MEMBER_ROLES.admin,
-    MEMBER_ROLES.projectLead,
-  )
+  @RequireRoles(MEMBER_ROLES.owner, MEMBER_ROLES.admin, MEMBER_ROLES.projectLead)
   discordProvisionProject(
     @WorkspaceId() workspaceId: string,
     @Param("projectKey") projectKey: string,
@@ -317,18 +160,12 @@ export class IntegrationsController {
   }
 
   @Get("discord/status")
-  discordStatus(
-    @WorkspaceId() workspaceId: string,
-  ): Promise<Record<string, unknown>[]> {
+  discordStatus(@WorkspaceId() workspaceId: string): Promise<Record<string, unknown>[]> {
     return this.discord.list(workspaceId);
   }
 
   @Post("discord/connect")
-  @RequireRoles(
-    MEMBER_ROLES.owner,
-    MEMBER_ROLES.admin,
-    MEMBER_ROLES.projectLead,
-  )
+  @RequireRoles(MEMBER_ROLES.owner, MEMBER_ROLES.admin, MEMBER_ROLES.projectLead)
   discordConnect(
     @WorkspaceId() workspaceId: string,
     @Body() body: ConnectDiscordDto,
@@ -337,11 +174,7 @@ export class IntegrationsController {
   }
 
   @Delete("discord/projects/:projectKey")
-  @RequireRoles(
-    MEMBER_ROLES.owner,
-    MEMBER_ROLES.admin,
-    MEMBER_ROLES.projectLead,
-  )
+  @RequireRoles(MEMBER_ROLES.owner, MEMBER_ROLES.admin, MEMBER_ROLES.projectLead)
   async discordDisconnect(
     @WorkspaceId() workspaceId: string,
     @Param("projectKey") projectKey: string,
@@ -350,22 +183,13 @@ export class IntegrationsController {
   }
 
   @Post("discord/projects/:projectKey/test")
-  @RequireRoles(
-    MEMBER_ROLES.owner,
-    MEMBER_ROLES.admin,
-    MEMBER_ROLES.projectLead,
-  )
+  @RequireRoles(MEMBER_ROLES.owner, MEMBER_ROLES.admin, MEMBER_ROLES.projectLead)
   async discordTest(
     @WorkspaceId() workspaceId: string,
     @Param("projectKey") projectKey: string,
     @Body() body: DiscordMessageDto,
   ): Promise<{ delivered: boolean }> {
-    await this.discord.send(
-      workspaceId,
-      projectKey,
-      body.title,
-      body.description,
-    );
+    await this.discord.send(workspaceId, projectKey, body.title, body.description);
     return { delivered: true };
   }
 }

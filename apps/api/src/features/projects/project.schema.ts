@@ -11,10 +11,12 @@ export class ProjectDocument extends BaseMongoDocument {
   @Prop({ default: "Layers3" }) icon!: string;
   @Prop() leadId?: string;
   @Prop({ trim: true }) repositoryFullName?: string;
-  @Prop() driveRootFolderId?: string;
-  @Prop() driveRootFolderName?: string;
-  @Prop() driveRootWebViewLink?: string;
-  @Prop() driveProvisionedAt?: Date;
+  @Prop({ trim: true }) discordGuildId?: string;
+  @Prop({ trim: true }) discordUpdatesChannelId?: string;
+  @Prop({ trim: true }) discordUpdatesChannelName?: string;
+  @Prop({ trim: true }) discordDocsChannelId?: string;
+  @Prop({ trim: true }) discordDocsChannelName?: string;
+  @Prop() discordProvisionedAt?: Date;
   @Prop() workflowId?: string;
   @Prop() activeSprintId?: string;
   @Prop({ default: 0 }) sequence!: number;
@@ -27,17 +29,13 @@ ProjectSchema.index(
   { workspaceId: 1, repositoryFullName: 1 },
   {
     unique: true,
-    partialFilterExpression: {
-      repositoryFullName: { $type: "string" },
-    },
+    partialFilterExpression: { repositoryFullName: { $type: "string" } },
   },
 );
 ProjectSchema.index(
-  { workspaceId: 1, driveRootFolderId: 1 },
+  { workspaceId: 1, discordDocsChannelId: 1 },
   {
     unique: true,
-    partialFilterExpression: {
-      driveRootFolderId: { $type: "string" },
-    },
+    partialFilterExpression: { discordDocsChannelId: { $type: "string" } },
   },
 );

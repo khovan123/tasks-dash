@@ -48,8 +48,8 @@ export class ProjectsService {
         projectKey: created.key,
       } satisfies ProjectCreatedEvent);
     } catch {
-      // Project creation must remain durable when Drive is temporarily unavailable.
-      // The Docs screen retries provisioning through ensureProjectFolder().
+      // Project creation remains durable when Discord is temporarily unavailable.
+      // Provision-all or the Docs screen can retry channel provisioning later.
     }
     return created;
   }
@@ -101,26 +101,34 @@ export class ProjectsService {
     return project;
   }
 
-  async linkDriveFolder(
+  async linkDiscordChannels(
     workspaceId: string,
     projectKey: string,
-    folder: { id: string; name: string; webViewLink?: string },
+    channels: {
+      guildId: string;
+      updatesChannelId: string;
+      updatesChannelName?: string;
+      docsChannelId: string;
+      docsChannelName: string;
+    },
   ): Promise<ProjectHydratedDocument> {
     const project = await this.getByKey(workspaceId, projectKey);
-    const linkedElsewhere = await this.projects.exists({
+    const docsLinkedElsewhere = await this.projects.exists({
       workspaceId,
-      driveRootFolderId: folder.id,
+      discordDocsChannelId: channels.docsChannelId,
       _id: { $ne: project._id },
     });
-    if (linkedElsewhere) {
+    if (docsLinkedElsewhere) {
       throw new ConflictException(
-        "The managed Google Drive folder is already assigned to another project.",
+        "The Discord Docs channel is already assigned to another project.",
       );
     }
-    project.driveRootFolderId = folder.id;
-    project.driveRootFolderName = folder.name;
-    project.driveRootWebViewLink = folder.webViewLink;
-    project.driveProvisionedAt = new Date();
+    project.discordGuildId = channels.guildId;
+    project.discordUpdatesChannelId = channels.updatesChannelId;
+    project.discordUpdatesChannelName = channels.updatesChannelName;
+    project.discordDocsChannelId = channels.docsChannelId;
+    project.discordDocsChannelName = channels.docsChannelName;
+    project.discordProvisionedAt = new Date();
     await project.save();
     return project;
   }

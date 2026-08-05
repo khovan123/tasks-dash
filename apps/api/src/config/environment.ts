@@ -13,9 +13,6 @@ const REQUIRED_KEYS = [
   "GITHUB_APP_ID",
   "GITHUB_APP_SLUG",
   "GITHUB_APP_WEBHOOK_SECRET",
-  "GOOGLE_DRIVE_CLIENT_ID",
-  "GOOGLE_DRIVE_CLIENT_SECRET",
-  "GOOGLE_DRIVE_REDIRECT_URI",
   "DISCORD_APPLICATION_ID",
   "DISCORD_BOT_TOKEN",
 ] as const;
@@ -117,7 +114,8 @@ export function validateEnvironment(input: Record<string, unknown>): Record<stri
   validateMailbox(requiredString(config, "SMTP_FROM"), "SMTP_FROM");
 
   const privateKey =
-    typeof config.GITHUB_APP_PRIVATE_KEY_BASE64 === "string" && config.GITHUB_APP_PRIVATE_KEY_BASE64.trim()
+    typeof config.GITHUB_APP_PRIVATE_KEY_BASE64 === "string" &&
+    config.GITHUB_APP_PRIVATE_KEY_BASE64.trim()
       ? config.GITHUB_APP_PRIVATE_KEY_BASE64.trim()
       : typeof config.GITHUB_APP_PRIVATE_KEY === "string"
         ? config.GITHUB_APP_PRIVATE_KEY.trim()
@@ -127,30 +125,33 @@ export function validateEnvironment(input: Record<string, unknown>): Record<stri
   }
 
   const sessionSecret = requiredString(config, "SESSION_SECRET");
-  if (sessionSecret.length < 32) throw new Error("SESSION_SECRET must contain at least 32 characters.");
-
+  if (sessionSecret.length < 32) {
+    throw new Error("SESSION_SECRET must contain at least 32 characters.");
+  }
   const bootstrapSecret = requiredString(config, "WORKSPACE_BOOTSTRAP_SECRET");
   if (bootstrapSecret.length < 32) {
     throw new Error("WORKSPACE_BOOTSTRAP_SECRET must contain at least 32 characters.");
   }
-
-  const encryptionKey = Buffer.from(requiredString(config, "INTEGRATION_ENCRYPTION_KEY"), "base64");
+  const encryptionKey = Buffer.from(
+    requiredString(config, "INTEGRATION_ENCRYPTION_KEY"),
+    "base64",
+  );
   if (encryptionKey.length !== 32) {
     throw new Error("INTEGRATION_ENCRYPTION_KEY must be a base64-encoded 32-byte key.");
   }
-
   if (!/^\d{17,20}$/.test(requiredString(config, "DISCORD_APPLICATION_ID"))) {
     throw new Error("DISCORD_APPLICATION_ID must be a Discord snowflake.");
   }
 
   validateUrl(requiredString(config, "WEB_APP_URL"), "WEB_APP_URL");
   validateUrl(requiredString(config, "API_PUBLIC_URL"), "API_PUBLIC_URL");
-  validateUrl(requiredString(config, "GITHUB_OAUTH_CALLBACK_URL"), "GITHUB_OAUTH_CALLBACK_URL");
-  validateUrl(requiredString(config, "GOOGLE_DRIVE_REDIRECT_URI"), "GOOGLE_DRIVE_REDIRECT_URI");
+  validateUrl(
+    requiredString(config, "GITHUB_OAUTH_CALLBACK_URL"),
+    "GITHUB_OAUTH_CALLBACK_URL",
+  );
 
   if (Number(config.MONGODB_MIN_POOL_SIZE) > Number(config.MONGODB_MAX_POOL_SIZE)) {
     throw new Error("MONGODB_MIN_POOL_SIZE cannot exceed MONGODB_MAX_POOL_SIZE.");
   }
-
   return config;
 }

@@ -23,13 +23,8 @@ export class GithubInstallationDocument extends BaseMongoDocument {
   @Prop({ default: false }) suspended!: boolean;
   @Prop() synchronizedAt?: Date;
 }
-export const GithubInstallationSchema = SchemaFactory.createForClass(
-  GithubInstallationDocument,
-);
-GithubInstallationSchema.index(
-  { workspaceId: 1, installationId: 1 },
-  { unique: true },
-);
+export const GithubInstallationSchema = SchemaFactory.createForClass(GithubInstallationDocument);
+GithubInstallationSchema.index({ workspaceId: 1, installationId: 1 }, { unique: true });
 
 @Schema({ collection: "discord_workspace_integrations", timestamps: true })
 export class DiscordWorkspaceDocument extends BaseMongoDocument {
@@ -39,14 +34,14 @@ export class DiscordWorkspaceDocument extends BaseMongoDocument {
   @Prop({ trim: true }) categoryName?: string;
   @Prop({ required: true, default: "{{projectKey}}-updates" })
   channelNameTemplate!: string;
+  @Prop({ required: true, default: "{{projectKey}}-docs" })
+  docsChannelNameTemplate!: string;
   @Prop({ default: true }) enabled!: boolean;
   @Prop({ required: true }) configuredAt!: Date;
   @Prop() lastProvisionedAt?: Date;
   @Prop() lastError?: string;
 }
-export const DiscordWorkspaceSchema = SchemaFactory.createForClass(
-  DiscordWorkspaceDocument,
-);
+export const DiscordWorkspaceSchema = SchemaFactory.createForClass(DiscordWorkspaceDocument);
 DiscordWorkspaceSchema.index({ workspaceId: 1 }, { unique: true });
 DiscordWorkspaceSchema.index({ guildId: 1 });
 
@@ -58,6 +53,8 @@ export class DiscordIntegrationDocument extends BaseMongoDocument {
   @Prop({ trim: true }) webhookId?: string;
   @Prop({ required: true }) channelId!: string;
   @Prop({ trim: true }) channelName?: string;
+  @Prop({ trim: true }) docsChannelId?: string;
+  @Prop({ trim: true }) docsChannelName?: string;
   @Prop({ trim: true }) guildId?: string;
   @Prop({ enum: ["BOT", "MANUAL"], default: "MANUAL" })
   provisionedBy!: "BOT" | "MANUAL";
@@ -66,31 +63,13 @@ export class DiscordIntegrationDocument extends BaseMongoDocument {
   @Prop() lastSuccessAt?: Date;
   @Prop() lastError?: string;
 }
-export const DiscordIntegrationSchema = SchemaFactory.createForClass(
-  DiscordIntegrationDocument,
-);
-DiscordIntegrationSchema.index(
-  { workspaceId: 1, projectKey: 1 },
-  { unique: true },
-);
+export const DiscordIntegrationSchema = SchemaFactory.createForClass(DiscordIntegrationDocument);
+DiscordIntegrationSchema.index({ workspaceId: 1, projectKey: 1 }, { unique: true });
 DiscordIntegrationSchema.index({ workspaceId: 1, channelId: 1 });
-
-@Schema({ collection: "google_drive_integrations", timestamps: true })
-export class GoogleDriveIntegrationDocument extends BaseMongoDocument {
-  @Prop({ required: true }) encryptedRefreshToken!: string;
-  @Prop({ required: true, lowercase: true, trim: true }) accountEmail!: string;
-  @Prop({ required: true }) connectedByMemberId!: string;
-  @Prop({ required: true }) workspaceRootFolderId!: string;
-  @Prop({ required: true }) workspaceRootFolderName!: string;
-  @Prop({ required: true }) scope!: string;
-  @Prop({ required: true }) connectedAt!: Date;
-  @Prop() synchronizedAt?: Date;
-  @Prop() lastError?: string;
-}
-export const GoogleDriveIntegrationSchema = SchemaFactory.createForClass(
-  GoogleDriveIntegrationDocument,
+DiscordIntegrationSchema.index(
+  { workspaceId: 1, docsChannelId: 1 },
+  { unique: true, partialFilterExpression: { docsChannelId: { $type: "string" } } },
 );
-GoogleDriveIntegrationSchema.index({ workspaceId: 1 }, { unique: true });
 
 @Schema({ collection: "integration_oauth_states", timestamps: true })
 export class IntegrationOauthStateDocument {
@@ -100,9 +79,7 @@ export class IntegrationOauthStateDocument {
   @Prop() provider?: string;
   @Prop({ required: true, expires: 0 }) expiresAt!: Date;
 }
-export const IntegrationOauthStateSchema = SchemaFactory.createForClass(
-  IntegrationOauthStateDocument,
-);
+export const IntegrationOauthStateSchema = SchemaFactory.createForClass(IntegrationOauthStateDocument);
 
 @Schema({ collection: "github_webhook_deliveries", timestamps: true })
 export class GithubWebhookDeliveryDocument {
@@ -114,34 +91,13 @@ export class GithubWebhookDeliveryDocument {
   @Prop() failedAt?: Date;
   @Prop() lastError?: string;
 }
-export const GithubWebhookDeliverySchema = SchemaFactory.createForClass(
-  GithubWebhookDeliveryDocument,
-);
+export const GithubWebhookDeliverySchema = SchemaFactory.createForClass(GithubWebhookDeliveryDocument);
 
 export class LinkGithubRepositoryDto {
   @Type(() => Number)
   @IsInt()
   @Min(1)
   repositoryId!: number;
-}
-
-export class CreateDriveFolderDto {
-  @IsString()
-  @MinLength(1)
-  @MaxLength(180)
-  name!: string;
-
-  @IsString()
-  @MaxLength(256)
-  @IsOptional()
-  parentId?: string;
-}
-
-export class RenameDriveItemDto {
-  @IsString()
-  @MinLength(1)
-  @MaxLength(180)
-  name!: string;
 }
 
 export class ConfigureDiscordWorkspaceDto {
@@ -159,6 +115,12 @@ export class ConfigureDiscordWorkspaceDto {
   @MaxLength(100)
   @IsOptional()
   channelNameTemplate?: string;
+
+  @IsString()
+  @MinLength(3)
+  @MaxLength(100)
+  @IsOptional()
+  docsChannelNameTemplate?: string;
 }
 
 export class ProvisionDiscordProjectDto {
@@ -167,6 +129,12 @@ export class ProvisionDiscordProjectDto {
   @MaxLength(100)
   @IsOptional()
   channelName?: string;
+
+  @IsString()
+  @MinLength(1)
+  @MaxLength(100)
+  @IsOptional()
+  docsChannelName?: string;
 
   @IsString()
   @MaxLength(1024)
@@ -196,15 +164,8 @@ export class DiscordMessageDto {
   description!: string;
 }
 
-export type GithubInstallationHydratedDocument =
-  HydratedDocument<GithubInstallationDocument>;
-export type DiscordWorkspaceHydratedDocument =
-  HydratedDocument<DiscordWorkspaceDocument>;
-export type DiscordIntegrationHydratedDocument =
-  HydratedDocument<DiscordIntegrationDocument>;
-export type GoogleDriveIntegrationHydratedDocument =
-  HydratedDocument<GoogleDriveIntegrationDocument>;
-export type IntegrationOauthStateHydratedDocument =
-  HydratedDocument<IntegrationOauthStateDocument>;
-export type GithubWebhookDeliveryHydratedDocument =
-  HydratedDocument<GithubWebhookDeliveryDocument>;
+export type GithubInstallationHydratedDocument = HydratedDocument<GithubInstallationDocument>;
+export type DiscordWorkspaceHydratedDocument = HydratedDocument<DiscordWorkspaceDocument>;
+export type DiscordIntegrationHydratedDocument = HydratedDocument<DiscordIntegrationDocument>;
+export type IntegrationOauthStateHydratedDocument = HydratedDocument<IntegrationOauthStateDocument>;
+export type GithubWebhookDeliveryHydratedDocument = HydratedDocument<GithubWebhookDeliveryDocument>;

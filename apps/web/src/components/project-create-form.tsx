@@ -12,21 +12,11 @@ import {
 } from "@/features/projects/schemas/project-form.schema";
 import { FormCard } from "@/components/layout/app-shell";
 import { Button } from "@/components/ui/button";
-import {
-  Field,
-  FieldDescription,
-  FieldError,
-  FieldGroup,
-  FieldLabel,
-} from "@/components/ui/field";
+import { Field, FieldDescription, FieldError, FieldGroup, FieldLabel } from "@/components/ui/field";
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
 
-const DEFAULT_VALUES: ProjectFormValues = {
-  key: "",
-  name: "",
-  description: "",
-};
+const DEFAULT_VALUES: ProjectFormValues = { key: "", name: "", description: "" };
 
 export function ProjectCreateForm() {
   const router = useRouter();
@@ -34,7 +24,6 @@ export function ProjectCreateForm() {
     resolver: zodResolver(projectFormSchema),
     defaultValues: DEFAULT_VALUES,
   });
-
   async function submit(values: ProjectFormPayload): Promise<void> {
     form.clearErrors("root");
     try {
@@ -45,68 +34,24 @@ export function ProjectCreateForm() {
       form.reset(DEFAULT_VALUES);
       router.refresh();
     } catch (error) {
-      form.setError("root", {
-        message: error instanceof Error ? error.message : "Không thể tạo dự án.",
-      });
+      form.setError("root", { message: error instanceof Error ? error.message : "Không thể tạo dự án." });
     }
   }
-
   return (
     <FormProvider {...form}>
       <form onSubmit={form.handleSubmit(submit)} noValidate>
         <FormCard
           eyebrow="Create project"
           title="Tạo dự án thật"
-          description="Repository được chọn từ GitHub App. Google Drive tự tạo folder dự án bên trong root workspace; không nhập repository hoặc folder ID thủ công."
-          footer={
-            <Button disabled={form.formState.isSubmitting}>
-              <FolderPlus />
-              {form.formState.isSubmitting ? "Đang tạo…" : "Tạo dự án"}
-            </Button>
-          }
+          description="Repository được chọn từ GitHub App. Nếu Discord Bot đã cấu hình, hệ thống tự tạo channel Updates và Docs cho project."
+          footer={<Button disabled={form.formState.isSubmitting}><FolderPlus />{form.formState.isSubmitting ? "Đang tạo…" : "Tạo dự án"}</Button>}
         >
           <FieldGroup>
-            <Field>
-              <FieldLabel htmlFor="project-key">Project key</FieldLabel>
-              <Input
-                id="project-key"
-                {...form.register("key")}
-                placeholder="TD"
-                aria-invalid={Boolean(form.formState.errors.key)}
-              />
-              {form.formState.errors.key?.message ? (
-                <FieldError>{form.formState.errors.key.message}</FieldError>
-              ) : null}
-            </Field>
-            <Field>
-              <FieldLabel htmlFor="project-name">Tên dự án</FieldLabel>
-              <Input
-                id="project-name"
-                {...form.register("name")}
-                placeholder="Tasks Dash"
-                aria-invalid={Boolean(form.formState.errors.name)}
-              />
-              {form.formState.errors.name?.message ? (
-                <FieldError>{form.formState.errors.name.message}</FieldError>
-              ) : null}
-            </Field>
+            <Field><FieldLabel htmlFor="project-key">Project key</FieldLabel><Input id="project-key" {...form.register("key")} placeholder="TD" />{form.formState.errors.key?.message ? <FieldError>{form.formState.errors.key.message}</FieldError> : null}</Field>
+            <Field><FieldLabel htmlFor="project-name">Tên dự án</FieldLabel><Input id="project-name" {...form.register("name")} placeholder="Tasks Dash" />{form.formState.errors.name?.message ? <FieldError>{form.formState.errors.name.message}</FieldError> : null}</Field>
           </FieldGroup>
-          <Field>
-            <FieldLabel htmlFor="project-description">Mô tả</FieldLabel>
-            <Textarea
-              id="project-description"
-              {...form.register("description")}
-              placeholder="Mục tiêu và phạm vi dự án"
-              aria-invalid={Boolean(form.formState.errors.description)}
-            />
-            <FieldDescription>Mô tả này hiển thị trên dashboard workspace.</FieldDescription>
-            {form.formState.errors.description?.message ? (
-              <FieldError>{form.formState.errors.description.message}</FieldError>
-            ) : null}
-          </Field>
-          {form.formState.errors.root?.message ? (
-            <FieldError>{form.formState.errors.root.message}</FieldError>
-          ) : null}
+          <Field><FieldLabel htmlFor="project-description">Mô tả</FieldLabel><Textarea id="project-description" {...form.register("description")} placeholder="Mục tiêu và phạm vi dự án" /><FieldDescription>Mô tả này hiển thị trên dashboard workspace.</FieldDescription>{form.formState.errors.description?.message ? <FieldError>{form.formState.errors.description.message}</FieldError> : null}</Field>
+          {form.formState.errors.root?.message ? <FieldError>{form.formState.errors.root.message}</FieldError> : null}
         </FormCard>
       </form>
     </FormProvider>

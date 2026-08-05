@@ -2,21 +2,17 @@
 
 ## GitHub
 
-A GitHub webhook is verified with `GITHUB_WEBHOOK_SECRET`. Work-item keys are extracted from branch names, PR titles, PR bodies, and commit messages. PR events update linked work-item metadata and can transition work items through automation rules.
-
-Recommended events: `pull_request`, `push`, `issues`, `workflow_run`.
+GitHub OAuth authenticates users. The GitHub App supplies installation access, repository selection, webhook signature verification, and PR/commit linking.
 
 ## Discord
 
-Automation actions send structured embeds to the configured webhook. Per-project channels can be added by storing a project-specific webhook secret reference rather than a raw URL.
+A workspace Owner/Admin installs one bot and configures Guild ID, optional Category ID, Updates template, and Docs template. Each project receives:
 
-## Google Drive
+```text
+#<project-key>-updates
+#<project-key>-docs
+```
 
-Each project stores a `driveRootFolderId`. The docs explorer requests descendants below that root, preserving Drive hierarchy. Production deployments should encrypt refresh tokens and keep only token references in MongoDB.
+The Updates channel receives automation messages through an encrypted incoming webhook. The Docs channel receives file attachments through the Bot API. Tasks Dash stores the returned guild/channel/message/attachment IDs and can navigate to the exact Discord message.
 
-## Security
-
-- Never persist raw GitHub private keys or Discord webhook URLs in project documents.
-- Verify webhook signatures before dispatch.
-- Use a secret manager in production.
-- Apply project membership checks to every project-scoped query and command.
+No Google OAuth or Google Drive integration is used.
