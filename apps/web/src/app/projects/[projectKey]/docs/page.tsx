@@ -1,15 +1,11 @@
 import Link from "next/link";
-import { HardDrive } from "lucide-react";
+import { FileArchive } from "lucide-react";
 import {
-  DriveFileManager,
-  type DriveNode,
-} from "@/components/drive-file-manager";
+  DiscordDocumentManager,
+  type DiscordDocumentTree,
+} from "@/components/discord-document-manager";
 import { apiData } from "@/lib/server/api-data";
-import {
-  AppNav,
-  AppPage,
-  AppTopbar,
-} from "@/components/layout/app-shell";
+import { AppNav, AppPage, AppTopbar } from "@/components/layout/app-shell";
 import { Button } from "@/components/ui/button";
 import {
   Empty,
@@ -21,40 +17,15 @@ import {
 
 export const dynamic = "force-dynamic";
 
-interface DriveStatus {
-  connected: boolean;
-  accountEmail?: string;
-  workspaceRootFolderName?: string;
-  lastError?: string | null;
-}
-
-interface DriveTree {
-  rootFolderId: string;
-  rootFolderName: string;
-  rootWebViewLink?: string | null;
-  accountEmail: string;
-  items: DriveNode[];
-}
-
-export default async function ProjectDocsPage({
-  params,
-}: {
-  params: Promise<{ projectKey: string }>;
-}) {
+export default async function ProjectDocsPage({ params }: { params: Promise<{ projectKey: string }> }) {
   const { projectKey } = await params;
   const key = projectKey.toUpperCase();
-  const status = await apiData<DriveStatus>("/integrations/google-drive/status");
-
-  let tree: DriveTree | null = null;
+  let tree: DiscordDocumentTree | null = null;
   let error: string | null = null;
-  if (status.connected) {
-    try {
-      tree = await apiData<DriveTree>(
-        `/integrations/google-drive/projects/${key}/tree`,
-      );
-    } catch (cause) {
-      error = cause instanceof Error ? cause.message : "Không thể tải Google Drive.";
-    }
+  try {
+    tree = await apiData<DiscordDocumentTree>(`/projects/${key}/documents`);
+  } catch (cause) {
+    error = cause instanceof Error ? cause.message : "Không thể tải Discord Docs.";
   }
 
   return (
@@ -69,39 +40,19 @@ export default async function ProjectDocsPage({
         </AppNav>
       </AppTopbar>
 
-      {!status.connected ? (
+      {tree ? (
+        <DiscordDocumentManager tree={tree} />
+      ) : (
         <Empty className="min-h-80">
-          <HardDrive className="size-12 text-primary" />
+          <FileArchive className="size-12 text-primary" />
           <EmptyHeader>
-            <EmptyTitle>Google Drive chưa được kết nối</EmptyTitle>
+            <EmptyTitle>Discord Docs channel chưa sẵn sàng</EmptyTitle>
             <EmptyDescription>
-              Workspace Owner phải cấp quyền một lần. Tasks Dash sẽ tự tạo root
-              workspace và folder riêng cho từng project; không hỗ trợ link folder ngoài.
+              {error ?? "Cài Discord bot, cấu hình Guild/Category và provision project để tạo channel Docs."}
             </EmptyDescription>
           </EmptyHeader>
           <EmptyContent>
-            <Button asChild>
-              <a href="/api/integrations/google-drive/connect">Owner kết nối Google Drive</a>
-            </Button>
-          </EmptyContent>
-        </Empty>
-      ) : tree ? (
-        <DriveFileManager
-          projectKey={key}
-          accountEmail={tree.accountEmail}
-          rootFolderId={tree.rootFolderId}
-          rootWebViewLink={tree.rootWebViewLink}
-          items={tree.items}
-        />
-      ) : (
-        <Empty className="min-h-80">
-          <HardDrive className="size-12 text-destructive" />
-          <EmptyHeader>
-            <EmptyTitle>Chưa thể tải folder dự án</EmptyTitle>
-            <EmptyDescription>{error ?? status.lastError ?? "Google Drive tạm thời không khả dụng."}</EmptyDescription>
-          </EmptyHeader>
-          <EmptyContent>
-            <Button asChild variant="outline"><Link href="/settings/integrations">Kiểm tra tích hợp</Link></Button>
+            <Button asChild><Link href="/settings/integrations">Cấu hình Discord Bot</Link></Button>
           </EmptyContent>
         </Empty>
       )}

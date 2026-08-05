@@ -26,7 +26,7 @@ import {
 } from "./integration.schemas";
 
 const DISCORD_API_BASE = "https://discord.com/api/v10";
-const DISCORD_BOT_PERMISSIONS = 536870928;
+const DISCORD_BOT_PERMISSIONS = 536980496;
 const DISCORD_TEXT_CHANNEL = 0;
 const DISCORD_CATEGORY_CHANNEL = 4;
 
@@ -47,12 +47,7 @@ interface DiscordWebhookMetadata {
   guild_id?: string;
   token?: string;
 }
-
-interface DiscordGuild {
-  id: string;
-  name: string;
-}
-
+interface DiscordGuild { id: string; name: string }
 interface DiscordChannel {
   id: string;
   guild_id?: string;
@@ -60,7 +55,6 @@ interface DiscordChannel {
   type: number;
   parent_id?: string | null;
 }
-
 interface DiscordApiError {
   message?: string;
   code?: number;
@@ -114,12 +108,8 @@ export class DiscordAdapter {
 
   private webhookUrl(value: string): URL {
     const url = new URL(value);
-    const hostAllowed =
-      url.hostname === "discord.com" || url.hostname === "discordapp.com";
-    const pathAllowed =
-      /^\/api(?:\/v\d+)?\/webhooks\/\d+\/[A-Za-z0-9._-]+$/.test(
-        url.pathname,
-      );
+    const hostAllowed = url.hostname === "discord.com" || url.hostname === "discordapp.com";
+    const pathAllowed = /^\/api(?:\/v\d+)?\/webhooks\/\d+\/[A-Za-z0-9._-]+$/.test(url.pathname);
     if (url.protocol !== "https:" || !hostAllowed || !pathAllowed) {
       throw new UnauthorizedException("Invalid Discord webhook URL.");
     }
@@ -137,52 +127,69 @@ export class DiscordAdapter {
       `Bot ${this.config.getOrThrow<string>("DISCORD_BOT_TOKEN")}`,
     );
     headers.set("user-agent", "Tasks-Dash/1.0");
-    if (init.body && !headers.has("content-type")) {
-      headers.set("content-type", "application/json");
-    }
+    if (init.body && !headers.has("content-type")) headers.set("content-type", "application/json");
     if (auditReason) {
-      headers.set(
-        "x-audit-log-reason",
-        encodeURIComponent(auditReason).slice(0, 512),
-      );
+      headers.set("x-audit-log-reason", encodeURIComponent(auditReason).slice(0, 512));
     }
-
-    const request = () =>
-      fetch(`${DISCORD_API_BASE}${path}`, { ...init, headers });
+    const request = () => fetch(`${DISCORD_API_BASE}${path}`, { ...init, headers });
     let response = await request();
     if (response.status === 429) {
-      const rate = (await response
-        .json()
-        .catch(() => ({ retry_after: 1 }))) as DiscordApiError;
+      const rate = (await response.json().catch(() => ({ retry_after: 1 }))) as DiscordApiError;
       await new Promise((resolve) =>
-        setTimeout(
-          resolve,
-          Math.min(
-            Math.max(Number(rate.retry_after ?? 1) * 1000, 250),
-            5000,
-          ),
-        ),
+        setTimeout(resolve, Math.min(Math.max(Number(rate.retry_after ?? 1) * 1000, 250), 5000)),
       );
       response = await request();
     }
-
     if (!response.ok) {
-      const error = (await response
-        .json()
-        .catch(() => ({}))) as DiscordApiError;
-      const message =
-        error.message ?? `Discord API failed with HTTP ${response.status}.`;
-      if (response.status === 401) {
-        throw new UnauthorizedException(message);
-      }
-      if (response.status === 403) {
-        throw new ForbiddenException(message);
-      }
+      const error = (await response.json().catch(() => ({}))) as DiscordApiError;
+      const message = error.message ?? `Discord API failed with HTTP ${response.status}.`;
+      if (response.status === 401) throw new UnauthorizedException(message);
+      if (response.status === 403) throw new ForbiddenException(message);
       throw new ServiceUnavailableException(message);
     }
-
     if (response.status === 204) return undefined as T;
     return (await response.json()) as T;
+  }
+
+  private validateTemplate(value: string, key: string): void {
+    if (!value.includes("{{projectKey}}") && !value.includes("{{projectName}}")) {
+      throw new BadRequestException(
+        `${key} must contain {{projectKey}} or {{projectName}}.`,
+      );
+    }
+  }
+
+  private async ensureTextChannel(
+    guildId: string,
+    channels: DiscordChannel[],
+    name: string,
+    parentId: string | null,
+    topic: string,
+    auditReason: string,
+    preferredId?: string,
+  ): Promise<DiscordChannel> {
+    const existing = channels.find(
+      (channel) =>
+        channel.type === DISCORD_TEXT_CHANNEL &&
+        ((preferredId && channel.id === preferredId) ||
+          (channel.name === name && (channel.parent_id ?? null) === parentId)),
+    );
+    if (existing) return existing;
+    const created = await this.botRequest<DiscordChannel>(
+      `/guilds/${guildId}/channels`,
+      {
+        method: "POST",
+        body: JSON.stringify({
+          name,
+          type: DISCORD_TEXT_CHANNEL,
+          topic: topic.slice(0, 1024),
+          parent_id: parentId,
+        }),
+      },
+      auditReason,
+    );
+    channels.push(created);
+    return created;
   }
 
   async workspaceStatus(workspaceId: string): Promise<Record<string, unknown>> {
@@ -198,8 +205,8 @@ export class DiscordAdapter {
       guildName: integration?.guildName ?? null,
       categoryId: integration?.categoryId ?? null,
       categoryName: integration?.categoryName ?? null,
-      channelNameTemplate:
-        integration?.channelNameTemplate ?? "{{projectKey}}-updates",
+      channelNameTemplate: integration?.channelNameTemplate ?? "{{projectKey}}-updates",
+      docsChannelNameTemplate: integration?.docsChannelNameTemplate ?? "{{projectKey}}-docs",
       enabled: integration?.enabled ?? false,
       lastProvisionedAt: integration?.lastProvisionedAt ?? null,
       lastError: integration?.lastError ?? null,
@@ -212,38 +219,26 @@ export class DiscordAdapter {
     dto: ConfigureDiscordWorkspaceDto,
   ): Promise<Record<string, unknown>> {
     const guild = await this.botRequest<DiscordGuild>(`/guilds/${dto.guildId}`);
-    const channels = await this.botRequest<DiscordChannel[]>(
-      `/guilds/${dto.guildId}/channels`,
-    );
+    const channels = await this.botRequest<DiscordChannel[]>(`/guilds/${dto.guildId}/channels`);
     const category = dto.categoryId
-      ? channels.find(
-          (channel) =>
-            channel.id === dto.categoryId &&
-            channel.type === DISCORD_CATEGORY_CHANNEL,
-        )
+      ? channels.find((channel) => channel.id === dto.categoryId && channel.type === DISCORD_CATEGORY_CHANNEL)
       : undefined;
     if (dto.categoryId && !category) {
       throw new BadRequestException(
         "Discord categoryId must belong to the selected guild and be a category channel.",
       );
     }
-
-    const channelNameTemplate =
-      dto.channelNameTemplate?.trim() || "{{projectKey}}-updates";
-    if (
-      !channelNameTemplate.includes("{{projectKey}}") &&
-      !channelNameTemplate.includes("{{projectName}}")
-    ) {
-      throw new BadRequestException(
-        "channelNameTemplate must contain {{projectKey}} or {{projectName}}.",
-      );
-    }
+    const channelNameTemplate = dto.channelNameTemplate?.trim() || "{{projectKey}}-updates";
+    const docsChannelNameTemplate = dto.docsChannelNameTemplate?.trim() || "{{projectKey}}-docs";
+    this.validateTemplate(channelNameTemplate, "channelNameTemplate");
+    this.validateTemplate(docsChannelNameTemplate, "docsChannelNameTemplate");
 
     const setValues: Record<string, unknown> = {
       workspaceId,
       guildId: guild.id,
       guildName: guild.name,
       channelNameTemplate,
+      docsChannelNameTemplate,
       enabled: true,
       configuredAt: new Date(),
     };
@@ -255,7 +250,6 @@ export class DiscordAdapter {
       unsetValues.categoryId = 1;
       unsetValues.categoryName = 1;
     }
-
     const integration = await this.workspaces
       .findOneAndUpdate(
         { workspaceId },
@@ -263,7 +257,6 @@ export class DiscordAdapter {
         { upsert: true, new: true, setDefaultsOnInsert: true },
       )
       .exec();
-
     const provisioned = await this.provisionAll(workspaceId);
     return {
       ...(await this.workspaceStatus(workspaceId)),
@@ -300,89 +293,80 @@ export class DiscordAdapter {
     dto: ProvisionDiscordProjectDto,
   ): Promise<Record<string, unknown>> {
     const project = await this.projects.getByKey(workspaceId, projectKey);
-    const workspace = await this.workspaces
-      .findOne({ workspaceId, enabled: true })
-      .exec();
+    const workspace = await this.workspaces.findOne({ workspaceId, enabled: true }).exec();
     if (!workspace) {
       throw new ServiceUnavailableException(
         "Discord workspace bot configuration is required before provisioning project channels.",
       );
     }
-
-    const existing = await this.integrations
-      .findOne({ workspaceId, projectKey: project.key })
-      .exec();
-    if (
-      existing?.enabled &&
-      (existing.provisionedBy === "MANUAL" ||
-        existing.guildId === workspace.guildId)
-    ) {
-      await this.events.emitAsync(DISCORD_PROJECT_PROVISIONED_EVENT, {
-        workspaceId,
-        projectKey: project.key,
-        guildId: existing.guildId ?? workspace.guildId,
-        channelId: existing.channelId,
-      } satisfies DiscordProjectProvisionedEvent);
-      return this.statusOf(existing);
-    }
-
     try {
-      const channels = await this.botRequest<DiscordChannel[]>(
-        `/guilds/${workspace.guildId}/channels`,
-      );
-      const channelName = normalizeDiscordChannelName(
+      const existing = await this.integrations
+        .findOne({ workspaceId, projectKey: project.key })
+        .exec();
+      const channels = await this.botRequest<DiscordChannel[]>(`/guilds/${workspace.guildId}/channels`);
+      const parentId = workspace.categoryId ?? null;
+      const updatesName = normalizeDiscordChannelName(
         dto.channelName?.trim() || workspace.channelNameTemplate,
         project.key,
         project.name,
       );
-      const parentId = workspace.categoryId ?? null;
-      let channel = channels.find(
-        (candidate) =>
-          candidate.type === DISCORD_TEXT_CHANNEL &&
-          candidate.name === channelName &&
-          (candidate.parent_id ?? null) === parentId,
+      const docsName = normalizeDiscordChannelName(
+        dto.docsChannelName?.trim() || workspace.docsChannelNameTemplate,
+        project.key,
+        project.name,
+      );
+      const canReuseManual =
+        existing?.enabled &&
+        existing.provisionedBy === "MANUAL" &&
+        existing.guildId === workspace.guildId;
+      const updatesChannel = canReuseManual
+        ? channels.find((channel) => channel.id === existing.channelId) ??
+          ({ id: existing.channelId, name: existing.channelName ?? updatesName, type: DISCORD_TEXT_CHANNEL } as DiscordChannel)
+        : await this.ensureTextChannel(
+            workspace.guildId,
+            channels,
+            updatesName,
+            parentId,
+            dto.topic?.trim() || `Tasks Dash updates for ${project.key} · ${project.name}`,
+            `Tasks Dash project ${project.key} updates channel provisioning`,
+            existing?.provisionedBy === "BOT" ? existing.channelId : undefined,
+          );
+      const docsChannel = await this.ensureTextChannel(
+        workspace.guildId,
+        channels,
+        docsName,
+        parentId,
+        `Tasks Dash document attachments for ${project.key} · ${project.name}`,
+        `Tasks Dash project ${project.key} docs channel provisioning`,
+        existing?.docsChannelId,
       );
 
-      if (!channel) {
-        channel = await this.botRequest<DiscordChannel>(
-          `/guilds/${workspace.guildId}/channels`,
+      let encryptedWebhookUrl = existing?.encryptedWebhookUrl;
+      let webhookId = existing?.webhookId;
+      let webhookName = existing?.webhookName;
+      let provisionedBy: "BOT" | "MANUAL" = canReuseManual ? "MANUAL" : "BOT";
+      if (!encryptedWebhookUrl || existing?.channelId !== updatesChannel.id || existing.guildId !== workspace.guildId) {
+        const webhook = await this.botRequest<DiscordWebhookMetadata>(
+          `/channels/${updatesChannel.id}/webhooks`,
           {
             method: "POST",
-            body: JSON.stringify({
-              name: channelName,
-              type: DISCORD_TEXT_CHANNEL,
-              topic:
-                dto.topic?.trim() ||
-                `Tasks Dash updates for ${project.key} · ${project.name}`.slice(
-                  0,
-                  1024,
-                ),
-              parent_id: parentId,
-            }),
+            body: JSON.stringify({ name: `Tasks Dash ${project.key}`.slice(0, 80) }),
           },
-          `Tasks Dash project ${project.key} channel provisioning`,
+          `Tasks Dash project ${project.key} webhook provisioning`,
         );
+        if (!webhook.id || !webhook.token) {
+          throw new ServiceUnavailableException(
+            "Discord did not return an executable incoming webhook token.",
+          );
+        }
+        encryptedWebhookUrl = this.encryption.encrypt(
+          new URL(`/api/webhooks/${webhook.id}/${webhook.token}`, "https://discord.com").toString(),
+        );
+        webhookId = webhook.id;
+        webhookName = webhook.name ?? `Tasks Dash ${project.key}`;
+        provisionedBy = "BOT";
       }
 
-      const webhook = await this.botRequest<DiscordWebhookMetadata>(
-        `/channels/${channel.id}/webhooks`,
-        {
-          method: "POST",
-          body: JSON.stringify({
-            name: `Tasks Dash ${project.key}`.slice(0, 80),
-          }),
-        },
-        `Tasks Dash project ${project.key} webhook provisioning`,
-      );
-      if (!webhook.id || !webhook.token) {
-        throw new ServiceUnavailableException(
-          "Discord did not return an executable incoming webhook token.",
-        );
-      }
-      const webhookUrl = new URL(
-        `/api/webhooks/${webhook.id}/${webhook.token}`,
-        "https://discord.com",
-      );
       const integration = await this.integrations
         .findOneAndUpdate(
           { workspaceId, projectKey: project.key },
@@ -390,15 +374,15 @@ export class DiscordAdapter {
             $set: {
               workspaceId,
               projectKey: project.key,
-              encryptedWebhookUrl: this.encryption.encrypt(
-                webhookUrl.toString(),
-              ),
-              webhookName: webhook.name ?? `Tasks Dash ${project.key}`,
-              webhookId: webhook.id,
-              channelId: channel.id,
-              channelName: channel.name,
+              encryptedWebhookUrl,
+              webhookName,
+              webhookId,
+              channelId: updatesChannel.id,
+              channelName: updatesChannel.name,
+              docsChannelId: docsChannel.id,
+              docsChannelName: docsChannel.name,
               guildId: workspace.guildId,
-              provisionedBy: "BOT",
+              provisionedBy,
               enabled: true,
               provisionedAt: new Date(),
             },
@@ -408,48 +392,42 @@ export class DiscordAdapter {
         )
         .exec();
 
+      await this.projects.linkDiscordChannels(workspaceId, project.key, {
+        guildId: workspace.guildId,
+        updatesChannelId: updatesChannel.id,
+        updatesChannelName: updatesChannel.name,
+        docsChannelId: docsChannel.id,
+        docsChannelName: docsChannel.name,
+      });
       await this.workspaces
         .updateOne(
           { _id: workspace._id },
-          {
-            $set: { lastProvisionedAt: new Date() },
-            $unset: { lastError: 1 },
-          },
+          { $set: { lastProvisionedAt: new Date() }, $unset: { lastError: 1 } },
         )
         .exec();
-
       await this.send(
         workspaceId,
         project.key,
         `${project.key} connected`,
-        `This channel is managed by Tasks Dash for ${project.name}. GitHub pull request automation is ready.`,
+        `Updates: #${updatesChannel.name}\nDocuments: #${docsChannel.name}\nGitHub automation and Discord document storage are ready.`,
       );
       await this.events.emitAsync(DISCORD_PROJECT_PROVISIONED_EVENT, {
         workspaceId,
         projectKey: project.key,
         guildId: workspace.guildId,
-        channelId: channel.id,
+        channelId: updatesChannel.id,
       } satisfies DiscordProjectProvisionedEvent);
       return this.statusOf(integration);
     } catch (error) {
-      const message =
-        error instanceof Error ? error.message : "Unknown Discord error";
-      await this.workspaces
-        .updateOne(
-          { workspaceId },
-          { $set: { lastError: message } },
-        )
-        .exec();
+      const message = error instanceof Error ? error.message : "Unknown Discord error";
+      await this.workspaces.updateOne({ workspaceId }, { $set: { lastError: message } }).exec();
       throw error;
     }
   }
 
   @OnEvent(PROJECT_CREATED_EVENT, { async: true })
   async onProjectCreated(event: ProjectCreatedEvent): Promise<void> {
-    const configured = await this.workspaces.exists({
-      workspaceId: event.workspaceId,
-      enabled: true,
-    });
+    const configured = await this.workspaces.exists({ workspaceId: event.workspaceId, enabled: true });
     if (!configured) return;
     await this.provisionProject(event.workspaceId, event.projectKey, {});
   }
@@ -460,12 +438,8 @@ export class DiscordAdapter {
   ): Promise<Record<string, unknown>> {
     await this.projects.getByKey(workspaceId, dto.projectKey);
     const url = this.webhookUrl(dto.webhookUrl);
-    const response = await fetch(url, {
-      headers: { "user-agent": "Tasks-Dash/1.0" },
-    });
-    if (!response.ok) {
-      throw new UnauthorizedException("Discord rejected the webhook URL.");
-    }
+    const response = await fetch(url, { headers: { "user-agent": "Tasks-Dash/1.0" } });
+    if (!response.ok) throw new UnauthorizedException("Discord rejected the webhook URL.");
     const metadata = (await response.json()) as DiscordWebhookMetadata;
     const integration = await this.integrations
       .findOneAndUpdate(
@@ -494,6 +468,8 @@ export class DiscordAdapter {
       "Tasks Dash connected",
       "Discord automation is connected to this project.",
     );
+    const workspaceConfigured = await this.workspaces.exists({ workspaceId, enabled: true });
+    if (workspaceConfigured) return this.provisionProject(workspaceId, integration.projectKey, {});
     await this.events.emitAsync(DISCORD_PROJECT_PROVISIONED_EVENT, {
       workspaceId,
       projectKey: integration.projectKey,
@@ -504,15 +480,13 @@ export class DiscordAdapter {
   }
 
   async list(workspaceId: string): Promise<Record<string, unknown>[]> {
-    return (
-      await this.integrations.find({ workspaceId }).sort({ projectKey: 1 }).exec()
-    ).map((item) => this.statusOf(item));
+    return (await this.integrations.find({ workspaceId }).sort({ projectKey: 1 }).exec()).map(
+      (item) => this.statusOf(item),
+    );
   }
 
   async disconnect(workspaceId: string, projectKey: string): Promise<void> {
-    await this.integrations
-      .deleteOne({ workspaceId, projectKey: projectKey.toUpperCase() })
-      .exec();
+    await this.integrations.deleteOne({ workspaceId, projectKey: projectKey.toUpperCase() }).exec();
   }
 
   async send(
@@ -522,20 +496,12 @@ export class DiscordAdapter {
     description: string,
   ): Promise<void> {
     const integration = await this.integrations
-      .findOne({
-        workspaceId,
-        projectKey: projectKey.toUpperCase(),
-        enabled: true,
-      })
+      .findOne({ workspaceId, projectKey: projectKey.toUpperCase(), enabled: true })
       .exec();
     if (!integration) {
-      throw new ServiceUnavailableException(
-        `Discord is not connected for ${projectKey.toUpperCase()}.`,
-      );
+      throw new ServiceUnavailableException(`Discord is not connected for ${projectKey.toUpperCase()}.`);
     }
-    const url = this.webhookUrl(
-      this.encryption.decrypt(integration.encryptedWebhookUrl),
-    );
+    const url = this.webhookUrl(this.encryption.decrypt(integration.encryptedWebhookUrl));
     url.searchParams.set("wait", "true");
     const body = JSON.stringify({
       username: "Tasks Dash",
@@ -551,42 +517,26 @@ export class DiscordAdapter {
     const request = () =>
       fetch(url, {
         method: "POST",
-        headers: {
-          "content-type": "application/json",
-          "user-agent": "Tasks-Dash/1.0",
-        },
+        headers: { "content-type": "application/json", "user-agent": "Tasks-Dash/1.0" },
         body,
       });
     let response = await request();
     if (response.status === 429) {
-      const rate = (await response
-        .json()
-        .catch(() => ({ retry_after: 1 }))) as { retry_after?: number };
+      const rate = (await response.json().catch(() => ({ retry_after: 1 }))) as { retry_after?: number };
       await new Promise((resolve) =>
-        setTimeout(
-          resolve,
-          Math.min(
-            Math.max(Number(rate.retry_after ?? 1) * 1000, 250),
-            5000,
-          ),
-        ),
+        setTimeout(resolve, Math.min(Math.max(Number(rate.retry_after ?? 1) * 1000, 250), 5000)),
       );
       response = await request();
     }
     if (!response.ok) {
       const error = `Discord webhook failed with HTTP ${response.status}.`;
-      await this.integrations
-        .updateOne({ _id: integration._id }, { lastError: error })
-        .exec();
+      await this.integrations.updateOne({ _id: integration._id }, { lastError: error }).exec();
       throw new ServiceUnavailableException(error);
     }
     await this.integrations
       .updateOne(
         { _id: integration._id },
-        {
-          $set: { lastSuccessAt: new Date() },
-          $unset: { lastError: 1 },
-        },
+        { $set: { lastSuccessAt: new Date() }, $unset: { lastError: 1 } },
       )
       .exec();
   }
@@ -598,6 +548,8 @@ export class DiscordAdapter {
       webhookId: item.webhookId ?? null,
       channelId: item.channelId,
       channelName: item.channelName ?? null,
+      docsChannelId: item.docsChannelId ?? null,
+      docsChannelName: item.docsChannelName ?? null,
       guildId: item.guildId ?? null,
       provisionedBy: item.provisionedBy,
       provisionedAt: item.provisionedAt ?? null,

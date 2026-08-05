@@ -36,7 +36,7 @@ export interface DashboardProjectResponse {
   icon: string;
   leadId?: string;
   repositoryFullName?: string;
-  driveRootFolderId?: string;
+  discordDocsChannelId?: string;
   workflowId?: string;
   activeSprintId?: string;
   sequence: number;
@@ -70,41 +70,27 @@ export class DashboardService {
   ) {}
 
   async overview(workspaceId: string): Promise<DashboardOverviewResponse> {
-    const [projects, workflows, memberDocuments, dailyActivity] =
-      await Promise.all([
-        this.projects.find({ workspaceId }).lean().exec(),
-        this.workflows.find({ workspaceId }).lean().exec(),
-        this.members.find({ workspaceId }).lean().exec(),
-        this.items
-          .aggregate<DashboardDailyActivityResponse>([
-            { $match: { workspaceId } },
-            {
-              $group: {
-                _id: {
-                  projectKey: "$projectKey",
-                  day: {
-                    $dateToString: {
-                      format: "%Y-%m-%d",
-                      date: "$createdAt",
-                    },
-                  },
-                },
-                created: { $sum: 1 },
-                completed: {
-                  $sum: {
-                    $cond: [
-                      { $ifNull: ["$completedAt", false] },
-                      1,
-                      0,
-                    ],
-                  },
-                },
-              },
+    const [projects, workflows, memberDocuments, dailyActivity] = await Promise.all([
+      this.projects.find({ workspaceId }).lean().exec(),
+      this.workflows.find({ workspaceId }).lean().exec(),
+      this.members.find({ workspaceId }).lean().exec(),
+      this.items.aggregate<DashboardDailyActivityResponse>([
+        { $match: { workspaceId } },
+        {
+          $group: {
+            _id: {
+              projectKey: "$projectKey",
+              day: { $dateToString: { format: "%Y-%m-%d", date: "$createdAt" } },
             },
-            { $sort: { "_id.day": 1 } },
-          ])
-          .exec(),
-      ]);
+            created: { $sum: 1 },
+            completed: {
+              $sum: { $cond: [{ $ifNull: ["$completedAt", false] }, 1, 0] },
+            },
+          },
+        },
+        { $sort: { "_id.day": 1 } },
+      ]).exec(),
+    ]);
 
     const members: DashboardMemberResponse[] = memberDocuments.map((member) => ({
       id: String(member._id),
@@ -124,11 +110,7 @@ export class DashboardService {
             .map((status) => status.id) ?? [];
         const [totalItems, completedItems, openPrItems] = await Promise.all([
           this.items.countDocuments({ workspaceId, projectKey: project.key }),
-          this.items.countDocuments({
-            workspaceId,
-            projectKey: project.key,
-            statusId: { $in: doneStatusIds },
-          }),
+          this.items.countDocuments({ workspaceId, projectKey: project.key, statusId: { $in: doneStatusIds } }),
           this.items.countDocuments({
             workspaceId,
             projectKey: project.key,
@@ -144,16 +126,14 @@ export class DashboardService {
           icon: project.icon,
           leadId: project.leadId,
           repositoryFullName: project.repositoryFullName,
-          driveRootFolderId: project.driveRootFolderId,
+          discordDocsChannelId: project.discordDocsChannelId,
           workflowId: project.workflowId,
           activeSprintId: project.activeSprintId,
           sequence: project.sequence,
           totalItems,
           completedItems,
           openPrItems,
-          progress: totalItems
-            ? Math.round((completedItems / totalItems) * 100)
-            : 0,
+          progress: totalItems ? Math.round((completedItems / totalItems) * 100) : 0,
         };
       }),
     );
@@ -167,9 +147,7 @@ export class DashboardController {
   constructor(private readonly service: DashboardService) {}
 
   @Get("overview")
-  overview(
-    @WorkspaceId() workspaceId: string,
-  ): Promise<DashboardOverviewResponse> {
+  overview(@WorkspaceId() workspaceId: string): Promise<DashboardOverviewResponse> {
     return this.service.overview(workspaceId);
   }
 }

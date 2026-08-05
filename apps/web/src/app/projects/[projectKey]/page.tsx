@@ -20,12 +20,7 @@ import {
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader } from "@/components/ui/card";
-import {
-  Empty,
-  EmptyDescription,
-  EmptyHeader,
-  EmptyTitle,
-} from "@/components/ui/empty";
+import { Empty, EmptyDescription, EmptyHeader, EmptyTitle } from "@/components/ui/empty";
 import {
   Table,
   TableBody,
@@ -42,9 +37,8 @@ interface Project {
   name: string;
   description: string;
   repositoryFullName?: string;
-  driveRootFolderId?: string;
-  driveRootFolderName?: string;
-  driveRootWebViewLink?: string;
+  discordDocsChannelId?: string;
+  discordDocsChannelName?: string;
 }
 interface ExternalLinkView { label: string; url: string }
 interface WorkItem {
@@ -63,11 +57,7 @@ interface Workflow { name: string; statuses: WorkflowStatus[] }
 interface WorkspaceMember { _id: string; name: string; email: string }
 interface WorkspaceMembersResponse { members: WorkspaceMember[] }
 
-export default async function ProjectPage({
-  params,
-}: {
-  params: Promise<{ projectKey: string }>;
-}) {
+export default async function ProjectPage({ params }: { params: Promise<{ projectKey: string }> }) {
   const { projectKey } = await params;
   const key = projectKey.toUpperCase();
   const [project, items, workflow, workspace, repositories] = await Promise.all([
@@ -77,9 +67,7 @@ export default async function ProjectPage({
     apiData<WorkspaceMembersResponse>("/workspace/members"),
     apiData<GithubRepositoryOption[]>("/integrations/github/repositories").catch(() => []),
   ]);
-  const memberNames = Object.fromEntries(
-    workspace.members.map((member) => [member._id, member.name]),
-  );
+  const memberNames = Object.fromEntries(workspace.members.map((member) => [member._id, member.name]));
 
   return (
     <AppPage>
@@ -102,91 +90,43 @@ export default async function ProjectPage({
           <div className="flex max-w-sm flex-col items-start gap-2 sm:items-end">
             {project.repositoryFullName ? (
               <Button asChild variant="outline" size="sm">
-                <a href={`https://github.com/${project.repositoryFullName}`} target="_blank" rel="noreferrer">
-                  <Github /> {project.repositoryFullName}
-                </a>
+                <a href={`https://github.com/${project.repositoryFullName}`} target="_blank" rel="noreferrer"><Github /> {project.repositoryFullName}</a>
               </Button>
-            ) : (
-              <Badge variant="secondary">Chưa liên kết GitHub repository</Badge>
-            )}
+            ) : <Badge variant="secondary">Chưa liên kết GitHub repository</Badge>}
             <Button asChild variant="ghost" size="sm">
               <Link href={`/projects/${key}/docs`}>
                 <FileText />
-                {project.driveRootFolderId
-                  ? project.driveRootFolderName ?? "Drive folder đã sẵn sàng"
-                  : "Provision Drive folder"}
+                {project.discordDocsChannelId
+                  ? `Discord Docs · #${project.discordDocsChannelName ?? project.discordDocsChannelId}`
+                  : "Provision Discord Docs channel"}
               </Link>
             </Button>
           </div>
         }
       />
 
-      <RepositoryLinkForm
-        projectKey={key}
-        currentRepositoryFullName={project.repositoryFullName}
-        repositories={repositories}
-      />
+      <RepositoryLinkForm projectKey={key} currentRepositoryFullName={project.repositoryFullName} repositories={repositories} />
 
       <Card>
-        <CardHeader>
-          <SectionHeading eyebrow="Live database" title="Work items" meta={`${items.length} items`} />
-        </CardHeader>
+        <CardHeader><SectionHeading eyebrow="Live database" title="Work items" meta={`${items.length} items`} /></CardHeader>
         <CardContent>
           {items.length === 0 ? (
-            <Empty>
-              <EmptyHeader>
-                <EmptyTitle>Chưa có work item</EmptyTitle>
-                <EmptyDescription>Tạo Task, Module hoặc Bug bằng form bên dưới.</EmptyDescription>
-              </EmptyHeader>
-            </Empty>
+            <Empty><EmptyHeader><EmptyTitle>Chưa có work item</EmptyTitle><EmptyDescription>Tạo Task, Module hoặc Bug bằng form bên dưới.</EmptyDescription></EmptyHeader></Empty>
           ) : (
             <Table>
-              <TableHeader>
-                <TableRow>
-                  <TableHead>Key</TableHead>
-                  <TableHead>Summary</TableHead>
-                  <TableHead>Type</TableHead>
-                  <TableHead>Status</TableHead>
-                  <TableHead>Assignee</TableHead>
-                  <TableHead>Figma</TableHead>
-                  <TableHead>Docs</TableHead>
-                  <TableHead>GitHub</TableHead>
-                </TableRow>
-              </TableHeader>
+              <TableHeader><TableRow>
+                <TableHead>Key</TableHead><TableHead>Summary</TableHead><TableHead>Type</TableHead><TableHead>Status</TableHead><TableHead>Assignee</TableHead><TableHead>Figma</TableHead><TableHead>Docs</TableHead><TableHead>GitHub</TableHead>
+              </TableRow></TableHeader>
               <TableBody>
                 {items.map((item) => (
                   <TableRow key={item.key}>
                     <TableCell><Badge variant="purple">{item.key}</Badge></TableCell>
                     <TableCell className="min-w-56 whitespace-normal font-medium">{item.summary}</TableCell>
                     <TableCell><Badge variant="secondary">{item.type}</Badge></TableCell>
-                    <TableCell>
-                      {workflow?.statuses.find((status) => status.id === item.statusId)?.name ?? item.statusId}
-                    </TableCell>
-                    <TableCell>
-                      {item.assigneeId ? memberNames[item.assigneeId] ?? "Unknown member" : "—"}
-                    </TableCell>
-                    <TableCell>
-                      {item.figmaLinks?.length ? (
-                        <div className="grid gap-1">
-                          {item.figmaLinks.map((link, index) => (
-                            <a className="inline-flex items-center gap-1 text-primary hover:underline" key={`${link.url}-${index}`} href={link.url} target="_blank" rel="noreferrer">
-                              <ExternalLink className="size-3" /> {link.label || `Figma ${index + 1}`}
-                            </a>
-                          ))}
-                        </div>
-                      ) : "—"}
-                    </TableCell>
-                    <TableCell>
-                      {item.documentLinks?.length ? (
-                        <div className="grid gap-1">
-                          {item.documentLinks.map((link, index) => (
-                            <a className="inline-flex items-center gap-1 text-primary hover:underline" key={`${link.url}-${index}`} href={link.url} target="_blank" rel="noreferrer">
-                              <ExternalLink className="size-3" /> {link.label || `Doc ${index + 1}`}
-                            </a>
-                          ))}
-                        </div>
-                      ) : "—"}
-                    </TableCell>
+                    <TableCell>{workflow?.statuses.find((status) => status.id === item.statusId)?.name ?? item.statusId}</TableCell>
+                    <TableCell>{item.assigneeId ? memberNames[item.assigneeId] ?? "Unknown member" : "—"}</TableCell>
+                    <TableCell>{item.figmaLinks?.length ? <div className="grid gap-1">{item.figmaLinks.map((link, index) => <a className="inline-flex items-center gap-1 text-primary hover:underline" key={`${link.url}-${index}`} href={link.url} target="_blank" rel="noreferrer"><ExternalLink className="size-3" /> {link.label || `Figma ${index + 1}`}</a>)}</div> : "—"}</TableCell>
+                    <TableCell>{item.documentLinks?.length ? <div className="grid gap-1">{item.documentLinks.map((link, index) => <a className="inline-flex items-center gap-1 text-primary hover:underline" key={`${link.url}-${index}`} href={link.url} target="_blank" rel="noreferrer"><ExternalLink className="size-3" /> {link.label || `Doc ${index + 1}`}</a>)}</div> : "—"}</TableCell>
                     <TableCell className="whitespace-normal"><GithubWorkItemLinks github={item.github} /></TableCell>
                   </TableRow>
                 ))}
@@ -199,11 +139,7 @@ export default async function ProjectPage({
       <WorkItemCreateForm
         projectKey={key}
         statuses={workflow?.statuses ?? []}
-        members={workspace.members.map((member) => ({
-          id: member._id,
-          name: member.name,
-          email: member.email,
-        }))}
+        members={workspace.members.map((member) => ({ id: member._id, name: member.name, email: member.email }))}
       />
     </AppPage>
   );

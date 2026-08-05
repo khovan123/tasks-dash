@@ -16,6 +16,7 @@ import { DashboardModule } from "./features/dashboard/dashboard.module";
 import { IntegrationsModule } from "./features/integrations/integrations.module";
 import { AutomationsModule } from "./features/automations/automations.module";
 import { DesignCatalogModule } from "./features/design-catalog/design-catalog.module";
+import { DocumentsModule } from "./features/documents/documents.module";
 import { HealthModule } from "./features/health/health.module";
 
 @Module({
@@ -49,6 +50,7 @@ import { HealthModule } from "./features/health/health.module";
     MembersModule,
     DashboardModule,
     IntegrationsModule,
+    DocumentsModule,
     AutomationsModule,
     DesignCatalogModule,
   ],

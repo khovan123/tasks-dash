@@ -30,17 +30,14 @@ export interface DiscordWorkspaceStatus {
   categoryId?: string | null;
   categoryName?: string | null;
   channelNameTemplate: string;
+  docsChannelNameTemplate: string;
   enabled: boolean;
   lastProvisionedAt?: string | null;
   lastError?: string | null;
   installUrl?: string | null;
 }
 
-export function DiscordWorkspaceConfigForm({
-  status,
-}: {
-  status: DiscordWorkspaceStatus;
-}) {
+export function DiscordWorkspaceConfigForm({ status }: { status: DiscordWorkspaceStatus }) {
   const router = useRouter();
   const [result, setResult] = useState<string | null>(null);
   const [provisioning, setProvisioning] = useState(false);
@@ -49,8 +46,9 @@ export function DiscordWorkspaceConfigForm({
     defaultValues: {
       guildId: status.guildId ?? "",
       categoryId: status.categoryId ?? "",
-      channelNameTemplate:
-        status.channelNameTemplate || "{{projectKey}}-updates",
+      channelNameTemplate: status.channelNameTemplate || "{{projectKey}}-updates",
+      docsChannelNameTemplate:
+        status.docsChannelNameTemplate || "{{projectKey}}-docs",
     },
   });
 
@@ -67,20 +65,17 @@ export function DiscordWorkspaceConfigForm({
           guildId: values.guildId,
           categoryId: values.categoryId || undefined,
           channelNameTemplate: values.channelNameTemplate,
+          docsChannelNameTemplate: values.docsChannelNameTemplate,
         }),
       });
-      const provisioned = response.provisionedProjects?.length ?? 0;
-      const failed = response.failedProjects?.length ?? 0;
       setResult(
-        `Đã cấu hình Discord và provision ${provisioned} project; ${failed} lỗi.`,
+        `Đã provision ${response.provisionedProjects?.length ?? 0} project; ${response.failedProjects?.length ?? 0} lỗi.`,
       );
       router.refresh();
     } catch (error) {
       form.setError("root", {
         message:
-          error instanceof Error
-            ? error.message
-            : "Không thể cấu hình Discord workspace.",
+          error instanceof Error ? error.message : "Không thể cấu hình Discord workspace.",
       });
     }
   }
@@ -92,19 +87,14 @@ export function DiscordWorkspaceConfigForm({
       const response = await apiRequest<{
         provisionedProjects: string[];
         failedProjects: Array<{ projectKey: string; error: string }>;
-      }>("/api/integrations/discord/workspace/provision-all", {
-        method: "POST",
-      });
+      }>("/api/integrations/discord/workspace/provision-all", { method: "POST" });
       setResult(
         `Đã kiểm tra ${response.provisionedProjects.length} project; ${response.failedProjects.length} lỗi.`,
       );
       router.refresh();
     } catch (error) {
       form.setError("root", {
-        message:
-          error instanceof Error
-            ? error.message
-            : "Không thể provision Discord channels.",
+        message: error instanceof Error ? error.message : "Không thể provision Discord channels.",
       });
     } finally {
       setProvisioning(false);
@@ -116,22 +106,16 @@ export function DiscordWorkspaceConfigForm({
       <form onSubmit={form.handleSubmit(submit)} noValidate>
         <FormCard
           eyebrow="Discord bot · workspace level"
-          title="Tự tạo channel cho từng project"
-          description="Cài bot một lần vào server. Tasks Dash sẽ tạo text channel và incoming webhook riêng theo template cho toàn bộ project hiện tại và project được tạo sau này."
+          title="Tự tạo channel Updates và Docs"
+          description="Cài bot một lần. Mỗi project nhận một channel GitHub updates và một channel lưu attachment tài liệu; folder và metadata được quản lý trên Tasks Dash."
           footer={
             <>
               <Button asChild variant="outline" type="button">
-                <a href="/api/integrations/discord/install">
-                  <Bot /> Cài bot vào Discord
-                </a>
+                <a href="/api/integrations/discord/install"><Bot /> Cài bot vào Discord</a>
               </Button>
-              <Button
-                disabled={form.formState.isSubmitting || !status.botConfigured}
-              >
+              <Button disabled={form.formState.isSubmitting || !status.botConfigured}>
                 <ServerCog />
-                {form.formState.isSubmitting
-                  ? "Đang cấu hình…"
-                  : "Lưu và provision"}
+                {form.formState.isSubmitting ? "Đang cấu hình…" : "Lưu và provision"}
               </Button>
               {status.configured ? (
                 <Button
@@ -140,10 +124,7 @@ export function DiscordWorkspaceConfigForm({
                   disabled={provisioning}
                   onClick={() => void provisionAll()}
                 >
-                  <RefreshCw />
-                  {provisioning
-                    ? "Đang provision…"
-                    : "Provision lại tất cả"}
+                  <RefreshCw /> {provisioning ? "Đang provision…" : "Provision lại tất cả"}
                 </Button>
               ) : null}
             </>
@@ -152,81 +133,49 @@ export function DiscordWorkspaceConfigForm({
           {!status.botConfigured ? (
             <Alert variant="destructive">
               <AlertTitle>Discord bot secret chưa được cấu hình</AlertTitle>
-              <AlertDescription>
-                API cần DISCORD_APPLICATION_ID và DISCORD_BOT_TOKEN trong secret
-                manager.
-              </AlertDescription>
+              <AlertDescription>API cần DISCORD_APPLICATION_ID và DISCORD_BOT_TOKEN.</AlertDescription>
             </Alert>
           ) : null}
 
           <FieldGroup>
             <Field>
               <FieldLabel htmlFor="discord-guild-id">Discord Guild ID</FieldLabel>
-              <Input
-                id="discord-guild-id"
-                {...form.register("guildId")}
-                placeholder="123456789012345678"
-                aria-invalid={Boolean(form.formState.errors.guildId)}
-              />
-              <FieldDescription>
-                ID Discord server đã cài Tasks Dash bot.
-              </FieldDescription>
-              {form.formState.errors.guildId?.message ? (
-                <FieldError>{form.formState.errors.guildId.message}</FieldError>
-              ) : null}
+              <Input id="discord-guild-id" {...form.register("guildId")} placeholder="123456789012345678" />
+              <FieldDescription>ID Discord server đã cài Tasks Dash bot.</FieldDescription>
+              {form.formState.errors.guildId?.message ? <FieldError>{form.formState.errors.guildId.message}</FieldError> : null}
             </Field>
             <Field>
-              <FieldLabel htmlFor="discord-category-id">
-                Category ID tùy chọn
-              </FieldLabel>
-              <Input
-                id="discord-category-id"
-                {...form.register("categoryId")}
-                placeholder="Để trống nếu tạo channel ở root server"
-                aria-invalid={Boolean(form.formState.errors.categoryId)}
-              />
-              <FieldDescription>
-                Mọi project channel sẽ nằm trong category này.
-              </FieldDescription>
-              {form.formState.errors.categoryId?.message ? (
-                <FieldError>
-                  {form.formState.errors.categoryId.message}
-                </FieldError>
-              ) : null}
+              <FieldLabel htmlFor="discord-category-id">Category ID tùy chọn</FieldLabel>
+              <Input id="discord-category-id" {...form.register("categoryId")} placeholder="Để trống nếu tạo ở server root" />
+              <FieldDescription>Cả Updates và Docs channel nằm trong category này.</FieldDescription>
+              {form.formState.errors.categoryId?.message ? <FieldError>{form.formState.errors.categoryId.message}</FieldError> : null}
             </Field>
           </FieldGroup>
 
-          <Field>
-            <FieldLabel htmlFor="discord-channel-template">
-              Channel name template
-            </FieldLabel>
-            <Input
-              id="discord-channel-template"
-              {...form.register("channelNameTemplate")}
-              placeholder="{{projectKey}}-updates"
-              aria-invalid={Boolean(
-                form.formState.errors.channelNameTemplate,
-              )}
-            />
-            <FieldDescription>
-              Hỗ trợ biến {"{{projectKey}}"} và {"{{projectName}}"}. Tên sẽ tự
-              chuyển về lowercase, bỏ dấu và giới hạn 100 ký tự.
-            </FieldDescription>
-            {form.formState.errors.channelNameTemplate?.message ? (
-              <FieldError>
-                {form.formState.errors.channelNameTemplate.message}
-              </FieldError>
-            ) : null}
-          </Field>
+          <FieldGroup>
+            <Field>
+              <FieldLabel htmlFor="discord-updates-template">Updates channel template</FieldLabel>
+              <Input id="discord-updates-template" {...form.register("channelNameTemplate")} placeholder="{{projectKey}}-updates" />
+              <FieldDescription>Nhận GitHub PR/push automation.</FieldDescription>
+              {form.formState.errors.channelNameTemplate?.message ? <FieldError>{form.formState.errors.channelNameTemplate.message}</FieldError> : null}
+            </Field>
+            <Field>
+              <FieldLabel htmlFor="discord-docs-template">Docs channel template</FieldLabel>
+              <Input id="discord-docs-template" {...form.register("docsChannelNameTemplate")} placeholder="{{projectKey}}-docs" />
+              <FieldDescription>Lưu file attachment và version tài liệu.</FieldDescription>
+              {form.formState.errors.docsChannelNameTemplate?.message ? <FieldError>{form.formState.errors.docsChannelNameTemplate.message}</FieldError> : null}
+            </Field>
+          </FieldGroup>
+
+          <FieldDescription>
+            Hỗ trợ biến {"{{projectKey}}"} và {"{{projectName}}"}; tên tự lowercase, bỏ dấu và giới hạn 100 ký tự.
+          </FieldDescription>
 
           {status.configured ? (
             <Alert variant="success">
-              <AlertTitle>
-                Đã kết nối {status.guildName ?? status.guildId}
-              </AlertTitle>
+              <AlertTitle>Đã kết nối {status.guildName ?? status.guildId}</AlertTitle>
               <AlertDescription>
-                Category: {status.categoryName ?? "server root"} · Template:{" "}
-                {status.channelNameTemplate}
+                Updates: {status.channelNameTemplate} · Docs: {status.docsChannelNameTemplate}
               </AlertDescription>
             </Alert>
           ) : null}
@@ -236,9 +185,7 @@ export function DiscordWorkspaceConfigForm({
               <AlertDescription>{status.lastError}</AlertDescription>
             </Alert>
           ) : null}
-          {form.formState.errors.root?.message ? (
-            <FieldError>{form.formState.errors.root.message}</FieldError>
-          ) : null}
+          {form.formState.errors.root?.message ? <FieldError>{form.formState.errors.root.message}</FieldError> : null}
           {result ? (
             <Alert variant="success">
               <AlertTitle>Discord provisioning hoàn tất</AlertTitle>
