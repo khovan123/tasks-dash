@@ -1,5 +1,6 @@
 "use client";
 
+import Link from "next/link";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { FormProvider, useForm } from "react-hook-form";
 import { Plus } from "lucide-react";
@@ -18,7 +19,13 @@ import {
 } from "@/components/ui/field";
 import { Input } from "@/components/ui/input";
 
-export function WorkspaceCreateForm() {
+export function WorkspaceCreateForm({
+  setupToken,
+  firstWorkspace = false,
+}: {
+  setupToken?: string;
+  firstWorkspace?: boolean;
+}) {
   const form = useForm<WorkspaceFormValues>({
     resolver: zodResolver(workspaceFormSchema),
     defaultValues: { workspaceName: "", workspaceSlug: "" },
@@ -27,11 +34,12 @@ export function WorkspaceCreateForm() {
   async function submit(values: WorkspaceFormValues): Promise<void> {
     form.clearErrors("root");
     try {
-      await apiRequest("/api/workspaces", {
+      await apiRequest(setupToken ? "/api/workspaces/setup" : "/api/workspaces", {
         method: "POST",
         body: JSON.stringify({
           workspaceName: values.workspaceName,
           workspaceSlug: values.workspaceSlug || undefined,
+          ...(setupToken ? { setupToken } : {}),
         }),
       });
       window.location.assign("/");
@@ -47,23 +55,39 @@ export function WorkspaceCreateForm() {
     <FormProvider {...form}>
       <form onSubmit={form.handleSubmit(submit)} noValidate>
         <FormCard
-          eyebrow="Multi-workspace"
-          title="Tạo workspace mới"
-          description="Bạn sẽ trở thành Owner và hệ thống tự chuyển sang workspace mới sau khi tạo."
+          eyebrow={firstWorkspace ? "Bắt đầu sử dụng" : "Multi-workspace"}
+          title={firstWorkspace ? "Đặt tên workspace đầu tiên" : "Tạo workspace mới"}
+          description={
+            firstWorkspace
+              ? "Tên workspace là bắt buộc. Project, thành viên, GitHub App và Discord của bạn sẽ được quản lý riêng trong workspace này."
+              : "Bạn sẽ trở thành Owner và hệ thống tự chuyển sang workspace mới sau khi tạo."
+          }
           footer={
-            <Button disabled={form.formState.isSubmitting}>
-              <Plus />
-              {form.formState.isSubmitting ? "Đang tạo…" : "Tạo và chuyển workspace"}
-            </Button>
+            <div className="flex flex-wrap items-center gap-2">
+              {!firstWorkspace ? (
+                <Button asChild type="button" variant="ghost">
+                  <Link href="/workspaces">Hủy</Link>
+                </Button>
+              ) : null}
+              <Button disabled={form.formState.isSubmitting}>
+                <Plus />
+                {form.formState.isSubmitting
+                  ? "Đang tạo…"
+                  : firstWorkspace
+                    ? "Tạo workspace và tiếp tục"
+                    : "Tạo và chuyển workspace"}
+              </Button>
+            </div>
           }
         >
           <FieldGroup>
             <Field>
-              <FieldLabel htmlFor="workspace-name">Tên workspace</FieldLabel>
+              <FieldLabel htmlFor="workspace-name">Tên workspace *</FieldLabel>
               <Input
                 id="workspace-name"
                 {...form.register("workspaceName")}
                 placeholder="Product Delivery"
+                autoFocus
                 aria-invalid={Boolean(form.formState.errors.workspaceName)}
               />
               {form.formState.errors.workspaceName?.message ? (
