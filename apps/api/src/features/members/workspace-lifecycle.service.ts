@@ -3,6 +3,7 @@ import {
   ForbiddenException,
   Injectable,
   NotFoundException,
+  ServiceUnavailableException,
 } from "@nestjs/common";
 import { InjectConnection, InjectModel } from "@nestjs/mongoose";
 import { Connection, Model } from "mongoose";
@@ -80,6 +81,11 @@ export class WorkspaceLifecycleService {
     }
 
     const database = this.connection.db;
+    if (!database) {
+      throw new ServiceUnavailableException(
+        "MongoDB connection is not ready for workspace deletion.",
+      );
+    }
     const collections = await database
       .listCollections({}, { nameOnly: true })
       .toArray();
