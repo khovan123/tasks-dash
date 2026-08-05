@@ -9,7 +9,7 @@ Deploy:
 - `tasks-dash-api`: NestJS API at `https://api.example.com`.
 - `tasks-dash-web`: Next.js application at `https://app.example.com`.
 - MongoDB Atlas or another TLS-enabled replica set.
-- A verified Resend sending domain for invitation email.
+- A production SMTP account or trusted SMTP relay for invitation email.
 
 GitHub Pages is only the static marketing page.
 
@@ -22,14 +22,30 @@ openssl rand -base64 48   # GITHUB_APP_WEBHOOK_SECRET
 openssl rand -base64 48   # WORKSPACE_BOOTSTRAP_SECRET
 ```
 
-Store generated values in the hosting platform's secret manager. Invitation variables:
+Store generated values in the hosting platform's secret manager.
+
+### Invitation SMTP
+
+Port 587 with STARTTLS:
 
 ```text
 WORKSPACE_BOOTSTRAP_SECRET=...
 INVITE_TTL_HOURS=72
-RESEND_API_KEY=re_...
-INVITE_EMAIL_FROM=Tasks Dash <invite@your-domain.com>
+SMTP_HOST=smtp.example.com
+SMTP_PORT=587
+SMTP_SECURE=false
+SMTP_STARTTLS=true
+SMTP_ALLOW_INSECURE=false
+SMTP_USERNAME=invite@your-domain.com
+SMTP_PASSWORD=store-only-in-secret-manager
+SMTP_FROM=Tasks Dash <invite@your-domain.com>
+SMTP_HELO_NAME=api.example.com
+SMTP_CONNECTION_TIMEOUT_MS=10000
 ```
+
+For implicit TLS on port 465, use `SMTP_PORT=465`, `SMTP_SECURE=true`, and `SMTP_STARTTLS=false`. `SMTP_USERNAME` and `SMTP_PASSWORD` are optional only when the selected SMTP relay accepts unauthenticated mail from the API network; when one is set, both are required. Plaintext SMTP is rejected unless `SMTP_ALLOW_INSECURE=true` is explicitly configured for a trusted local development relay.
+
+The API sends MIME multipart email with UTF-8 text and HTML bodies. Credentials remain server-side and SMTP errors returned to clients never include the configured password.
 
 ## 3. Bootstrap the first Owner
 
@@ -214,6 +230,7 @@ Each project supports:
 - Restrict database access to the API service.
 - Back up workspace, member, project, work-item, integration, design-catalog, and automation collections.
 - Preserve the exact GitHub webhook request body through proxies.
+- Allow outbound TCP from the API service to the configured SMTP host and port.
 - Deploy Web/API on sibling HTTPS subdomains and set `COOKIE_DOMAIN` to their shared parent domain.
 - Configure reverse proxies to allow multipart uploads up to at least 25 MB.
 
@@ -233,18 +250,19 @@ Health: `GET https://api.example.com/api/health`.
 
 ## 10. End-to-end verification
 
-1. Confirm a new user cannot sign in without an invitation.
-2. Bootstrap the first Owner and accept the invitation.
-3. Create projects before connecting Drive.
-4. Sign in as the Owner and connect Google Drive.
-5. Confirm the workspace root and one child folder per existing project appear in the Owner's Drive.
-6. Create another project and confirm its folder is provisioned automatically.
-7. Sign in as a Member and create a nested folder, upload a file, rename it, and delete it from the project's Docs screen.
-8. Attempt the same mutation with a file or folder ID from another project and confirm HTTP 403.
-9. Confirm the project root cannot be renamed or deleted.
-10. Confirm a Viewer cannot mutate Drive content.
-11. Install the GitHub App and link a repository by repository ID.
-12. Install the Discord bot, configure Guild/Category/template, and verify existing project channels are provisioned.
-13. Create a new project and confirm its Discord channel and webhook are created automatically.
-14. Create a task, include its exact project key in a branch and PR title, then confirm the task displays the PR state.
-15. Open and merge the PR and confirm the project's Discord channel receives both default automation messages exactly once per GitHub delivery/work item.
+1. Configure SMTP and send a workspace invitation; confirm both text and HTML bodies arrive and the acceptance URL works.
+2. Confirm a new user cannot sign in without an invitation.
+3. Bootstrap the first Owner and accept the invitation.
+4. Create projects before connecting Drive.
+5. Sign in as the Owner and connect Google Drive.
+6. Confirm the workspace root and one child folder per existing project appear in the Owner's Drive.
+7. Create another project and confirm its folder is provisioned automatically.
+8. Sign in as a Member and create a nested folder, upload a file, rename it, and delete it from the project's Docs screen.
+9. Attempt the same mutation with a file or folder ID from another project and confirm HTTP 403.
+10. Confirm the project root cannot be renamed or deleted.
+11. Confirm a Viewer cannot mutate Drive content.
+12. Install the GitHub App and link a repository by repository ID.
+13. Install the Discord bot, configure Guild/Category/template, and verify existing project channels are provisioned.
+14. Create a new project and confirm its Discord channel and webhook are created automatically.
+15. Create a task, include its exact project key in a branch and PR title, then confirm the task displays the PR state.
+16. Open and merge the PR and confirm the project's Discord channel receives both default automation messages exactly once per GitHub delivery/work item.

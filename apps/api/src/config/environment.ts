@@ -5,8 +5,8 @@ const REQUIRED_KEYS = [
   "SESSION_SECRET",
   "INTEGRATION_ENCRYPTION_KEY",
   "WORKSPACE_BOOTSTRAP_SECRET",
-  "RESEND_API_KEY",
-  "INVITE_EMAIL_FROM",
+  "SMTP_HOST",
+  "SMTP_FROM",
   "GITHUB_OAUTH_CLIENT_ID",
   "GITHUB_OAUTH_CLIENT_SECRET",
   "GITHUB_OAUTH_CALLBACK_URL",
@@ -28,6 +28,32 @@ function requiredString(config: Record<string, unknown>, key: string): string {
   return value.trim();
 }
 
+function optionalString(config: Record<string, unknown>, key: string): string {
+  const value = config[key];
+  return typeof value === "string" ? value.trim() : "";
+}
+
+function booleanValue(
+  config: Record<string, unknown>,
+  key: string,
+  fallback: boolean,
+): boolean {
+  const raw = config[key];
+  if (raw === undefined || raw === "") {
+    config[key] = fallback;
+    return fallback;
+  }
+  if (raw === true || raw === "true" || raw === "1") {
+    config[key] = true;
+    return true;
+  }
+  if (raw === false || raw === "false" || raw === "0") {
+    config[key] = false;
+    return false;
+  }
+  throw new Error(`${key} must be true or false.`);
+}
+
 function validateUrl(value: string, key: string): void {
   let url: URL;
   try {
@@ -37,6 +63,15 @@ function validateUrl(value: string, key: string): void {
   }
   if (!url.protocol.startsWith("http")) {
     throw new Error(`${key} must use http or https.`);
+  }
+}
+
+function validateMailbox(value: string, key: string): void {
+  if (/\r|\n/.test(value)) throw new Error(`${key} cannot contain line breaks.`);
+  const bracketed = value.match(/<([^<>]+)>$/);
+  const mailbox = (bracketed?.[1] ?? value).trim();
+  if (!/^[^\s@<>]+@[^\s@<>]+\.[^\s@<>]+$/.test(mailbox)) {
+    throw new Error(`${key} must contain a valid email mailbox.`);
   }
 }
 
@@ -52,14 +87,34 @@ export function validateEnvironment(input: Record<string, unknown>): Record<stri
     config[key] = value;
     return value;
   };
+
+  const smtpSecure = booleanValue(config, "SMTP_SECURE", false);
+  const smtpStartTls = booleanValue(config, "SMTP_STARTTLS", !smtpSecure);
+  const smtpAllowInsecure = booleanValue(config, "SMTP_ALLOW_INSECURE", false);
   numberValue("API_PORT", 4000);
   numberValue("MONGODB_MIN_POOL_SIZE", 2);
   numberValue("MONGODB_MAX_POOL_SIZE", 20);
   numberValue("INVITE_TTL_HOURS", 72);
+  const smtpPort = numberValue("SMTP_PORT", smtpSecure ? 465 : 587);
+  numberValue("SMTP_CONNECTION_TIMEOUT_MS", 10_000);
+
+  if (smtpPort > 65_535) throw new Error("SMTP_PORT must be at most 65535.");
+  if (!smtpSecure && !smtpStartTls && !smtpAllowInsecure) {
+    throw new Error(
+      "SMTP must use implicit TLS or STARTTLS unless SMTP_ALLOW_INSECURE=true.",
+    );
+  }
 
   if (config.NODE_ENV === "test") return config;
 
   for (const key of REQUIRED_KEYS) requiredString(config, key);
+
+  const smtpUsername = optionalString(config, "SMTP_USERNAME");
+  const smtpPassword = optionalString(config, "SMTP_PASSWORD");
+  if (Boolean(smtpUsername) !== Boolean(smtpPassword)) {
+    throw new Error("SMTP_USERNAME and SMTP_PASSWORD must be configured together.");
+  }
+  validateMailbox(requiredString(config, "SMTP_FROM"), "SMTP_FROM");
 
   const privateKey =
     typeof config.GITHUB_APP_PRIVATE_KEY_BASE64 === "string" && config.GITHUB_APP_PRIVATE_KEY_BASE64.trim()
