@@ -218,7 +218,10 @@ export class WorkspacesController {
     );
 
     const remaining = await this.members.listMemberships(session.identityId);
-    const fallback = remaining[0];
+    const fallback =
+      remaining.find(
+        (workspace) => workspace.workspaceId === session.workspaceId,
+      ) ?? remaining[0];
     if (fallback) {
       await this.identities
         .updateOne(
