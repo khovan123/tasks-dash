@@ -138,6 +138,19 @@ export const TaskDiscordLogSchema = SchemaFactory.createForClass(
 );
 TaskDiscordLogSchema.index({ workItemKey: 1 }, { unique: true });
 
+@Schema({ collection: "github_workflow_logs", timestamps: true })
+export class GithubWorkflowLogDocument extends BaseMongoDocument {
+  @Prop({ required: true, index: true }) workflowRunId!: number;
+  @Prop({ required: true }) discordMessageId!: string;
+  @Prop({ required: true }) discordChannelId!: string;
+}
+export const GithubWorkflowLogSchema = SchemaFactory.createForClass(
+  GithubWorkflowLogDocument,
+);
+GithubWorkflowLogSchema.index({ workflowRunId: 1 }, { unique: true });
+export type GithubWorkflowLogHydratedDocument =
+  HydratedDocument<GithubWorkflowLogDocument>;
+
 @Schema({ collection: "integration_oauth_states", timestamps: true })
 export class IntegrationOauthStateDocument {
   @Prop({ required: true, unique: true, index: true }) state!: string;

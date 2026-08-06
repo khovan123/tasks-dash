@@ -35,6 +35,8 @@ import {
   GithubPullRequestLogHydratedDocument,
   GithubWebhookDeliveryDocument,
   GithubWebhookDeliveryHydratedDocument,
+  GithubWorkflowLogDocument,
+  GithubWorkflowLogHydratedDocument,
 } from "./integration.schemas";
 import {
   MemberDocument,
@@ -251,6 +253,8 @@ export class GithubWebhookService {
     private readonly members: Model<MemberHydratedDocument>,
     @InjectModel(WorkItemDocument.name)
     private readonly workItemsModel: Model<WorkItemHydratedDocument>,
+    @InjectModel(GithubWorkflowLogDocument.name)
+    private readonly workflowLogs: Model<GithubWorkflowLogHydratedDocument>,
     @InjectConnection()
     private readonly connection: Connection,
   ) {}
@@ -893,9 +897,8 @@ export class GithubWebhookService {
           run_number?: number;
           actor?: { login?: string; avatar_url?: string };
         }
-      | undefined;
-    if (!run || run.status !== "completed") {
-      return { accepted: true, ignored: true, reason: "NOT_COMPLETED" };
+          if (!run) {
+      return { accepted: true, ignored: true, reason: "NO_WORKFLOW_RUN" };
     }
 
     try {
@@ -906,11 +909,17 @@ export class GithubWebhookService {
       if (!integration?.deploymentChannelId)
         return { accepted: true, ignored: true };
 
+      const isCompleted = run.status === "completed";
       const success = run.conclusion === "success";
-      const statusIcon = success ? ":white_check_mark:" : ":x:";
+      
+      const statusIcon = isCompleted
+        ? (success ? ":white_check_mark:" : ":x:")
+        : ":yellow_circle:";
+
       const title = `${statusIcon} [CI/CD] ${run.name ?? "Workflow"} #${run.run_number ?? "?"}`;
       const actor = run.actor?.login ?? "unknown";
       const description = [
+        `:finish_flag: **Workflow:** \`${run.name ?? "Workflow"}\` #${run.run_number ?? "?"}`,
         `:bust_in_silhouette: **GitHub:** @${actor}`,
         `:seedling: **Branch:** \`${run.head_branch ?? "?"}\``,
         `:bar_chart: **Status:** \`${run.conclusion ?? run.status}\``,
@@ -919,73 +928,109 @@ export class GithubWebhookService {
         .filter(Boolean)
         .join("\n");
 
-      await this.discord.sendToChannel(integration.deploymentChannelId, {
+      const color = isCompleted
+        ? (success ? COLOR_DEPLOY_SUCCESS : COLOR_DEPLOY_FAILED)
+        : 0xf59e0b; // Yellow/Orange for pending/in_progress
+
+      const embed = {
         title,
         description,
-        color: success ? COLOR_DEPLOY_SUCCESS : COLOR_DEPLOY_FAILED,
+        color,
         url: run.html_url,
-      });
-      const trigger = success
-        ? AUTOMATION_TRIGGERS.ciCdDeploymentSuccess
-        : AUTOMATION_TRIGGERS.ciCdDeploymentFailed;
+      };
 
-      await this.events.emitAsync(AUTOMATION_GITHUB_PULL_REQUEST_EVENT, {
-        sourceEventId: `github:workflow:${run.id ?? randomUUID()}`,
-        workspaceId: context.workspaceId,
-        projectKey: context.projectKey,
-        trigger,
-        repositoryFullName: context.repositoryFullName,
-        title: `${run.name ?? "Workflow"} #${run.run_number ?? "?"} (${run.conclusion ?? run.status})`,
-        action: run.conclusion ?? "completed",
-        authorLogin: run.actor?.login,
-      });
-      // Post CI/CD build status on PR in td-pr channel
-      const prs = (payload as any).workflow_run?.pull_requests || [];
-      const prLogCandidates: any[] = [];
-      for (const pr of prs) {
-        if (pr.number) {
-          const prLog = await this.prLogs
-            .findOne({
-              repositoryFullName: context.repositoryFullName,
-              pullRequestNumber: pr.number,
-            })
-            .exec();
-          if (prLog) prLogCandidates.push(prLog);
+      const existingLog = await this.workflowLogs
+        .findOne({ workflowRunId: run.id })
+        .exec();
+
+      if (existingLog) {
+        try {
+          await this.discord.editMessage(
+            existingLog.discordChannelId,
+            existingLog.discordMessageId,
+            embed,
+          );
+        } catch (err) {
+          this.logger.warn(`Could not edit existing workflow run log message, sending a new one: ${String(err)}`);
+          const msgId = await this.discord.sendToChannel(integration.deploymentChannelId, embed);
+          await this.workflowLogs.updateOne(
+            { _id: existingLog._id },
+            { $set: { discordMessageId: msgId, discordChannelId: integration.deploymentChannelId } },
+          ).exec();
         }
-      }
-      if (prLogCandidates.length === 0 && run.head_branch) {
-        const workItem = await this.workItemsModel
-          .findOne({
-            workspaceId: context.workspaceId,
-            projectKey: context.projectKey,
-            "github.branches": run.head_branch,
-          })
-          .exec();
-        if (workItem?.github?.pullRequestNumber) {
-          const prLog = await this.prLogs
-            .findOne({
-              repositoryFullName: context.repositoryFullName,
-              pullRequestNumber: workItem.github.pullRequestNumber,
-            })
-            .exec();
-          if (prLog) prLogCandidates.push(prLog);
-        }
+      } else {
+        const msgId = await this.discord.sendToChannel(integration.deploymentChannelId, embed);
+        await this.workflowLogs.create({
+          workflowRunId: run.id,
+          discordMessageId: msgId,
+          discordChannelId: integration.deploymentChannelId,
+        });
       }
 
-      for (const prLog of prLogCandidates) {
-        await this.discord.sendThreadReply(
-          prLog.discordChannelId,
-          prLog.discordMessageId,
-          {
-            title: `[CI/CD] Build Status`,
-            description: `${statusIcon} Workflow **${run.name ?? "Workflow"}** #${run.run_number ?? "?"} conclusion: **${run.conclusion ?? run.status}**\n${run.html_url ? `[View Workflow Run](${run.html_url})` : ""}`,
-            color: success ? COLOR_DEPLOY_SUCCESS : COLOR_DEPLOY_FAILED,
-          },
-        );
+      if (isCompleted) {
+        const trigger = success
+          ? AUTOMATION_TRIGGERS.ciCdDeploymentSuccess
+          : AUTOMATION_TRIGGERS.ciCdDeploymentFailed;
+
+        await this.events.emitAsync(AUTOMATION_GITHUB_PULL_REQUEST_EVENT, {
+          sourceEventId: `github:workflow:${run.id ?? randomUUID()}`,
+          workspaceId: context.workspaceId,
+          projectKey: context.projectKey,
+          trigger,
+          repositoryFullName: context.repositoryFullName,
+          title: `${run.name ?? "Workflow"} #${run.run_number ?? "?"} (${run.conclusion ?? run.status})`,
+          action: run.conclusion ?? "completed",
+          authorLogin: run.actor?.login,
+        });
+
+        // Post CI/CD build status on PR in td-pr channel
+        const prs = (payload as any).workflow_run?.pull_requests || [];
+        const prLogCandidates: any[] = [];
+        for (const pr of prs) {
+          if (pr.number) {
+            const prLog = await this.prLogs
+              .findOne({
+                repositoryFullName: context.repositoryFullName,
+                pullRequestNumber: pr.number,
+              })
+              .exec();
+            if (prLog) prLogCandidates.push(prLog);
+          }
+        }
+        if (prLogCandidates.length === 0 && run.head_branch) {
+          const workItem = await this.workItemsModel
+            .findOne({
+              workspaceId: context.workspaceId,
+              projectKey: context.projectKey,
+              "github.branches": run.head_branch,
+            })
+            .exec();
+          if (workItem?.github?.pullRequestNumber) {
+            const prLog = await this.prLogs
+              .findOne({
+                repositoryFullName: context.repositoryFullName,
+                pullRequestNumber: workItem.github.pullRequestNumber,
+              })
+              .exec();
+            if (prLog) prLogCandidates.push(prLog);
+          }
+        }
+
+        for (const prLog of prLogCandidates) {
+          await this.discord.sendThreadReply(
+            prLog.discordChannelId,
+            prLog.discordMessageId,
+            {
+              title: `[CI/CD] Build Status`,
+              description: `${statusIcon} Workflow **${run.name ?? "Workflow"}** #${run.run_number ?? "?"} conclusion: **${run.conclusion ?? run.status}**\n${run.html_url ? `[View Workflow Run](${run.html_url})` : ""}`,
+              color: success ? COLOR_DEPLOY_SUCCESS : COLOR_DEPLOY_FAILED,
+            },
+          );
+        }
       }
     } catch (err) {
       this.logger.error(
-        `Failed to post CI/CD status on PR Discord thread: ${String(err)}`,
+        `Failed to process workflow run on Discord: ${String(err)}`,
       );
     }
 

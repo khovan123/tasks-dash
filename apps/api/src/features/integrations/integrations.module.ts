@@ -27,6 +27,8 @@ import {
   IntegrationOauthStateSchema,
   TaskDiscordLogDocument,
   TaskDiscordLogSchema,
+  GithubWorkflowLogDocument,
+  GithubWorkflowLogSchema,
 } from "./integration.schemas";
 import { forwardRef } from "@nestjs/common";
 
@@ -44,6 +46,7 @@ import { forwardRef } from "@nestjs/common";
       { name: GithubPullRequestLogDocument.name, schema: GithubPullRequestLogSchema },
       { name: DesignCatalogItemLogDocument.name, schema: DesignCatalogItemLogSchema },
       { name: TaskDiscordLogDocument.name, schema: TaskDiscordLogSchema },
+      { name: GithubWorkflowLogDocument.name, schema: GithubWorkflowLogSchema },
       { name: MemberDocument.name, schema: MemberSchema },
     ]),
   ],
