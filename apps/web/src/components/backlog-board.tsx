@@ -191,11 +191,13 @@ export function BacklogBoard({
                   dueDate !== null &&
                   dueDate.getTime() - now.getTime() <= 2 * 24 * 60 * 60 * 1000;
 
-                 return (
+                return (
                   <article
                     className={cn(
-                      "grid border bg-card p-3 transition",
-                      canManageTasks ? "cursor-pointer active:cursor-grabbing hover:bg-muted/20" : "cursor-default",
+                      "grid grid-cols-[auto_minmax(0,1fr)_auto] items-center gap-3 rounded-lg border bg-card p-3 transition",
+                      canManageTasks
+                        ? "cursor-pointer active:cursor-grabbing hover:bg-muted/20"
+                        : "cursor-default",
                       isOverdue
                         ? "border-destructive/70 hover:border-destructive"
                         : isDueSoon
@@ -216,13 +218,17 @@ export function BacklogBoard({
                       event.dataTransfer.setData("text/plain", item.key);
                     }}
                     onDragEnd={() => canManageTasks && setDraggedKey(null)}
-                    onDragOver={(event) => canManageTasks && event.preventDefault()}
+                    onDragOver={(event) =>
+                      canManageTasks && event.preventDefault()
+                    }
                     onDrop={(event) => canManageTasks && drop(event, index)}
                   >
                     <div
                       className={cn(
                         "p-1 rounded transition",
-                        canManageTasks ? "cursor-grab active:cursor-grabbing hover:bg-muted" : "cursor-default opacity-50"
+                        canManageTasks
+                          ? "cursor-grab active:cursor-grabbing hover:bg-muted"
+                          : "cursor-default opacity-50",
                       )}
                       onClick={(e) => e.stopPropagation()}
                     >
