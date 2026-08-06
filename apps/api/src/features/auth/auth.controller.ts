@@ -16,7 +16,7 @@ import { InjectModel } from "@nestjs/mongoose";
 import { Model } from "mongoose";
 import { createHash, randomBytes } from "node:crypto";
 import type { Request, Response } from "express";
-import { MEMBER_INVITATION_STATUSES } from "@tasks-dash/contracts";
+import { MEMBER_INVITATION_STATUSES, MEMBER_ROLES } from "@tasks-dash/contracts";
 import {
   WorkspaceInvitationDocument,
   WorkspaceInvitationHydratedDocument,
@@ -26,6 +26,7 @@ import {
   AuthSession,
   CurrentSession,
   PublicRoute,
+  RequireRoles,
 } from "../../common/auth-context";
 import { CredentialEncryptionService } from "../../common/security/credential-encryption.service";
 import { MembersService } from "../members/members.service";
@@ -106,7 +107,10 @@ export class AuthController {
   }
 
   private normalizeLoginCode(input: string | undefined): string {
-    return (input ?? "").trim().toUpperCase().replace(/[^A-Z0-9]/g, "");
+    return (input ?? "")
+      .trim()
+      .toUpperCase()
+      .replace(/[^A-Z0-9]/g, "");
   }
 
   private loginCodeHash(code: string): string {
@@ -194,10 +198,16 @@ export class AuthController {
   }
 
   private buildAppRedirect(pathname: string): string {
-    return new URL(pathname, this.config.getOrThrow<string>("WEB_APP_URL")).toString();
+    return new URL(
+      pathname,
+      this.config.getOrThrow<string>("WEB_APP_URL"),
+    ).toString();
   }
 
-  private buildSessionTarget(sessionToken: string, defaultPath: string): string {
+  private buildSessionTarget(
+    sessionToken: string,
+    defaultPath: string,
+  ): string {
     const webAppUrlString = this.config.getOrThrow<string>("WEB_APP_URL");
     try {
       const webAppUrl = new URL(webAppUrlString);
@@ -260,9 +270,7 @@ export class AuthController {
         expiresAt: new Date(Date.now() + 15 * 60 * 1000),
       });
       const setupPath = `/workspaces/new?setup=${encodeURIComponent(setupToken)}`;
-      return preferDirectAppPath
-        ? setupPath
-        : this.buildAppRedirect(setupPath);
+      return preferDirectAppPath ? setupPath : this.buildAppRedirect(setupPath);
     }
 
     if (!invitationToken) {
@@ -302,7 +310,9 @@ export class AuthController {
     @Body("discordUsername") discordUsername: string,
   ): Promise<{ ok: boolean }> {
     if (!inviteToken || !discordUsername) {
-      throw new BadRequestException("Invite token and Discord username are required.");
+      throw new BadRequestException(
+        "Invite token and Discord username are required.",
+      );
     }
     const hash = createHash("sha256").update(inviteToken).digest("hex");
     const invitation = await this.invitations
@@ -374,17 +384,25 @@ export class AuthController {
     const codeHash = this.loginCodeHash(normalizedCode);
     const loginCode = await this.loginCodes.findOne({ codeHash }).exec();
     if (!loginCode) {
-      throw new UnauthorizedException("Mã đăng nhập không hợp lệ hoặc đã được sử dụng.");
+      throw new UnauthorizedException(
+        "Mã đăng nhập không hợp lệ hoặc đã được sử dụng.",
+      );
     }
     if (loginCode.expiresAt <= new Date()) {
       await this.loginCodes.deleteOne({ _id: loginCode._id }).exec();
-      throw new UnauthorizedException("Mã đăng nhập đã hết hạn. Hãy tạo mã mới.");
+      throw new UnauthorizedException(
+        "Mã đăng nhập đã hết hạn. Hãy tạo mã mới.",
+      );
     }
 
-    const identity = await this.identities.findById(loginCode.identityId).exec();
+    const identity = await this.identities
+      .findById(loginCode.identityId)
+      .exec();
     await this.loginCodes.deleteOne({ _id: loginCode._id }).exec();
     if (!identity) {
-      throw new UnauthorizedException("Không tìm thấy tài khoản cho mã đăng nhập này.");
+      throw new UnauthorizedException(
+        "Không tìm thấy tài khoản cho mã đăng nhập này.",
+      );
     }
 
     return {
@@ -526,6 +544,13 @@ export class AuthController {
     response.status(200).json({ ok: true });
   }
 
+  @RequireRoles(
+    MEMBER_ROLES.owner,
+    MEMBER_ROLES.designer,
+    MEMBER_ROLES.ba,
+    MEMBER_ROLES.dev,
+    MEMBER_ROLES.viewer,
+  )
   @Post("logout")
   logout(@Res() response: Response): void {
     response.clearCookie(SESSION_COOKIE, this.sessions.cookieOptions());
