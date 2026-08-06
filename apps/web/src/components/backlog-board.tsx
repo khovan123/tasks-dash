@@ -100,7 +100,7 @@ export function BacklogBoard({
 
   useEffect(() => {
     const sseUrl = `/api/projects/${projectKey}/work-items/sse`;
-    const eventSource = new EventSource(sseUrl);
+    const eventSource = new EventSource(sseUrl, { withCredentials: true });
 
     eventSource.onmessage = (event) => {
       try {
