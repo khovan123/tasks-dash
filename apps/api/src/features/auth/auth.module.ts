@@ -6,6 +6,8 @@ import { AuthController } from "./auth.controller";
 import {
   AuthIdentityDocument,
   AuthIdentitySchema,
+  AuthLoginCodeDocument,
+  AuthLoginCodeSchema,
 } from "./auth.schemas";
 import {
   ProjectDocument,
@@ -34,6 +36,7 @@ import { IntegrationsModule } from "../integrations/integrations.module";
     forwardRef(() => IntegrationsModule),
     MongooseModule.forFeature([
       { name: AuthIdentityDocument.name, schema: AuthIdentitySchema },
+      { name: AuthLoginCodeDocument.name, schema: AuthLoginCodeSchema },
       {
         name: IntegrationOauthStateDocument.name,
         schema: IntegrationOauthStateSchema,

@@ -23,16 +23,62 @@ const DEFAULT_RULES: DefaultRule[] = [
   {
     name: "Discord · Pull request opened",
     trigger: AUTOMATION_TRIGGERS.pullRequestOpened,
-    title: "{{workItemKey}} · PR #{{pullRequestNumber}} opened",
-    message:
-      "{{repositoryFullName}}\n{{title}}\n{{pullRequestUrl}}",
+    title: "PR #{{pullRequestNumber}} opened · {{workItemKey}}",
+    message: "{{repositoryFullName}}\n{{title}}\n{{pullRequestUrl}}",
   },
   {
     name: "Discord · Pull request merged",
     trigger: AUTOMATION_TRIGGERS.pullRequestMerged,
-    title: "{{workItemKey}} · PR #{{pullRequestNumber}} merged",
-    message:
-      "{{repositoryFullName}}\n{{title}}\n{{pullRequestUrl}}",
+    title: "PR #{{pullRequestNumber}} merged · {{workItemKey}}",
+    message: "{{repositoryFullName}}\n{{title}}\n{{pullRequestUrl}}",
+  },
+  {
+    name: "Discord · Pull request review comment",
+    trigger: AUTOMATION_TRIGGERS.pullRequestReviewCommented,
+    title: "PR Review Comment · {{workItemKey}}",
+    message: "New review comment on PR #{{pullRequestNumber}}",
+  },
+  {
+    name: "Discord · Pull request approved",
+    trigger: AUTOMATION_TRIGGERS.pullRequestApproved,
+    title: "PR #{{pullRequestNumber}} Approved · {{workItemKey}}",
+    message: "Pull request has been approved and is ready to merge",
+  },
+  {
+    name: "Discord · CI/CD build status",
+    trigger: AUTOMATION_TRIGGERS.ciCdDeploymentSuccess,
+    title: "CI/CD Deployment · {{projectKey}}",
+    message: "Deployment status log ref link",
+  },
+  {
+    name: "Discord · Work item created",
+    trigger: AUTOMATION_TRIGGERS.workItemCreated,
+    title: "Task created · {{workItemKey}}",
+    message: "{{title}}",
+  },
+  {
+    name: "Discord · Work item completed",
+    trigger: AUTOMATION_TRIGGERS.workItemTransitioned,
+    title: "Task completed · {{workItemKey}}",
+    message: "{{title}} moved to DONE",
+  },
+  {
+    name: "Discord · Member joined",
+    trigger: AUTOMATION_TRIGGERS.memberAdded,
+    title: "Member update · {{projectKey}}",
+    message: "Project members list synchronized",
+  },
+  {
+    name: "Discord · Document created",
+    trigger: AUTOMATION_TRIGGERS.documentCreated,
+    title: "Document update · {{projectKey}}",
+    message: "Document channel updated",
+  },
+  {
+    name: "Discord · Design catalog updated",
+    trigger: AUTOMATION_TRIGGERS.designCatalogUpdated,
+    title: "Design catalog update · {{projectKey}}",
+    message: "Figma design link logged",
   },
 ];
 

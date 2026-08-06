@@ -8,10 +8,7 @@ import { InjectConnection, InjectModel } from "@nestjs/mongoose";
 import { Connection, Model } from "mongoose";
 import { MemberRole, MEMBER_ROLES } from "@tasks-dash/contracts";
 import { Project } from "./project.domain";
-import {
-  ProjectDocument,
-  ProjectHydratedDocument,
-} from "./project.schema";
+import { ProjectDocument, ProjectHydratedDocument } from "./project.schema";
 import { CreateProjectDto } from "./projects.dto";
 
 export const PROJECT_CREATED_EVENT = "projects.created";
@@ -46,7 +43,10 @@ export class ProjectsService {
       ...dto,
       leadId: dto.leadId ?? actorId,
     }).toPrimitives();
-    const exists = await this.projects.exists({ workspaceId, key: project.key });
+    const exists = await this.projects.exists({
+      workspaceId,
+      key: project.key,
+    });
     if (exists) {
       throw new ConflictException(`Project key ${project.key} already exists.`);
     }
@@ -74,28 +74,28 @@ export class ProjectsService {
   ): Promise<ProjectHydratedDocument> {
     const project = await this.getByKey(workspaceId, key);
     project.memberIds = memberIds;
-    
+
     if (!project.memberRoles) {
       project.memberRoles = new Map();
     }
-    
+
     // Default new members to dev role
     for (const memberId of memberIds) {
       if (!project.memberRoles.has(memberId)) {
         project.memberRoles.set(memberId, MEMBER_ROLES.dev);
       }
     }
-    
+
     // Clean up removed members
     for (const roleKey of Array.from(project.memberRoles.keys())) {
       if (!memberIds.includes(roleKey)) {
         project.memberRoles.delete(roleKey);
       }
     }
-    
+
     project.markModified("memberRoles");
     await project.save();
-    
+
     await this.events.emitAsync("project.members.updated", {
       workspaceId,
       projectKey: project.key,
@@ -119,7 +119,7 @@ export class ProjectsService {
     project.memberRoles.set(memberId, role);
     project.markModified("memberRoles");
     await project.save();
-    
+
     await this.events.emitAsync("project.members.updated", {
       workspaceId,
       projectKey: project.key,
@@ -242,16 +242,14 @@ export class ProjectsService {
   ): Promise<ProjectHydratedDocument> {
     const project = await this.getByKey(workspaceId, key);
     if (dto.name !== undefined) project.name = dto.name.trim();
-    if (dto.description !== undefined) project.description = dto.description.trim();
+    if (dto.description !== undefined)
+      project.description = dto.description.trim();
     if (dto.color !== undefined) project.color = dto.color;
     await project.save();
     return project;
   }
 
-  async delete(
-    workspaceId: string,
-    key: string,
-  ): Promise<{ ok: boolean }> {
+  async delete(workspaceId: string, key: string): Promise<{ ok: boolean }> {
     const normalizedKey = key.toUpperCase();
     const result = await this.projects
       .deleteOne({ workspaceId, key: normalizedKey })

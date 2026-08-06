@@ -25,3 +25,16 @@ export const AuthIdentitySchema = SchemaFactory.createForClass(
 );
 export type AuthIdentityHydratedDocument =
   HydratedDocument<AuthIdentityDocument>;
+
+@Schema({ collection: "auth_login_codes", timestamps: true })
+export class AuthLoginCodeDocument {
+  @Prop({ required: true, index: true, unique: true }) identityId!: string;
+  @Prop({ required: true, unique: true }) codeHash!: string;
+  @Prop({ required: true }) expiresAt!: Date;
+}
+
+export const AuthLoginCodeSchema = SchemaFactory.createForClass(
+  AuthLoginCodeDocument,
+);
+export type AuthLoginCodeHydratedDocument =
+  HydratedDocument<AuthLoginCodeDocument>;

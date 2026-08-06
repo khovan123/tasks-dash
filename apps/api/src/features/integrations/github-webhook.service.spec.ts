@@ -68,6 +68,8 @@ function createService(options: {
     prLogs,
     members,
     workItemsModel,
+    {} as never,
+    {} as never,
   ) as unknown as TestableGithubWebhookService;
 }
 

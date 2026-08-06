@@ -19,6 +19,8 @@ export type WorkflowCategory =
 export const DEFAULT_WORKFLOW_STATUS_IDS = {
   toDo: "TO_DO",
   inProgress: "IN_PROGRESS",
+  review: "REVIEW",
+  requestChange: "REQUEST_CHANGE",
   done: "DONE",
 } as const;
 export type DefaultWorkflowStatusId =

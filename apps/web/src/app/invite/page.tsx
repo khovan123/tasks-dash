@@ -5,9 +5,6 @@ import { useSearchParams } from "next/navigation";
 import { Github, MailWarning } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
-import { Input } from "@/components/ui/input";
-import { apiRequest } from "@/lib/api/api-request";
-import { Spinner } from "@/components/ui/spinner";
 import { Loading } from "@/components/ui/loading";
 import {
   Card,
@@ -21,41 +18,10 @@ import {
 function InvitePageContent() {
   const searchParams = useSearchParams();
   const token = searchParams.get("token");
-  const [discordUsername, setDiscordUsername] = useState("");
   const [error, setError] = useState<string | null>(null);
-  const [validating, setValidating] = useState(false);
 
   const valid = Boolean(token && token.length >= 20 && token.length <= 256);
-  const loginUrl = `/api/auth/github/login?invite=${encodeURIComponent(token || "")}&discordUsername=${encodeURIComponent(discordUsername.trim())}`;
-
-  const handleNext = async (e: React.MouseEvent<HTMLAnchorElement>) => {
-    e.preventDefault();
-    if (!discordUsername.trim() || validating) return;
-
-    setValidating(true);
-    setError(null);
-
-    try {
-      await apiRequest("/api/auth/invite/validate-discord", {
-        method: "POST",
-        body: JSON.stringify({
-          invite: token,
-          discordUsername: discordUsername.trim(),
-        }),
-      });
-
-      // If validation succeeds, proceed to login/OAuth redirect
-      window.location.href = loginUrl;
-    } catch (err: any) {
-      console.error(err);
-      setError(
-        err.message ||
-          "Không thể xác thực tài khoản Discord. Vui lòng kiểm tra lại Username của bạn.",
-      );
-    } finally {
-      setValidating(false);
-    }
-  };
+  const loginUrl = `/api/auth/github/login?invite=${encodeURIComponent(token || "")}`;
 
   return (
     <main className="grid min-h-screen place-items-center px-4 py-10 bg-background/40">
@@ -72,50 +38,22 @@ function InvitePageContent() {
           <CardTitle className="text-3xl">Tham gia Tasks Dash</CardTitle>
           <CardDescription className="text-base leading-relaxed">
             {valid
-              ? "Đăng nhập bằng GitHub có email đã được mời. Lời mời chỉ được sử dụng một lần."
+              ? "Chấp nhận lời mời tham gia workspace bằng cách đăng nhập tài khoản GitHub của bạn. Lời mời chỉ có hiệu lực một lần."
               : "Link lời mời không hợp lệ hoặc đã bị cắt mất token."}
           </CardDescription>
         </CardHeader>
         <CardContent className="flex flex-col gap-6 w-full items-center">
           {valid ? (
             <>
-              <div className="w-full space-y-2">
-                <label className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">
-                  Username Discord của bạn (Yêu cầu để tham gia server Discord)
-                </label>
-                <Input
-                  type="text"
-                  placeholder="Ví dụ: johndoe hoặc johndoe#1234"
-                  value={discordUsername}
-                  onChange={(e) => setDiscordUsername(e.target.value)}
-                  className="w-full bg-background/50"
-                  disabled={validating}
-                  required
-                />
-              </div>
-
               {error && (
                 <div className="w-full p-3 rounded-lg bg-destructive/10 text-destructive text-xs font-medium leading-relaxed border border-destructive/20">
                   ⚠️ {error}
                 </div>
               )}
 
-              <Button
-                asChild
-                size="lg"
-                className="w-full"
-                disabled={!discordUsername.trim() || validating}
-              >
-                <a href={loginUrl} onClick={handleNext}>
-                  {validating ? (
-                    <>
-                      <Spinner className="mr-2" /> Đang kiểm tra Discord...
-                    </>
-                  ) : (
-                    <>
-                      <Github data-icon="inline-start" /> Tiếp tục với GitHub
-                    </>
-                  )}
+              <Button asChild size="lg" className="w-full">
+                <a href={loginUrl}>
+                  <Github data-icon="inline-start" /> Tiếp tục với GitHub
                 </a>
               </Button>
             </>
@@ -130,8 +68,9 @@ function InvitePageContent() {
           </p>
           {valid && (
             <p className="text-xs text-primary font-semibold mt-2">
-              💡 Sau khi kết nối, Bot sẽ tự động phân vai trò tương ứng và giới
-              hạn quyền truy cập các kênh dự án (Project Category) của bạn.
+              💡 Sau khi đăng nhập GitHub, bạn sẽ được tự động chuyển tiếp đến
+              liên kết tài khoản Discord để đồng bộ phân quyền và nhận thông báo
+              dự án.
             </p>
           )}
         </CardFooter>

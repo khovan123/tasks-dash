@@ -16,7 +16,10 @@ import { InjectModel } from "@nestjs/mongoose";
 import { Model } from "mongoose";
 import { createHash, randomBytes } from "node:crypto";
 import type { Request, Response } from "express";
-import { MEMBER_INVITATION_STATUSES, MEMBER_ROLES } from "@tasks-dash/contracts";
+import {
+  MEMBER_INVITATION_STATUSES,
+  MEMBER_ROLES,
+} from "@tasks-dash/contracts";
 import {
   WorkspaceInvitationDocument,
   WorkspaceInvitationHydratedDocument,
@@ -240,6 +243,7 @@ export class AuthController {
       identityId,
       identity.githubId,
       identity.email,
+      identity.login,
     );
 
     const member = invitationToken
@@ -249,6 +253,7 @@ export class AuthController {
           { ...profile, discordUsername },
           identityId,
           identity.githubId,
+          identity.login,
         )
       : await this.members.resolveLoginMembership(
           identityId,
@@ -274,7 +279,7 @@ export class AuthController {
     }
 
     if (!invitationToken) {
-      await this.members.touchLogin(member, profile);
+      await this.members.touchLogin(member, profile, discordUsername);
     }
 
     identity.lastWorkspaceId = member.workspaceId;
@@ -297,6 +302,32 @@ export class AuthController {
       sessionToken,
       this.sessions.cookieOptions(),
     );
+
+    if (invitationToken || !member.discordUsername) {
+      const state = randomBytes(32).toString("base64url");
+      await this.oauthStates.create({
+        state,
+        workspaceId: member.workspaceId,
+        memberId: memberId,
+        provider: "discord_invite",
+        expiresAt: new Date(Date.now() + 10 * 60 * 1000),
+      });
+
+      const authorize = new URL("https://discord.com/oauth2/authorize");
+      authorize.searchParams.set(
+        "client_id",
+        this.config.getOrThrow<string>("DISCORD_APPLICATION_ID"),
+      );
+      authorize.searchParams.set(
+        "redirect_uri",
+        this.config.getOrThrow<string>("DISCORD_CALLBACK_URL"),
+      );
+      authorize.searchParams.set("response_type", "code");
+      authorize.searchParams.set("scope", "identify guilds.join");
+      authorize.searchParams.set("state", state);
+
+      return authorize.toString();
+    }
 
     return preferDirectAppPath
       ? "/workspaces"
@@ -524,6 +555,120 @@ export class AuthController {
       discordUsername,
     );
     response.redirect(targetUrl);
+  }
+
+  @Get("discord/login")
+  async discordLogin(
+    @CurrentSession() session: AuthSession,
+    @Res() response: Response,
+  ): Promise<void> {
+    const state = randomBytes(32).toString("base64url");
+    
+    await this.oauthStates.create({
+      state,
+      workspaceId: session.workspaceId,
+      memberId: session.userId,
+      provider: "discord_user",
+      expiresAt: new Date(Date.now() + 10 * 60 * 1000),
+    });
+
+    const authorize = new URL("https://discord.com/oauth2/authorize");
+    authorize.searchParams.set(
+      "client_id",
+      this.config.getOrThrow<string>("DISCORD_APPLICATION_ID"),
+    );
+    authorize.searchParams.set(
+      "redirect_uri",
+      this.config.getOrThrow<string>("DISCORD_CALLBACK_URL"),
+    );
+    authorize.searchParams.set("response_type", "code");
+    authorize.searchParams.set("scope", "identify guilds.join");
+    authorize.searchParams.set("state", state);
+    
+    response.redirect(authorize.toString());
+  }
+
+  @PublicRoute()
+  @Get("discord/callback")
+  async discordCallback(
+    @Query("code") code: string | undefined,
+    @Query("state") state: string | undefined,
+    @Res() response: Response,
+  ): Promise<void> {
+    const webUrl = this.config.getOrThrow<string>("WEB_APP_URL");
+
+    if (!code || !state) {
+      return response.redirect(`${webUrl}/settings/account?discord=error`);
+    }
+
+    const oauthState = await this.oauthStates
+      .findOneAndDelete({
+        state,
+        provider: { $in: ["discord_user", "discord_invite"] },
+      })
+      .exec();
+
+    if (!oauthState || oauthState.expiresAt < new Date()) {
+      return response.redirect(`${webUrl}/settings/account?discord=stale`);
+    }
+
+    const isInviteFlow = oauthState.provider === "discord_invite";
+
+    try {
+      const tokenResponse = await fetch("https://discord.com/api/v10/oauth2/token", {
+        method: "POST",
+        headers: { "content-type": "application/x-www-form-urlencoded" },
+        body: new URLSearchParams({
+          client_id: this.config.getOrThrow<string>("DISCORD_APPLICATION_ID"),
+          client_secret: this.config.getOrThrow<string>("DISCORD_CLIENT_SECRET"),
+          grant_type: "authorization_code",
+          code,
+          redirect_uri: this.config.getOrThrow<string>("DISCORD_CALLBACK_URL"),
+        }),
+      });
+
+      if (!tokenResponse.ok) {
+        throw new Error(`Token exchange failed with HTTP ${tokenResponse.status}`);
+      }
+
+      const tokens = await tokenResponse.json() as { access_token: string };
+
+      const userResponse = await fetch("https://discord.com/api/v10/users/@me", {
+        headers: { authorization: `Bearer ${tokens.access_token}` },
+      });
+
+      if (!userResponse.ok) {
+        throw new Error(`Failed to fetch user info with HTTP ${userResponse.status}`);
+      }
+
+      const discordUser = await userResponse.json() as { id: string; username: string };
+
+      // Automatically add user to the Discord server
+      await this.discord.addUserToGuild(
+        oauthState.workspaceId,
+        discordUser.id,
+        tokens.access_token,
+      );
+
+      await this.members.updateMyProfile(
+        oauthState.workspaceId,
+        oauthState.memberId!,
+        { discordUsername: discordUser.username },
+      );
+
+      if (isInviteFlow) {
+        return response.redirect(`${webUrl}/workspaces`);
+      }
+
+      return response.redirect(`${webUrl}/settings/account?discord=success`);
+    } catch (e) {
+      console.error("Discord user OAuth failed:", e);
+      if (isInviteFlow) {
+        // Even if discord auth fails during invite, they accepted the workspace invite, so send them to /workspaces
+        return response.redirect(`${webUrl}/workspaces?discord=failed`);
+      }
+      return response.redirect(`${webUrl}/settings/account?discord=failed`);
+    }
   }
 
   @Get("me")

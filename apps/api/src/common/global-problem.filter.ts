@@ -4,6 +4,7 @@ import {
   ExceptionFilter,
   HttpException,
   HttpStatus,
+  Logger,
 } from "@nestjs/common";
 import { randomUUID } from "node:crypto";
 import {
@@ -66,6 +67,8 @@ function classification(status: number): {
 
 @Catch()
 export class GlobalProblemFilter implements ExceptionFilter {
+  private readonly logger = new Logger(GlobalProblemFilter.name);
+
   catch(exception: unknown, host: ArgumentsHost): void {
     const http = host.switchToHttp();
     const request = http.getRequest<Request>();
@@ -74,7 +77,8 @@ export class GlobalProblemFilter implements ExceptionFilter {
       exception instanceof HttpException
         ? exception.getStatus()
         : HttpStatus.INTERNAL_SERVER_ERROR;
-    const raw = exception instanceof HttpException ? exception.getResponse() : null;
+    const raw =
+      exception instanceof HttpException ? exception.getResponse() : null;
     const detail =
       typeof raw === "string"
         ? raw
@@ -90,7 +94,18 @@ export class GlobalProblemFilter implements ExceptionFilter {
         ? "problem.internal.detail"
         : Array.isArray(detail)
           ? detail.join(", ")
-          : detail ?? `problem.${status}.detail`;
+          : (detail ?? `problem.${status}.detail`);
+
+    // Log the error detail and stack trace for development/debugging
+    const logMessage = `${request.method} ${request.url} - Status: ${status} - Correlation: ${correlationId}`;
+    if (status >= 500) {
+      this.logger.error(
+        logMessage,
+        exception instanceof Error ? exception.stack : String(exception),
+      );
+    } else {
+      this.logger.warn(`${logMessage} - Detail: ${JSON.stringify(detail)}`);
+    }
 
     response.status(status).json({
       ok: false,

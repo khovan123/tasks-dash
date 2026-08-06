@@ -30,3 +30,20 @@ export class CreateProjectDto {
   @IsOptional()
   leadId?: string;
 }
+
+export class UpdateProjectDto {
+  @IsString()
+  @MinLength(2)
+  @MaxLength(100)
+  @IsOptional()
+  name?: string;
+
+  @IsString()
+  @MaxLength(1000)
+  @IsOptional()
+  description?: string;
+
+  @IsHexColor()
+  @IsOptional()
+  color?: string;
+}

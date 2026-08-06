@@ -267,6 +267,14 @@ export class IntegrationsController {
     return { delivered: true };
   }
 
+  @Get("discord/members/search")
+  discordSearchMembers(
+    @WorkspaceId() workspaceId: string,
+    @Query("query") query: string | undefined,
+  ): Promise<Array<{ id: string; username: string; displayName: string }>> {
+    return this.discord.searchGuildMembers(workspaceId, query || "");
+  }
+
   @PublicRoute()
   @Post("discord/interactions")
   async discordInteractions(

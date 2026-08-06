@@ -219,6 +219,7 @@ export class MembersService {
     authIdentityId: string,
     githubId: number,
     emailInput: string,
+    githubLogin?: string,
   ): Promise<void> {
     const email = this.normalizeEmail(emailInput);
     await this.members
@@ -231,7 +232,7 @@ export class MembersService {
             { authIdentityId },
           ],
         },
-        { $set: { authIdentityId, githubId } },
+        { $set: { authIdentityId, githubId, githubLogin } },
       )
       .exec();
   }
@@ -397,6 +398,7 @@ export class MembersService {
     profile: IdentityProfile & { discordUsername?: string },
     authIdentityId: string,
     githubId: number,
+    githubLogin?: string,
   ): Promise<MemberHydratedDocument> {
     const email = this.normalizeEmail(emailInput);
     const hash = this.tokenHash(rawToken);
@@ -433,6 +435,7 @@ export class MembersService {
       if (existing) {
         existing.authIdentityId = authIdentityId;
         existing.githubId = githubId;
+        existing.githubLogin = githubLogin;
         existing.name = profile.name;
         existing.avatarUrl = profile.avatarUrl;
         if (profile.discordUsername) {
@@ -454,6 +457,7 @@ export class MembersService {
               status: MEMBER_PRESENCE.online,
               authIdentityId,
               githubId,
+              githubLogin,
               discordUsername: profile.discordUsername,
               lastLoginAt: new Date(),
             },
@@ -527,12 +531,34 @@ export class MembersService {
   async touchLogin(
     member: MemberHydratedDocument,
     profile: IdentityProfile,
+    discordUsername?: string,
   ): Promise<void> {
     member.name = profile.name;
     member.avatarUrl = profile.avatarUrl;
     member.status = MEMBER_PRESENCE.online;
     member.lastLoginAt = new Date();
+    if (discordUsername) {
+      member.discordUsername = discordUsername;
+    }
     await member.save();
+  }
+
+  async updateMyProfile(
+    workspaceId: string,
+    memberId: string,
+    dto: { discordUsername?: string },
+  ): Promise<Record<string, unknown>> {
+    const member = await this.members
+      .findOne({ workspaceId, _id: memberId })
+      .exec();
+    if (!member) {
+      throw new NotFoundException("Member not found.");
+    }
+    if (dto.discordUsername !== undefined) {
+      member.discordUsername = dto.discordUsername || undefined;
+    }
+    await member.save();
+    return { ok: true, discordUsername: member.discordUsername ?? null };
   }
 
   async updateRole(

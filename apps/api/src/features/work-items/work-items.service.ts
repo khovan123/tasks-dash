@@ -6,8 +6,9 @@ import {
   Inject,
   forwardRef,
 } from "@nestjs/common";
-import { InjectModel } from "@nestjs/mongoose";
-import { Model } from "mongoose";
+import { InjectConnection, InjectModel } from "@nestjs/mongoose";
+import { Connection, Model, Types } from "mongoose";
+import { format } from "date-fns";
 import { EventEmitter2 } from "@nestjs/event-emitter";
 import {
   AUTOMATION_TRIGGERS,
@@ -30,9 +31,16 @@ import {
   WorkItemDocument,
   WorkItemHydratedDocument,
 } from "./work-item.schema";
-import { CreateWorkItemDto, ReorderWorkItemsDto, UpdateWorkItemDto } from "./work-items.dto";
+import {
+  CreateWorkItemDto,
+  ReorderWorkItemsDto,
+  UpdateWorkItemDto,
+} from "./work-items.dto";
 import { DiscordAdapter } from "../integrations/discord.adapter";
-import { TaskDiscordLogDocument, TaskDiscordLogHydratedDocument } from "../integrations/integration.schemas";
+import {
+  TaskDiscordLogDocument,
+  TaskDiscordLogHydratedDocument,
+} from "../integrations/integration.schemas";
 
 export interface GithubCommitLinkInput {
   sha: string;
@@ -78,6 +86,8 @@ export class WorkItemsService {
     private readonly discord: DiscordAdapter,
     @InjectModel(TaskDiscordLogDocument.name)
     private readonly taskLogs: Model<TaskDiscordLogHydratedDocument>,
+    @InjectConnection()
+    private readonly connection: Connection,
   ) {}
 
   private async ensureWorkflow(workspaceId: string, projectKey: string) {
@@ -89,51 +99,93 @@ export class WorkItemsService {
       statuses: [
         {
           id: DEFAULT_WORKFLOW_STATUS_IDS.toDo,
-          name: "To do",
+          name: "ToDo",
           category: WORKFLOW_CATEGORIES.toDo,
-          color: "#64748b",
+          color: "#9ca3af",
           order: 0,
         },
         {
           id: DEFAULT_WORKFLOW_STATUS_IDS.inProgress,
-          name: "In progress",
+          name: "In Progress",
           category: WORKFLOW_CATEGORIES.inProgress,
           color: "#2563eb",
           order: 1,
+        },
+        {
+          id: DEFAULT_WORKFLOW_STATUS_IDS.review,
+          name: "Review",
+          category: WORKFLOW_CATEGORIES.inProgress,
+          color: "#7c3aed",
+          order: 2,
+        },
+        {
+          id: DEFAULT_WORKFLOW_STATUS_IDS.requestChange,
+          name: "Request Change",
+          category: WORKFLOW_CATEGORIES.inProgress,
+          color: "#dc2626",
+          order: 3,
         },
         {
           id: DEFAULT_WORKFLOW_STATUS_IDS.done,
           name: "Done",
           category: WORKFLOW_CATEGORIES.done,
           color: "#16a34a",
-          order: 2,
+          order: 4,
         },
       ],
       transitions: [
         {
-          id: "TO_DO_TO_IN_PROGRESS",
-          name: "Start work",
+          id: "SYSTEM_TO_DO_TO_IN_PROGRESS",
+          name: "Auto start from GitHub activity",
           fromStatusId: DEFAULT_WORKFLOW_STATUS_IDS.toDo,
           toStatusId: DEFAULT_WORKFLOW_STATUS_IDS.inProgress,
           allowedRoleIds: [],
         },
         {
-          id: "IN_PROGRESS_TO_DONE",
-          name: "Complete",
+          id: "SYSTEM_IN_PROGRESS_TO_REVIEW",
+          name: "Auto move to review requested",
+          fromStatusId: DEFAULT_WORKFLOW_STATUS_IDS.inProgress,
+          toStatusId: DEFAULT_WORKFLOW_STATUS_IDS.review,
+          allowedRoleIds: [],
+        },
+        {
+          id: "SYSTEM_REVIEW_TO_REQUEST_CHANGE",
+          name: "Auto move to request change",
+          fromStatusId: DEFAULT_WORKFLOW_STATUS_IDS.review,
+          toStatusId: DEFAULT_WORKFLOW_STATUS_IDS.requestChange,
+          allowedRoleIds: [],
+        },
+        {
+          id: "SYSTEM_REQUEST_CHANGE_TO_IN_PROGRESS",
+          name: "Auto resume on new commit",
+          fromStatusId: DEFAULT_WORKFLOW_STATUS_IDS.requestChange,
+          toStatusId: DEFAULT_WORKFLOW_STATUS_IDS.inProgress,
+          allowedRoleIds: [],
+        },
+        {
+          id: "SYSTEM_IN_PROGRESS_TO_DONE",
+          name: "Auto close from in progress",
           fromStatusId: DEFAULT_WORKFLOW_STATUS_IDS.inProgress,
           toStatusId: DEFAULT_WORKFLOW_STATUS_IDS.done,
           allowedRoleIds: [],
         },
         {
-          id: "IN_PROGRESS_TO_TO_DO",
-          name: "Return to backlog",
-          fromStatusId: DEFAULT_WORKFLOW_STATUS_IDS.inProgress,
-          toStatusId: DEFAULT_WORKFLOW_STATUS_IDS.toDo,
+          id: "SYSTEM_REVIEW_TO_DONE",
+          name: "Auto close from review",
+          fromStatusId: DEFAULT_WORKFLOW_STATUS_IDS.review,
+          toStatusId: DEFAULT_WORKFLOW_STATUS_IDS.done,
           allowedRoleIds: [],
         },
         {
-          id: "DONE_TO_IN_PROGRESS",
-          name: "Reopen",
+          id: "SYSTEM_REQUEST_CHANGE_TO_DONE",
+          name: "Auto close from request change",
+          fromStatusId: DEFAULT_WORKFLOW_STATUS_IDS.requestChange,
+          toStatusId: DEFAULT_WORKFLOW_STATUS_IDS.done,
+          allowedRoleIds: [],
+        },
+        {
+          id: "SYSTEM_DONE_TO_IN_PROGRESS",
+          name: "Auto reopen from done",
           fromStatusId: DEFAULT_WORKFLOW_STATUS_IDS.done,
           toStatusId: DEFAULT_WORKFLOW_STATUS_IDS.inProgress,
           allowedRoleIds: [],
@@ -142,10 +194,95 @@ export class WorkItemsService {
     });
   }
 
+  private async transitionInternal(
+    workspaceId: string,
+    item: WorkItemHydratedDocument,
+    statusId: string,
+    options?: {
+      actorMemberId?: string;
+      actorRole?: MemberRole;
+      bypassTransitionRules?: boolean;
+    },
+  ): Promise<WorkItemHydratedDocument> {
+    if (options?.actorRole === MEMBER_ROLES.dev) {
+      if (item.assigneeId !== options.actorMemberId) {
+        throw new ForbiddenException(
+          "Dev can only transition tasks assigned to themselves.",
+        );
+      }
+    }
+    const workflow = await this.workflows.get(workspaceId, item.projectKey);
+    if (!workflow) {
+      throw new NotFoundException(
+        `Workflow for project ${item.projectKey} was not found.`,
+      );
+    }
+    const target = workflow.statuses.find((status) => status.id === statusId);
+    if (!target) {
+      throw new NotFoundException(`Workflow status ${statusId} was not found.`);
+    }
+    if (item.statusId === statusId) return item;
+
+    if (
+      !options?.bypassTransitionRules &&
+      workflow.transitions &&
+      workflow.transitions.length > 0
+    ) {
+      const allowed = workflow.transitions.some(
+        (tr) => tr.fromStatusId === item.statusId && tr.toStatusId === statusId,
+      );
+      if (!allowed) {
+        throw new BadRequestException(
+          `Không thể chuyển trạng thái từ "${item.statusId}" sang "${statusId}" do quy tắc Workflow.`,
+        );
+      }
+    }
+
+    item.statusId = statusId;
+    if (target.category === WORKFLOW_CATEGORIES.inProgress && !item.startedAt) {
+      item.startedAt = new Date();
+    }
+    if (target.category === WORKFLOW_CATEGORIES.done) {
+      item.completedAt = new Date();
+    } else {
+      item.completedAt = undefined;
+    }
+    await item.save();
+
+    void this.events.emitAsync("automation.work-item-transitioned", {
+      sourceEventId: `work-item-transitioned:${item.key}:${statusId}`,
+      workspaceId,
+      projectKey: item.projectKey,
+      trigger: AUTOMATION_TRIGGERS.workItemTransitioned,
+      workItemKey: item.key,
+      title: item.summary,
+    });
+
+    try {
+      const log = await this.taskLogs.findOne({ workItemKey: item.key }).exec();
+      if (log) {
+        await this.discord.sendThreadReply(
+          log.discordChannelId,
+          log.discordMessageId,
+          {
+            title: `Task Transitioned: ${item.key}`,
+            description: `Status changed to **${target.name}**`,
+            color: 0x8957e5,
+          },
+        );
+      }
+    } catch (e) {
+      console.error("Failed to log task transition to Discord:", e);
+    }
+
+    return item;
+  }
+
   async create(
     workspaceId: string,
     projectKey: string,
     reporterId: string,
+    actorRole: MemberRole,
     dto: CreateWorkItemDto,
   ) {
     const key = projectKey.toUpperCase();
@@ -165,6 +302,8 @@ export class WorkItemsService {
         .exec(),
     ]);
     const rank = (lastItem?.rank ?? 0) + 1000;
+    const assigneeId =
+      actorRole === MEMBER_ROLES.dev ? reporterId : dto.assigneeId;
     const item = await this.items.create({
       ...dto,
       workspaceId,
@@ -173,8 +312,10 @@ export class WorkItemsService {
       sequence,
       rank,
       statusId,
+      assigneeId: assigneeId || undefined,
       reporterId,
       dueDate: dto.dueDate ? new Date(dto.dueDate) : undefined,
+      startedAt: dto.startDate ? new Date(dto.startDate) : undefined,
       figmaLinks: (dto.figmaLinks || []).map((link) => ({
         label: (link.label || "").trim(),
         url: (link.url || "").trim(),
@@ -196,14 +337,80 @@ export class WorkItemsService {
 
     // Log to Discord #tasks channel
     try {
-      const integration = await this.discord.getProjectIntegration(workspaceId, key);
+      const integration = await this.discord.getProjectIntegration(
+        workspaceId,
+        key,
+      );
       if (integration?.channelId) {
-        const msgId = await this.discord.sendToChannel(integration.channelId, {
-          title: `Task Created: ${item.key}`,
-          description: `**Summary:** ${item.summary}\n**Type:** ${item.type}\n**Priority:** ${item.priority}`,
-          color: 0x238636,
-        });
+        let assigneeName = "Unassigned";
+        let assigneeGithub = "";
+        let assigneeMention = "";
+
+        if (item.assigneeId) {
+          const assignee = await this.connection.collection("members").findOne({
+            _id: new Types.ObjectId(item.assigneeId),
+            workspaceId,
+          });
+          if (assignee) {
+            assigneeName = assignee.name;
+            if (assignee.githubLogin) {
+              assigneeGithub = assignee.githubLogin;
+            } else if (assignee.authIdentityId) {
+              const identity = await this.connection.collection("auth_identities").findOne({
+                _id: typeof assignee.authIdentityId === "string" ? new Types.ObjectId(assignee.authIdentityId) : assignee.authIdentityId,
+              });
+              if (identity?.login) {
+                assigneeGithub = identity.login;
+              }
+            }
+            if (assignee.discordUsername) {
+              const discordUserId = await this.discord.findGuildMemberId(
+                integration.guildId || "",
+                assignee.discordUsername,
+              );
+              if (discordUserId) {
+                assigneeMention = `<@${discordUserId}>`;
+              } else {
+                assigneeMention = `@${assignee.discordUsername}`;
+              }
+            }
+          }
+        }
+
+        let durationStr = "N/A";
+        if (item.startedAt && item.dueDate) {
+          const diffTime = Math.abs(
+            item.dueDate.getTime() - item.startedAt.getTime(),
+          );
+          const diffDays = Math.ceil(diffTime / (1000 * 60 * 60 * 24));
+          durationStr = `${diffDays} ngày`;
+        }
+
+        const descriptionParts = [
+          `**Summary:** ${item.summary}`,
+          `**Type:** ${item.type}`,
+          `**Priority:** ${item.priority}`,
+          `**Start Date:** ${item.startedAt ? format(item.startedAt, "dd/MM/yyyy") : "N/A"}`,
+          `**Due Date:** ${item.dueDate ? format(item.dueDate, "dd/MM/yyyy") : "N/A"}`,
+          `**Duration:** ${durationStr}`,
+          assigneeGithub ? `**GitHub Username:** ${assigneeGithub}` : "",
+          assigneeMention ? `**Assignee:** ${assigneeMention}` : "",
+        ].filter(Boolean);
+
+        const pingContent = assigneeMention.startsWith("<@") ? assigneeMention : null;
+
+        const msgId = await this.discord.sendToChannel(
+          integration.channelId,
+          {
+            title: `Task Created: ${item.key}`,
+            description: descriptionParts.join("\n"),
+            color: 0x238636,
+          },
+          pingContent,
+        );
+
         await this.taskLogs.create({
+          workspaceId,
           workItemKey: item.key,
           discordMessageId: msgId,
           discordChannelId: integration.channelId,
@@ -254,75 +461,35 @@ export class WorkItemsService {
     return { updated: result.modifiedCount };
   }
 
-  async transition(workspaceId: string, key: string, statusId: string, actorMemberId?: string, actorRole?: MemberRole) {
+  async transition(
+    workspaceId: string,
+    key: string,
+    statusId: string,
+    actorMemberId?: string,
+    actorRole?: MemberRole,
+  ) {
     const item = await this.find(workspaceId, key);
-    if (actorRole === MEMBER_ROLES.dev) {
-      if (item.assigneeId !== actorMemberId) {
-        throw new ForbiddenException("Dev can only transition tasks assigned to themselves.");
-      }
-    }
-    const workflow = await this.workflows.get(workspaceId, item.projectKey);
-    if (!workflow) {
-      throw new NotFoundException(
-        `Workflow for project ${item.projectKey} was not found.`,
-      );
-    }
-    const target = workflow.statuses.find((status) => status.id === statusId);
-    if (!target) {
-      throw new NotFoundException(`Workflow status ${statusId} was not found.`);
-    }
-
-    // If transitions rules are setup in this project workflow, enforce them
-    if (workflow.transitions && workflow.transitions.length > 0) {
-      const allowed = workflow.transitions.some(
-        (tr) => tr.fromStatusId === item.statusId && tr.toStatusId === statusId,
-      );
-      if (!allowed) {
-        throw new BadRequestException(
-          `Không thể chuyển trạng thái từ "${item.statusId}" sang "${statusId}" do quy tắc Workflow.`,
-        );
-      }
-    }
-    item.statusId = statusId;
-    if (target.category === WORKFLOW_CATEGORIES.inProgress && !item.startedAt) {
-      item.startedAt = new Date();
-    }
-    if (target.category === WORKFLOW_CATEGORIES.done) {
-      item.completedAt = new Date();
-    } else {
-      item.completedAt = undefined;
-    }
-    await item.save();
-
-    void this.events.emitAsync("automation.work-item-transitioned", {
-      sourceEventId: `work-item-transitioned:${item.key}:${statusId}`,
-      workspaceId,
-      projectKey: item.projectKey,
-      trigger: AUTOMATION_TRIGGERS.workItemTransitioned,
-      workItemKey: item.key,
-      title: item.summary,
+    return this.transitionInternal(workspaceId, item, statusId, {
+      actorMemberId,
+      actorRole,
     });
-
-    // Log transition to Discord #tasks channel as reply
-    try {
-      const log = await this.taskLogs.findOne({ workItemKey: item.key }).exec();
-      if (log) {
-        await this.discord.sendThreadReply(log.discordChannelId, log.discordMessageId, {
-          title: `Task Transitioned: ${item.key}`,
-          description: `Status changed to **${target.name}**`,
-          color: 0x8957e5,
-        });
-      }
-    } catch (e) {
-      console.error("Failed to log task transition to Discord:", e);
-    }
-
-    return item;
   }
 
-  async assign(workspaceId: string, key: string, assigneeId: string) {
+  async transitionBySystemRule(
+    workspaceId: string,
+    key: string,
+    statusId: string,
+  ): Promise<WorkItemHydratedDocument | null> {
+    const item = await this.findOptional(workspaceId, key);
+    if (!item) return null;
+    return this.transitionInternal(workspaceId, item, statusId, {
+      bypassTransitionRules: true,
+    });
+  }
+
+  async assign(workspaceId: string, key: string, assigneeId: string | null) {
     const item = await this.find(workspaceId, key);
-    item.assigneeId = assigneeId;
+    item.assigneeId = assigneeId ?? undefined;
     await item.save();
     return item;
   }
@@ -525,7 +692,9 @@ export class WorkItemsService {
     const item = await this.find(workspaceId, key);
     if (actorRole === MEMBER_ROLES.dev) {
       if (item.assigneeId !== actorMemberId) {
-        throw new ForbiddenException("Dev can only edit tasks assigned to themselves.");
+        throw new ForbiddenException(
+          "Dev can only edit tasks assigned to themselves.",
+        );
       }
     }
     if (dto.type !== undefined) item.type = dto.type;
@@ -550,12 +719,18 @@ export class WorkItemsService {
           `**Type:** ${item.type}`,
           `**Priority:** ${item.priority}`,
           item.description ? `**Description:** ${item.description}` : "",
-        ].filter(Boolean).join("\n");
-        await this.discord.sendThreadReply(log.discordChannelId, log.discordMessageId, {
-          title: `Task Updated: ${item.key}`,
-          description,
-          color: 0x0969da,
-        });
+        ]
+          .filter(Boolean)
+          .join("\n");
+        await this.discord.sendThreadReply(
+          log.discordChannelId,
+          log.discordMessageId,
+          {
+            title: `Task Updated: ${item.key}`,
+            description,
+            color: 0x0969da,
+          },
+        );
       }
     } catch (e) {
       console.error("Failed to log task update to Discord:", e);

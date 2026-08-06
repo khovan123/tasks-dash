@@ -7,9 +7,27 @@ import { MemberRole } from "@tasks-dash/contracts";
 
 export const PUBLIC_ROUTE_KEY = "tasks-dash:public-route";
 export const REQUIRED_ROLES_KEY = "tasks-dash:required-roles";
+export const PROJECT_ACCESS_KEY = "tasks-dash:project-access";
 export const PublicRoute = () => SetMetadata(PUBLIC_ROUTE_KEY, true);
 export const RequireRoles = (...roles: MemberRole[]) =>
   SetMetadata(REQUIRED_ROLES_KEY, roles);
+
+export interface ProjectAccessRequirement {
+  kind: "project" | "work-item";
+  param: string;
+}
+
+export const RequireProjectAccess = (param = "projectKey") =>
+  SetMetadata(PROJECT_ACCESS_KEY, {
+    kind: "project",
+    param,
+  } satisfies ProjectAccessRequirement);
+
+export const RequireWorkItemAccess = (param = "key") =>
+  SetMetadata(PROJECT_ACCESS_KEY, {
+    kind: "work-item",
+    param,
+  } satisfies ProjectAccessRequirement);
 
 export interface AuthSession {
   identityId: string;

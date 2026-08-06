@@ -2,7 +2,8 @@ import { NextRequest, NextResponse } from "next/server";
 
 export async function GET(request: NextRequest): Promise<Response> {
   const token = request.nextUrl.searchParams.get("token");
-  const redirectUrl = new URL("/", request.nextUrl.origin);
+  const redirectPath = request.nextUrl.searchParams.get("redirect") || "/";
+  const redirectUrl = new URL(redirectPath, request.nextUrl.origin);
   const response = NextResponse.redirect(redirectUrl);
 
   if (token) {

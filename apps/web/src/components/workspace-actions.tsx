@@ -1,8 +1,20 @@
 "use client";
 
 import { useState } from "react";
-import { Pencil, Trash2 } from "lucide-react";
+import { AlertTriangle, Pencil, Trash2 } from "lucide-react";
 import { apiRequest } from "@/lib/api/api-request";
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogMedia,
+  AlertDialogTitle,
+  AlertDialogTrigger,
+} from "@/components/ui/alert-dialog";
 import { Button } from "@/components/ui/button";
 import {
   Dialog,
@@ -48,7 +60,9 @@ export function WorkspaceActions({
       window.location.reload();
     } catch (cause) {
       setBusy(false);
-      setError(cause instanceof Error ? cause.message : "Không thể đổi tên workspace.");
+      setError(
+        cause instanceof Error ? cause.message : "Không thể đổi tên workspace.",
+      );
     }
   }
 
@@ -70,7 +84,9 @@ export function WorkspaceActions({
       window.location.assign("/workspaces");
     } catch (cause) {
       setBusy(false);
-      setError(cause instanceof Error ? cause.message : "Không thể xóa workspace.");
+      setError(
+        cause instanceof Error ? cause.message : "Không thể xóa workspace.",
+      );
     }
   }
 
@@ -86,30 +102,39 @@ export function WorkspaceActions({
       >
         <DialogTrigger asChild>
           <Button variant="outline" size="sm">
-            <Pencil /> Đổi tên
+            <Pencil data-icon="inline-start" /> Đổi tên
           </Button>
         </DialogTrigger>
-        <DialogContent>
-          <DialogHeader>
+        <DialogContent className="sm:max-w-md max-h-[85vh] flex flex-col p-0 overflow-hidden">
+          <DialogHeader className="px-6 pt-6 pb-4 border-b shrink-0">
             <DialogTitle>Đổi tên workspace</DialogTitle>
             <DialogDescription>
-              Tên mới sẽ hiển thị trong dashboard, sidebar và workspace switcher.
+              Tên mới sẽ hiển thị trong dashboard, sidebar và workspace
+              switcher.
             </DialogDescription>
           </DialogHeader>
-          <Field>
-            <FieldLabel htmlFor={`rename-${workspaceId}`}>Tên workspace</FieldLabel>
-            <Input
-              id={`rename-${workspaceId}`}
-              value={name}
-              onChange={(event) => setName(event.target.value)}
-              maxLength={80}
-              autoFocus
-            />
-          </Field>
-          {error ? <FieldError>{error}</FieldError> : null}
-          <DialogFooter>
+
+          <div className="flex-1 overflow-y-auto overflow-x-hidden px-6 py-4 space-y-4">
+            <Field>
+              <FieldLabel htmlFor={`rename-${workspaceId}`}>
+                Tên workspace
+              </FieldLabel>
+              <Input
+                id={`rename-${workspaceId}`}
+                value={name}
+                onChange={(event) => setName(event.target.value)}
+                maxLength={80}
+                autoFocus
+              />
+            </Field>
+            {error ? <FieldError>{error}</FieldError> : null}
+          </div>
+
+          <DialogFooter className="shrink-0 border-t px-6 py-4 bg-muted/20">
             <DialogClose asChild>
-              <Button type="button" variant="ghost">Hủy</Button>
+              <Button type="button" variant="ghost">
+                Hủy
+              </Button>
             </DialogClose>
             <Button
               type="button"
@@ -122,7 +147,7 @@ export function WorkspaceActions({
         </DialogContent>
       </Dialog>
 
-      <Dialog
+      <AlertDialog
         open={deleteOpen}
         onOpenChange={(open) => {
           setDeleteOpen(open);
@@ -130,20 +155,25 @@ export function WorkspaceActions({
           setError("");
         }}
       >
-        <DialogTrigger asChild>
+        <AlertDialogTrigger asChild>
           <Button variant="destructive" size="sm">
-            <Trash2 /> Xóa workspace
+            <Trash2 data-icon="inline-start" /> Xóa workspace
           </Button>
-        </DialogTrigger>
-        <DialogContent>
-          <DialogHeader>
-            <DialogTitle>Xóa workspace “{workspaceName}”?</DialogTitle>
-            <DialogDescription>
-              Thao tác này xóa toàn bộ project, work item, thành viên, automation,
-              integration và metadata tài liệu thuộc workspace trong Tasks Dash.
-              Không thể hoàn tác.
-            </DialogDescription>
-          </DialogHeader>
+        </AlertDialogTrigger>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogMedia>
+              <AlertTriangle className="text-destructive" />
+            </AlertDialogMedia>
+            <AlertDialogTitle>
+              Xóa workspace “{workspaceName}”?
+            </AlertDialogTitle>
+            <AlertDialogDescription>
+              Thao tác này xóa toàn bộ project, work item, thành viên,
+              automation, integration và metadata tài liệu thuộc workspace trong
+              Tasks Dash. Không thể hoàn tác.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
           <Field>
             <FieldLabel htmlFor={`delete-${workspaceId}`}>
               Nhập chính xác <strong>{workspaceName}</strong> để xác nhận
@@ -156,21 +186,18 @@ export function WorkspaceActions({
             />
           </Field>
           {error ? <FieldError>{error}</FieldError> : null}
-          <DialogFooter>
-            <DialogClose asChild>
-              <Button type="button" variant="ghost">Hủy</Button>
-            </DialogClose>
-            <Button
-              type="button"
+          <AlertDialogFooter>
+            <AlertDialogCancel>Hủy</AlertDialogCancel>
+            <AlertDialogAction
               variant="destructive"
               disabled={busy || confirmation !== workspaceName}
               onClick={() => void deleteWorkspace()}
             >
               {busy ? "Đang xóa…" : "Xóa vĩnh viễn"}
-            </Button>
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
     </div>
   );
 }

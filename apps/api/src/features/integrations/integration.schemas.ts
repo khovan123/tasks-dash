@@ -72,9 +72,12 @@ export class DiscordIntegrationDocument extends BaseMongoDocument {
   @Prop({ trim: true }) membersChannelName?: string;
   @Prop({ trim: true }) reportsChannelId?: string;
   @Prop({ trim: true }) reportsChannelName?: string;
+  @Prop({ trim: true }) prChannelId?: string;
+  @Prop({ trim: true }) prChannelName?: string;
   @Prop({ trim: true }) meetingChannelId?: string;
   @Prop({ trim: true }) meetingChannelName?: string;
   @Prop({ trim: true }) guildId?: string;
+  @Prop({ trim: true }) membersDirectoryMessageId?: string;
   @Prop({ enum: ["BOT", "MANUAL"], default: "MANUAL" })
   provisionedBy!: "BOT" | "MANUAL";
   @Prop({ default: true }) enabled!: boolean;
@@ -134,6 +137,20 @@ export const TaskDiscordLogSchema = SchemaFactory.createForClass(
   TaskDiscordLogDocument,
 );
 TaskDiscordLogSchema.index({ workItemKey: 1 }, { unique: true });
+
+@Schema({ collection: "github_workflow_logs", timestamps: true })
+export class GithubWorkflowLogDocument extends BaseMongoDocument {
+  @Prop({ required: true, index: true }) projectKey!: string;
+  @Prop({ required: true, index: true }) workflowRunId!: number;
+  @Prop({ required: true }) discordMessageId!: string;
+  @Prop({ required: true }) discordChannelId!: string;
+}
+export const GithubWorkflowLogSchema = SchemaFactory.createForClass(
+  GithubWorkflowLogDocument,
+);
+GithubWorkflowLogSchema.index({ workflowRunId: 1 }, { unique: true });
+export type GithubWorkflowLogHydratedDocument =
+  HydratedDocument<GithubWorkflowLogDocument>;
 
 @Schema({ collection: "integration_oauth_states", timestamps: true })
 export class IntegrationOauthStateDocument {

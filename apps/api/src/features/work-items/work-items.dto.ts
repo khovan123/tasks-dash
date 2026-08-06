@@ -41,6 +41,7 @@ export class CreateWorkItemDto {
   @IsArray() @IsString({ each: true }) @IsOptional() labels: string[] = [];
   @Type(() => Number) @IsInt() @Min(0) @Max(100) @IsOptional() storyPoints?: number;
   @IsDateString() @IsOptional() dueDate?: string;
+  @IsDateString() @IsOptional() startDate?: string;
   @IsArray()
   @ValidateNested({ each: true })
   @Type(() => ExternalLinkDto)
@@ -55,6 +56,21 @@ export class CreateWorkItemDto {
 
 export class TransitionWorkItemDto {
   @IsString() statusId!: string;
+}
+
+export class AssignWorkItemDto {
+  @IsString() @IsOptional() assigneeId?: string | null;
+}
+
+export class UpdateWorkItemDto {
+  @IsIn(Object.values(WORK_ITEM_TYPES)) @IsOptional() type?: WorkItemType;
+  @IsString() @MinLength(2) @MaxLength(240) @IsOptional() summary?: string;
+  @IsString() @MaxLength(10_000) @IsOptional() description?: string;
+  @IsIn(Object.values(PRIORITIES)) @IsOptional() priority?: Priority;
+  @IsArray() @IsString({ each: true }) @IsOptional() labels?: string[];
+  @Type(() => Number) @IsInt() @Min(0) @Max(100) @IsOptional() storyPoints?: number | null;
+  @IsDateString() @IsOptional() dueDate?: string | null;
+  @IsDateString() @IsOptional() startDate?: string | null;
 }
 
 export class ReorderWorkItemsDto {

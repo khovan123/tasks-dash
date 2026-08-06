@@ -27,7 +27,10 @@ import {
   DiscordWorkspaceHydratedDocument,
   ProvisionDiscordProjectDto,
 } from "./integration.schemas";
-import { MemberDocument, MemberHydratedDocument } from "../members/member.schema";
+import {
+  MemberDocument,
+  MemberHydratedDocument,
+} from "../members/member.schema";
 import { MEMBER_ROLES } from "@tasks-dash/contracts";
 import { GithubAppService } from "./github-app.service";
 import { Inject, forwardRef } from "@nestjs/common";
@@ -189,9 +192,12 @@ export class DiscordAdapter {
       response = await request();
     }
     if (!response.ok) {
-      const error = (await response
-        .json()
-        .catch(() => ({}))) as DiscordApiError;
+      const errorJson = await response.json().catch(() => ({}));
+      console.error(
+        "[DiscordAdapter] API request failed details:",
+        JSON.stringify(errorJson, null, 2),
+      );
+      const error = errorJson as DiscordApiError;
       const message =
         error.message ?? `Discord API failed with HTTP ${response.status}.`;
       if (response.status === 401) throw new UnauthorizedException(message);
@@ -368,7 +374,9 @@ export class DiscordAdapter {
     workspaceId: string,
     dto: ConfigureDiscordWorkspaceDto,
   ): Promise<Record<string, unknown>> {
-    const existingWorkspace = await this.workspaces.findOne({ workspaceId }).exec();
+    const existingWorkspace = await this.workspaces
+      .findOne({ workspaceId })
+      .exec();
 
     // Strict 1-to-1 relationship check: Ensure guildId is not linked to another workspace
     const existingOtherWorkspace = await this.workspaces
@@ -434,7 +442,10 @@ export class DiscordAdapter {
     try {
       await this.registerSlashCommands(guild.id);
     } catch (e) {
-      console.error(`Failed to register Discord slash commands for guild ${guild.id}:`, e);
+      console.error(
+        `Failed to register Discord slash commands for guild ${guild.id}:`,
+        e,
+      );
     }
 
     if (existingWorkspace?.guildId) {
@@ -442,7 +453,10 @@ export class DiscordAdapter {
         .find({ workspaceId }, { projectKey: 1 })
         .exec();
       for (const existingIntegration of existingIntegrations) {
-        await this.deleteProjectChannels(workspaceId, existingIntegration.projectKey);
+        await this.deleteProjectChannels(
+          workspaceId,
+          existingIntegration.projectKey,
+        );
       }
     }
 
@@ -768,12 +782,16 @@ export class DiscordAdapter {
   }
 
   @OnEvent("workspace.members.changed", { async: true })
-  async onWorkspaceMembersChanged(event: { workspaceId: string }): Promise<void> {
+  async onWorkspaceMembersChanged(event: {
+    workspaceId: string;
+  }): Promise<void> {
     await this.syncMemberRolesAndPermissions(event.workspaceId);
   }
 
   async ensureWorkspaceRoles(guildId: string): Promise<Record<string, string>> {
-    const roles = await this.botRequest<DiscordRole[]>(`/guilds/${guildId}/roles`);
+    const roles = await this.botRequest<DiscordRole[]>(
+      `/guilds/${guildId}/roles`,
+    );
     const mappedRoles: Record<string, string> = {};
     const expectedRoles = {
       [MEMBER_ROLES.owner]: "Tasks Dash Owner",
@@ -788,10 +806,13 @@ export class DiscordAdapter {
       if (existing) {
         mappedRoles[roleKey] = existing.id;
       } else {
-        const created = await this.botRequest<DiscordRole>(`/guilds/${guildId}/roles`, {
-          method: "POST",
-          body: JSON.stringify({ name: roleName }),
-        });
+        const created = await this.botRequest<DiscordRole>(
+          `/guilds/${guildId}/roles`,
+          {
+            method: "POST",
+            body: JSON.stringify({ name: roleName }),
+          },
+        );
         mappedRoles[roleKey] = created.id;
       }
     }
@@ -829,7 +850,9 @@ export class DiscordAdapter {
   }
 
   async syncMemberRolesAndPermissions(workspaceId: string): Promise<void> {
-    const workspace = await this.workspaces.findOne({ workspaceId, enabled: true }).exec();
+    const workspace = await this.workspaces
+      .findOne({ workspaceId, enabled: true })
+      .exec();
     if (!workspace) return;
 
     try {
@@ -838,31 +861,56 @@ export class DiscordAdapter {
 
       for (const member of members) {
         if (member.discordUsername) {
-          const discordUserId = await this.findGuildMemberId(workspace.guildId, member.discordUsername);
+          const discordUserId = await this.findGuildMemberId(
+            workspace.guildId,
+            member.discordUsername,
+          );
           if (discordUserId) {
-            await this.syncMemberWorkspaceRole(workspace.guildId, discordUserId, member.role, roleMap);
+            await this.syncMemberWorkspaceRole(
+              workspace.guildId,
+              discordUserId,
+              member.role,
+              roleMap,
+            );
           }
         }
       }
 
-      const integrations = await this.integrations.find({ workspaceId, enabled: true }).exec();
+      const integrations = await this.integrations
+        .find({ workspaceId, enabled: true })
+        .exec();
       for (const integration of integrations) {
-        await this.syncProjectPermissionsInternal(workspace, integration, members);
+        await this.syncProjectPermissionsInternal(
+          workspace,
+          integration,
+          members,
+        );
       }
     } catch (e) {
       console.error("Failed to sync Discord roles and permissions:", e);
     }
   }
 
-  async syncProjectPermissions(workspaceId: string, projectKey: string): Promise<void> {
-    const workspace = await this.workspaces.findOne({ workspaceId, enabled: true }).exec();
+  async syncProjectPermissions(
+    workspaceId: string,
+    projectKey: string,
+  ): Promise<void> {
+    const workspace = await this.workspaces
+      .findOne({ workspaceId, enabled: true })
+      .exec();
     if (!workspace) return;
-    const integration = await this.integrations.findOne({ workspaceId, projectKey: projectKey.toUpperCase() }).exec();
+    const integration = await this.integrations
+      .findOne({ workspaceId, projectKey: projectKey.toUpperCase() })
+      .exec();
     if (!integration) return;
 
     try {
       const members = await this.members.find({ workspaceId }).exec();
-      await this.syncProjectPermissionsInternal(workspace, integration, members);
+      await this.syncProjectPermissionsInternal(
+        workspace,
+        integration,
+        members,
+      );
     } catch (e) {
       console.error("Failed to sync project permissions:", e);
     }
@@ -874,10 +922,15 @@ export class DiscordAdapter {
     members: any[],
   ): Promise<void> {
     try {
-      const project = await this.projects.getByKey(workspace.workspaceId, integration.projectKey);
+      const project = await this.projects.getByKey(
+        workspace.workspaceId,
+        integration.projectKey,
+      );
       if (!project) return;
 
-      const channels = await this.botRequest<DiscordChannel[]>(`/guilds/${workspace.guildId}/channels`);
+      const channels = await this.botRequest<DiscordChannel[]>(
+        `/guilds/${workspace.guildId}/channels`,
+      );
       const category = channels.find(
         (c) =>
           c.type === DISCORD_CATEGORY_CHANNEL &&
@@ -899,7 +952,10 @@ export class DiscordAdapter {
         const isOwner = member.role === MEMBER_ROLES.owner;
 
         if ((isParticipant || isOwner) && member.discordUsername) {
-          const discordUserId = await this.findGuildMemberId(workspace.guildId, member.discordUsername);
+          const discordUserId = await this.findGuildMemberId(
+            workspace.guildId,
+            member.discordUsername,
+          );
           if (discordUserId) {
             overwrites.push({
               id: discordUserId,
@@ -918,13 +974,22 @@ export class DiscordAdapter {
         }),
       });
     } catch (e) {
-      console.error(`Failed to sync project permissions for ${integration.projectKey}:`, e);
+      console.error(
+        `Failed to sync project permissions for ${integration.projectKey}:`,
+        e,
+      );
     }
   }
 
-  async checkMemberInGuild(workspaceId: string, username: string): Promise<boolean> {
+  async checkMemberInGuild(
+    workspaceId: string,
+    username: string,
+  ): Promise<boolean> {
     try {
-      const workspace = await this.workspaces.findOne({ workspaceId }).lean().exec();
+      const workspace = await this.workspaces
+        .findOne({ workspaceId })
+        .lean()
+        .exec();
       if (!workspace?.guildId) return false;
 
       const query = username.trim().replace(/^@/, "");
@@ -957,15 +1022,14 @@ export class DiscordAdapter {
   ): boolean {
     const publicKeyHex = this.config.get<string>("DISCORD_PUBLIC_KEY")?.trim();
     if (!publicKeyHex) {
-      console.warn("DISCORD_PUBLIC_KEY is not configured. Interaction signature verification is bypassed!");
+      console.warn(
+        "DISCORD_PUBLIC_KEY is not configured. Interaction signature verification is bypassed!",
+      );
       return true;
     }
 
     try {
-      const data = Buffer.concat([
-        Buffer.from(timestamp, "utf8"),
-        rawBody,
-      ]);
+      const data = Buffer.concat([Buffer.from(timestamp, "utf8"), rawBody]);
       const key = {
         key: Buffer.concat([
           Buffer.from("302a300506032b6570032100", "hex"),
@@ -982,7 +1046,10 @@ export class DiscordAdapter {
     }
   }
 
-  private slashMessage(content: string): { type: number; data: { content: string } } {
+  private slashMessage(content: string): {
+    type: number;
+    data: { content: string };
+  } {
     return { type: 4, data: { content } };
   }
 
@@ -1626,7 +1693,8 @@ export class DiscordAdapter {
               },
               {
                 name: "reason",
-                description: "fix_started | inaccurate | no_bandwidth | not_used | tolerable_risk",
+                description:
+                  "fix_started | inaccurate | no_bandwidth | not_used | tolerable_risk",
                 type: 3,
                 required: true,
               },
@@ -1829,13 +1897,9 @@ export class DiscordAdapter {
         .catch(() => []);
       choices = issues.map((issue) => {
         const repoName =
-          issue.repositoryFullName.split("/")[1] ||
-          issue.repositoryFullName;
+          issue.repositoryFullName.split("/")[1] || issue.repositoryFullName;
         return {
-          name: `[${repoName}] #${issue.number} - ${issue.title}`.slice(
-            0,
-            100,
-          ),
+          name: `[${repoName}] #${issue.number} - ${issue.title}`.slice(0, 100),
           value: `${issue.repositoryFullName}:${issue.number}`,
         };
       });
@@ -1885,10 +1949,7 @@ export class DiscordAdapter {
           value: `${deployment.repositoryFullName}:${deployment.id}`,
         };
       });
-    } else if (
-      focusedOption.name === "alert" &&
-      commandName === "dependabot"
-    ) {
+    } else if (focusedOption.name === "alert" && commandName === "dependabot") {
       const alerts = await this.githubApp
         .listDependabotAlerts(workspaceId, projectKeyOpt)
         .catch(() => []);
@@ -1921,10 +1982,13 @@ export class DiscordAdapter {
           value: `${alert.repositoryFullName}:${alert.number}`,
         };
       });
-    } else if (focusedOption.name === "repository" && commandName === "issues") {
-      const repositories = await this.githubApp.repositories(workspaceId).catch(
-        () => [],
-      );
+    } else if (
+      focusedOption.name === "repository" &&
+      commandName === "issues"
+    ) {
+      const repositories = await this.githubApp
+        .repositories(workspaceId)
+        .catch(() => []);
       choices = repositories.map((repository) => ({
         name: repository.full_name.slice(0, 100),
         value: repository.full_name,
@@ -2002,9 +2066,7 @@ export class DiscordAdapter {
         if (subcommand === "comment") {
           const text = this.commandOption(options, "text");
           if (!text) {
-            return this.slashMessage(
-              "Noi dung binh luan khong duoc de trong.",
-            );
+            return this.slashMessage("Noi dung binh luan khong duoc de trong.");
           }
           await this.githubApp.commentOnPullRequest(
             workspaceId,
@@ -2161,9 +2223,7 @@ export class DiscordAdapter {
         if (subcommand === "comment") {
           const text = this.commandOption(options, "text");
           if (!text) {
-            return this.slashMessage(
-              "Noi dung binh luan khong duoc de trong.",
-            );
+            return this.slashMessage("Noi dung binh luan khong duoc de trong.");
           }
           await this.githubApp.commentOnIssue(
             workspaceId,
@@ -2216,10 +2276,12 @@ export class DiscordAdapter {
           if (runs.length === 0) {
             return this.slashMessage("Khong tim thay workflow run nao.");
           }
-          const lines = runs.slice(0, 20).map(
-            (run) =>
-              `- **#${run.id}** ${run.workflowName} / ${run.name} (${run.status}${run.conclusion ? `, ${run.conclusion}` : ""}, nhanh \`${run.branch}\`) - [Xem run](${run.html_url})`,
-          );
+          const lines = runs
+            .slice(0, 20)
+            .map(
+              (run) =>
+                `- **#${run.id}** ${run.workflowName} / ${run.name} (${run.status}${run.conclusion ? `, ${run.conclusion}` : ""}, nhanh \`${run.branch}\`) - [Xem run](${run.html_url})`,
+            );
           return this.slashEmbed("Workflow runs gan day", lines, 0xf59e0b);
         }
 
@@ -2285,10 +2347,12 @@ export class DiscordAdapter {
           if (suites.length === 0) {
             return this.slashMessage("Khong tim thay check suite nao.");
           }
-          const lines = suites.slice(0, 20).map(
-            (suite) =>
-              `- **#${suite.id}** ${suite.appName} (${suite.status}${suite.conclusion ? `, ${suite.conclusion}` : ""}, nhanh \`${suite.branch}\`) - \`${suite.headSha.slice(0, 7)}\``,
-          );
+          const lines = suites
+            .slice(0, 20)
+            .map(
+              (suite) =>
+                `- **#${suite.id}** ${suite.appName} (${suite.status}${suite.conclusion ? `, ${suite.conclusion}` : ""}, nhanh \`${suite.branch}\`) - \`${suite.headSha.slice(0, 7)}\``,
+            );
           return this.slashEmbed("Check suites gan day", lines, 0x1f6feb);
         }
 
@@ -2332,10 +2396,12 @@ export class DiscordAdapter {
           if (deployments.length === 0) {
             return this.slashMessage("Khong tim thay deployment nao.");
           }
-          const lines = deployments.slice(0, 20).map(
-            (deployment) =>
-              `- **#${deployment.id}** ${deployment.environment} (${deployment.state}, ref \`${deployment.ref}\`, boi @${deployment.creator})`,
-          );
+          const lines = deployments
+            .slice(0, 20)
+            .map(
+              (deployment) =>
+                `- **#${deployment.id}** ${deployment.environment} (${deployment.state}, ref \`${deployment.ref}\`, boi @${deployment.creator})`,
+            );
           return this.slashEmbed("Deployments gan day", lines, 0x8957e5);
         }
 
@@ -2384,12 +2450,16 @@ export class DiscordAdapter {
             projectKeyOpt,
           );
           if (alerts.length === 0) {
-            return this.slashMessage("Khong tim thay Dependabot alert nao dang mo.");
+            return this.slashMessage(
+              "Khong tim thay Dependabot alert nao dang mo.",
+            );
           }
-          const lines = alerts.slice(0, 20).map(
-            (alert) =>
-              `- **#${alert.number}** ${alert.packageName} (${alert.ecosystem}, ${alert.severity}) - [Mo alert](${alert.html_url})`,
-          );
+          const lines = alerts
+            .slice(0, 20)
+            .map(
+              (alert) =>
+                `- **#${alert.number}** ${alert.packageName} (${alert.ecosystem}, ${alert.severity}) - [Mo alert](${alert.html_url})`,
+            );
           return this.slashEmbed("Dependabot alerts dang mo", lines, 0xd1242f);
         }
 
@@ -2454,11 +2524,17 @@ export class DiscordAdapter {
               "Khong tim thay Code Scanning alert nao dang mo.",
             );
           }
-          const lines = alerts.slice(0, 20).map(
-            (alert) =>
-              `- **#${alert.number}** ${alert.rule} (${alert.severity}, ${alert.tool}) - [Mo alert](${alert.html_url})`,
+          const lines = alerts
+            .slice(0, 20)
+            .map(
+              (alert) =>
+                `- **#${alert.number}** ${alert.rule} (${alert.severity}, ${alert.tool}) - [Mo alert](${alert.html_url})`,
+            );
+          return this.slashEmbed(
+            "Code Scanning alerts dang mo",
+            lines,
+            0xfb8500,
           );
-          return this.slashEmbed("Code Scanning alerts dang mo", lines, 0xfb8500);
         }
 
         const target = await this.resolveRepositoryScopedNumber(
@@ -2595,7 +2671,9 @@ export class DiscordAdapter {
       .exec();
 
     const validProjects = await this.projects.list(workspaceId);
-    const validProjectKeys = new Set(validProjects.map((p) => p.key.toUpperCase()));
+    const validProjectKeys = new Set(
+      validProjects.map((p) => p.key.toUpperCase()),
+    );
 
     const activeIntegrations: DiscordIntegrationHydratedDocument[] = [];
     for (const item of integrations) {
@@ -2764,12 +2842,14 @@ export class DiscordAdapter {
       url?: string;
       fields?: Array<{ name: string; value: string; inline?: boolean }>;
     },
+    mention?: string | null,
   ): Promise<string> {
     const message = await this.botRequest<{ id: string }>(
       `/channels/${channelId}/messages`,
       {
         method: "POST",
         body: JSON.stringify({
+          ...(mention ? { content: mention } : {}),
           embeds: [
             {
               title: embed.title.slice(0, 256),
@@ -2779,7 +2859,13 @@ export class DiscordAdapter {
               fields: embed.fields ?? [],
             },
           ],
-          allowed_mentions: { parse: [] },
+          allowed_mentions: (() => {
+            const ids = mention ? mention.match(/\d{17,21}/g) || [] : [];
+            const uniqueIds = Array.from(new Set(ids));
+            return uniqueIds.length > 0
+              ? { parse: [], users: uniqueIds }
+              : { parse: [] };
+          })(),
         }),
       },
     );
@@ -2791,12 +2877,14 @@ export class DiscordAdapter {
     channelId: string,
     parentMessageId: string,
     embed: { title: string; description: string; color?: number; url?: string },
+    mention?: string | null,
   ): Promise<string> {
     const message = await this.botRequest<{ id: string }>(
       `/channels/${channelId}/messages`,
       {
         method: "POST",
         body: JSON.stringify({
+          ...(mention ? { content: mention } : {}),
           message_reference: {
             message_id: parentMessageId,
             fail_if_not_exists: false,
@@ -2809,7 +2897,13 @@ export class DiscordAdapter {
               url: embed.url,
             },
           ],
-          allowed_mentions: { parse: [] },
+          allowed_mentions: (() => {
+            const ids = mention ? mention.match(/\d{17,21}/g) || [] : [];
+            const uniqueIds = Array.from(new Set(ids));
+            return uniqueIds.length > 0
+              ? { parse: [], users: uniqueIds }
+              : { parse: [] };
+          })(),
         }),
       },
     );
@@ -2833,6 +2927,38 @@ export class DiscordAdapter {
         `Discord message deletion failed with HTTP ${response.status}.`,
       );
     }
+  }
+
+  /** Edit an existing Discord message embed (e.g. on PR title rename) */
+  async editMessage(
+    channelId: string,
+    messageId: string,
+    embed: {
+      title: string;
+      description: string;
+      color?: number;
+      url?: string;
+      fields?: Array<{ name: string; value: string; inline?: boolean }>;
+    },
+  ): Promise<void> {
+    await this.botRequest<{ id: string }>(
+      `/channels/${channelId}/messages/${messageId}`,
+      {
+        method: "PATCH",
+        body: JSON.stringify({
+          embeds: [
+            {
+              title: embed.title.slice(0, 256),
+              description: embed.description.slice(0, 4096),
+              color: embed.color ?? 0x5865f2,
+              url: embed.url,
+              fields: embed.fields ?? [],
+            },
+          ],
+          allowed_mentions: { parse: [] },
+        }),
+      },
+    );
   }
 
   /** Get Discord integration record for a project */
@@ -3077,14 +3203,22 @@ export class DiscordAdapter {
     const channelIdsToDelete = new Set<string>();
     if (integration) {
       if (integration.channelId) channelIdsToDelete.add(integration.channelId);
-      if (integration.deploymentChannelId) channelIdsToDelete.add(integration.deploymentChannelId);
-      if (integration.docsChannelId) channelIdsToDelete.add(integration.docsChannelId);
-      if (integration.generalChannelId) channelIdsToDelete.add(integration.generalChannelId);
-      if (integration.designerChannelId) channelIdsToDelete.add(integration.designerChannelId);
-      if (integration.membersChannelId) channelIdsToDelete.add(integration.membersChannelId);
-      if (integration.reportsChannelId) channelIdsToDelete.add(integration.reportsChannelId);
-      if (integration.prChannelId) channelIdsToDelete.add(integration.prChannelId);
-      if (integration.meetingChannelId) channelIdsToDelete.add(integration.meetingChannelId);
+      if (integration.deploymentChannelId)
+        channelIdsToDelete.add(integration.deploymentChannelId);
+      if (integration.docsChannelId)
+        channelIdsToDelete.add(integration.docsChannelId);
+      if (integration.generalChannelId)
+        channelIdsToDelete.add(integration.generalChannelId);
+      if (integration.designerChannelId)
+        channelIdsToDelete.add(integration.designerChannelId);
+      if (integration.membersChannelId)
+        channelIdsToDelete.add(integration.membersChannelId);
+      if (integration.reportsChannelId)
+        channelIdsToDelete.add(integration.reportsChannelId);
+      if (integration.prChannelId)
+        channelIdsToDelete.add(integration.prChannelId);
+      if (integration.meetingChannelId)
+        channelIdsToDelete.add(integration.meetingChannelId);
     }
 
     let projectCategoryId: string | null = null;
@@ -3136,11 +3270,16 @@ export class DiscordAdapter {
       }
     }
 
-    await this.integrations.deleteOne({ workspaceId, projectKey: projectKey.toUpperCase() }).exec();
+    await this.integrations
+      .deleteOne({ workspaceId, projectKey: projectKey.toUpperCase() })
+      .exec();
     return { deletedChannelsCount };
   }
 
-  async findGuildMemberId(guildId: string, username: string): Promise<string | null> {
+  async findGuildMemberId(
+    guildId: string,
+    username: string,
+  ): Promise<string | null> {
     try {
       const query = username.trim().replace(/^@/, "");
       const response = await this.botRequest<DiscordGuildMemberSearchResult[]>(
@@ -3166,40 +3305,116 @@ export class DiscordAdapter {
     return null;
   }
 
-  async getOrCreatePrChannel(workspaceId: string, projectKey: string): Promise<string | null> {
-    const workspace = await this.workspaces.findOne({ workspaceId, enabled: true }).exec();
-    if (!workspace) return null;
-    const integration = await this.integrations.findOne({ workspaceId, projectKey: projectKey.toUpperCase() }).exec();
-    const guildId = workspace.guildId;
-    
+  async searchGuildMembers(
+    workspaceId: string,
+    query: string,
+  ): Promise<Array<{ id: string; username: string; displayName: string }>> {
+    const workspace = await this.workspaces
+      .findOne({ workspaceId, enabled: true })
+      .exec();
+    if (!workspace) return [];
     try {
-      const channels = await this.botRequest<DiscordChannel[]>(`/guilds/${guildId}/channels`);
+      const q = query.trim().replace(/^@/, "");
+      const response = await this.botRequest<DiscordGuildMemberSearchResult[]>(
+        `/guilds/${workspace.guildId}/members/search?query=${encodeURIComponent(q)}&limit=10`,
+      );
+      if (response && Array.isArray(response)) {
+        return response.map((m) => ({
+          id: m.user.id,
+          username: m.user.username,
+          displayName: m.user.global_name || m.nick || m.user.username,
+        }));
+      }
+    } catch (e) {
+      console.error(`Failed to search guild members for query ${query}:`, e);
+    }
+    return [];
+  }
+
+  async addUserToGuild(
+    workspaceId: string,
+    discordUserId: string,
+    userAccessToken: string,
+  ): Promise<void> {
+    const workspace = await this.workspaces
+      .findOne({ workspaceId, enabled: true })
+      .exec();
+    if (!workspace?.guildId) return;
+
+    try {
+      const response = await fetch(
+        `${DISCORD_API_BASE}/guilds/${workspace.guildId}/members/${discordUserId}`,
+        {
+          method: "PUT",
+          headers: {
+            authorization: `Bot ${this.config.getOrThrow<string>("DISCORD_BOT_TOKEN")}`,
+            "content-type": "application/json",
+            "user-agent": "Tasks-Dash/1.0",
+          },
+          body: JSON.stringify({
+            access_token: userAccessToken,
+          }),
+        },
+      );
+      if (!response.ok && response.status !== 201 && response.status !== 204) {
+        console.warn(
+          `Failed to add user ${discordUserId} to Discord guild ${workspace.guildId}. Status: ${response.status}`,
+        );
+      }
+    } catch (e) {
+      console.error(`Error adding user ${discordUserId} to Discord guild:`, e);
+    }
+  }
+
+  async getOrCreatePrChannel(
+    workspaceId: string,
+    projectKey: string,
+  ): Promise<string | null> {
+    const workspace = await this.workspaces
+      .findOne({ workspaceId, enabled: true })
+      .exec();
+    if (!workspace) return null;
+    const integration = await this.integrations
+      .findOne({ workspaceId, projectKey: projectKey.toUpperCase() })
+      .exec();
+    const guildId = workspace.guildId;
+
+    try {
+      const channels = await this.botRequest<DiscordChannel[]>(
+        `/guilds/${guildId}/channels`,
+      );
       const prChannelName = `${projectKey.toLowerCase()}-pr`;
-      
+
       const existing = channels.find(
-        (c) => c.type === DISCORD_TEXT_CHANNEL && c.name.toLowerCase() === prChannelName,
+        (c) =>
+          c.type === DISCORD_TEXT_CHANNEL &&
+          c.name.toLowerCase() === prChannelName,
       );
       if (existing) {
         if (integration && integration.prChannelId !== existing.id) {
-          await this.integrations.updateOne(
-            { _id: integration._id },
-            {
-              $set: {
-                prChannelId: existing.id,
-                prChannelName: existing.name,
+          await this.integrations
+            .updateOne(
+              { _id: integration._id },
+              {
+                $set: {
+                  prChannelId: existing.id,
+                  prChannelName: existing.name,
+                },
               },
-            },
-          ).exec();
+            )
+            .exec();
         }
         return existing.id;
       }
-      
+
       let parentId = workspace.categoryId ?? null;
       if (!parentId && integration?.channelId) {
-        const updatesChan = channels.find(c => c.id === integration.channelId);
+        const updatesChan = channels.find(
+          (c) => c.id === integration.channelId,
+        );
         if (updatesChan?.parent_id) parentId = updatesChan.parent_id;
       }
-      
+
       const created = await this.botRequest<DiscordChannel>(
         `/guilds/${guildId}/channels`,
         {
@@ -3214,15 +3429,17 @@ export class DiscordAdapter {
         `Tasks Dash PR channel provisioning for ${projectKey}`,
       );
       if (integration) {
-        await this.integrations.updateOne(
-          { _id: integration._id },
-          {
-            $set: {
-              prChannelId: created.id,
-              prChannelName: created.name,
+        await this.integrations
+          .updateOne(
+            { _id: integration._id },
+            {
+              $set: {
+                prChannelId: created.id,
+                prChannelName: created.name,
+              },
             },
-          },
-        ).exec();
+          )
+          .exec();
       }
       return created.id;
     } catch (e) {
