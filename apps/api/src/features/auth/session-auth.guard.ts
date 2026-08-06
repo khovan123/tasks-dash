@@ -61,7 +61,7 @@ export class SessionAuthGuard implements CanActivate {
     workspaceId: string,
     requirement: ProjectAccessRequirement,
     request: Request & AuthenticatedRequest,
-  ): Promise<Pick<ProjectDocument, "memberIds" | "leadId">> {
+  ): Promise<Pick<ProjectDocument, "memberIds" | "leadId"> & { memberRoles?: Record<string, string> }> {
     const paramValue = request.params[requirement.param];
     const rawParam =
       typeof paramValue === "string" ? paramValue : paramValue?.[0];
@@ -72,7 +72,7 @@ export class SessionAuthGuard implements CanActivate {
     if (requirement.kind === "project") {
       const project = await this.projects
         .findOne({ workspaceId, key: rawParam.toUpperCase() })
-        .select({ memberIds: 1, leadId: 1 })
+        .select({ memberIds: 1, leadId: 1, memberRoles: 1 })
         .lean()
         .exec();
       if (!project) {
@@ -91,7 +91,7 @@ export class SessionAuthGuard implements CanActivate {
     }
     const project = await this.projects
       .findOne({ workspaceId, key: workItem.projectKey })
-      .select({ memberIds: 1, leadId: 1 })
+      .select({ memberIds: 1, leadId: 1, memberRoles: 1 })
       .lean()
       .exec();
     if (!project) {
@@ -135,6 +135,34 @@ export class SessionAuthGuard implements CanActivate {
         "Workspace membership is no longer active.",
       );
     }
+
+    const projectAccess = this.reflector.getAllAndOverride<
+      ProjectAccessRequirement | undefined
+    >(PROJECT_ACCESS_KEY, [context.getHandler(), context.getClass()]);
+
+    let effectiveRole = member.role;
+
+    if (projectAccess) {
+      const project = await this.resolveProjectForAccess(
+        session.workspaceId,
+        projectAccess,
+        request,
+      );
+      if (member.role !== MEMBER_ROLES.owner) {
+        if (!this.canAccessProject(project, session.memberId)) {
+          throw new ForbiddenException(
+            "This workspace member is not assigned to the requested project.",
+          );
+        }
+      }
+      const projectRole = project.memberRoles instanceof Map
+        ? project.memberRoles.get(session.memberId)
+        : (project.memberRoles as any)?.[session.memberId];
+      if (projectRole && member.role !== MEMBER_ROLES.owner) {
+        effectiveRole = projectRole as MemberRole;
+      }
+    }
+
     const configuredRoles = this.reflector.getAllAndOverride<MemberRole[]>(
       REQUIRED_ROLES_KEY,
       [context.getHandler(), context.getClass()],
@@ -151,31 +179,14 @@ export class SessionAuthGuard implements CanActivate {
             MEMBER_ROLES.dev,
           ]
         : undefined);
-    if (requiredRoles?.length && !requiredRoles.includes(member.role)) {
+    if (requiredRoles?.length && !requiredRoles.includes(effectiveRole)) {
       throw new ForbiddenException(
         "This workspace role cannot perform the requested action.",
       );
     }
-    const projectAccess = this.reflector.getAllAndOverride<
-      ProjectAccessRequirement | undefined
-    >(PROJECT_ACCESS_KEY, [context.getHandler(), context.getClass()]);
-    if (
-      projectAccess &&
-      member.role !== MEMBER_ROLES.owner
-    ) {
-      const project = await this.resolveProjectForAccess(
-        session.workspaceId,
-        projectAccess,
-        request,
-      );
-      if (!this.canAccessProject(project, session.memberId)) {
-        throw new ForbiddenException(
-          "This workspace member is not assigned to the requested project.",
-        );
-      }
-    }
+
     request.authSession = session;
-    request.memberRole = member.role;
+    request.memberRole = effectiveRole;
     request.headers["x-workspace-id"] = session.workspaceId;
     return true;
   }

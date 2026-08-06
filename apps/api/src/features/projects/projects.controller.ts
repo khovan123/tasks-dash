@@ -8,7 +8,7 @@ import {
   RequireRoles,
   WorkspaceId,
 } from "../../common/auth-context";
-import { MEMBER_ROLES, type MemberRole } from "@tasks-dash/contracts";
+import { MEMBER_ROLES, MemberRole } from "@tasks-dash/contracts";
 import { CreateProjectCommand, ListProjectsQuery } from "./projects.cqrs";
 import { CreateProjectDto, UpdateProjectDto } from "./projects.dto";
 import { ProjectsService } from "./projects.service";
@@ -48,12 +48,18 @@ export class ProjectsController {
     const workspaceData = await this.membersService.list(workspaceId);
     const workspaceMembers = (workspaceData.members as any[]) || [];
     
-    // Filter members that belong to the project.
-    // If project.memberIds is empty, we default to returning all workspace members for backward compatibility,
-    // or if the creator has already been initialized, we match exactly.
-    const projectMembers = project.memberIds && project.memberIds.length > 0
+    // Filter members that belong to the project, mapping to their project role
+    const projectMembers = (project.memberIds && project.memberIds.length > 0
       ? workspaceMembers.filter((m) => project.memberIds.includes(String(m._id)))
-      : workspaceMembers;
+      : workspaceMembers).map((m) => {
+        const projectRole = project.memberRoles instanceof Map
+          ? project.memberRoles.get(String(m._id))
+          : (project.memberRoles as any)?.[String(m._id)];
+        return {
+          ...m,
+          role: projectRole || m.role,
+        };
+      });
 
     return {
       projectMembers,
@@ -100,5 +106,17 @@ export class ProjectsController {
     @WorkspaceId() workspaceId: string,
   ) {
     return this.service.updateMembers(workspaceId, key, memberIds);
+  }
+
+  @Patch(":key/members/:memberId/role")
+  @RequireProjectAccess("key")
+  @RequireRoles(MEMBER_ROLES.owner)
+  updateMemberRole(
+    @Param("key") key: string,
+    @Param("memberId") memberId: string,
+    @Body("role") role: MemberRole,
+    @WorkspaceId() workspaceId: string,
+  ) {
+    return this.service.updateMemberRole(workspaceId, key, memberId, role);
   }
 }

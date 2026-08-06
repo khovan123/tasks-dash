@@ -20,6 +20,13 @@ export class ProjectDocument extends BaseMongoDocument {
   @Prop() workflowId?: string;
   @Prop() activeSprintId?: string;
   @Prop({ default: 0 }) sequence!: number;
+  @Prop({ type: [String], default: [] }) memberIds!: string[];
+  @Prop({
+    type: Map,
+    of: String,
+    default: {},
+  })
+  memberRoles!: Map<string, string>;
 }
 
 export type ProjectHydratedDocument = HydratedDocument<ProjectDocument>;

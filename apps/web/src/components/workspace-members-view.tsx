@@ -104,6 +104,7 @@ export function WorkspaceMembersView({
           <WorkspaceMembersManager
             members={initialMembers}
             invitations={initialInvitations}
+            projects={projects}
             canManage={canManageMembers}
           />
         </TabsContent>

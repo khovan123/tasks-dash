@@ -51,6 +51,7 @@ export class ProjectsService {
     const created = await this.projects.create({
       ...project,
       memberIds: [actorId],
+      memberRoles: new Map([[actorId, MEMBER_ROLES.owner]]),
     });
     try {
       await this.events.emitAsync(PROJECT_CREATED_EVENT, {
@@ -71,7 +72,52 @@ export class ProjectsService {
   ): Promise<ProjectHydratedDocument> {
     const project = await this.getByKey(workspaceId, key);
     project.memberIds = memberIds;
+    
+    if (!project.memberRoles) {
+      project.memberRoles = new Map();
+    }
+    
+    // Default new members to dev role
+    for (const memberId of memberIds) {
+      if (!project.memberRoles.has(memberId)) {
+        project.memberRoles.set(memberId, MEMBER_ROLES.dev);
+      }
+    }
+    
+    // Clean up removed members
+    for (const roleKey of Array.from(project.memberRoles.keys())) {
+      if (!memberIds.includes(roleKey)) {
+        project.memberRoles.delete(roleKey);
+      }
+    }
+    
+    project.markModified("memberRoles");
     await project.save();
+    
+    await this.events.emitAsync("project.members.updated", {
+      workspaceId,
+      projectKey: project.key,
+    });
+    return project;
+  }
+
+  async updateMemberRole(
+    workspaceId: string,
+    key: string,
+    memberId: string,
+    role: MemberRole,
+  ): Promise<ProjectHydratedDocument> {
+    const project = await this.getByKey(workspaceId, key);
+    if (!project.memberIds.includes(memberId)) {
+      throw new NotFoundException("Thành viên không thuộc dự án này.");
+    }
+    if (!project.memberRoles) {
+      project.memberRoles = new Map();
+    }
+    project.memberRoles.set(memberId, role);
+    project.markModified("memberRoles");
+    await project.save();
+    
     await this.events.emitAsync("project.members.updated", {
       workspaceId,
       projectKey: project.key,

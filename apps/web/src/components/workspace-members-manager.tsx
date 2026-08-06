@@ -43,6 +43,7 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
+import { Checkbox } from "@/components/ui/checkbox";
 
 interface WorkspaceMember {
   _id: string;
@@ -62,6 +63,12 @@ interface WorkspaceInvitation {
   lastSentAt?: string;
 }
 
+interface Project {
+  _id: string;
+  key: string;
+  name: string;
+}
+
 function initials(name: string): string {
   return name
     .split(" ")
@@ -74,10 +81,12 @@ function initials(name: string): string {
 export function WorkspaceMembersManager({
   members,
   invitations,
+  projects,
   canManage,
 }: {
   members: WorkspaceMember[];
   invitations: WorkspaceInvitation[];
+  projects: Project[];
   canManage: boolean;
 }) {
   const router = useRouter();
@@ -85,7 +94,12 @@ export function WorkspaceMembersManager({
   const [busyId, setBusyId] = useState<string | null>(null);
   const form = useForm<InviteMemberValues>({
     resolver: zodResolver(inviteMemberSchema),
-    defaultValues: { email: "", role: MEMBER_ROLES.viewer },
+    defaultValues: {
+      email: "",
+      role: MEMBER_ROLES.viewer,
+      projectIds: [],
+      allProjects: false,
+    },
   });
 
   async function runAction(
@@ -113,7 +127,12 @@ export function WorkspaceMembersManager({
         method: "POST",
         body: JSON.stringify(values),
       });
-      form.reset({ email: "", role: MEMBER_ROLES.viewer });
+      form.reset({
+        email: "",
+        role: MEMBER_ROLES.viewer,
+        projectIds: [],
+        allProjects: false,
+      });
       router.refresh();
     } catch (error) {
       form.setError("root", {
@@ -154,7 +173,10 @@ export function WorkspaceMembersManager({
                     control={form.control}
                     name="role"
                     render={({ field }) => (
-                      <Select onValueChange={field.onChange} value={field.value}>
+                      <Select
+                        onValueChange={field.onChange}
+                        value={field.value}
+                      >
                         <SelectTrigger id="member-role" className="w-full">
                           <SelectValue placeholder="Chọn vai trò" />
                         </SelectTrigger>
@@ -173,6 +195,77 @@ export function WorkspaceMembersManager({
                       </Select>
                     )}
                   />
+                </Field>
+
+                <Field className="sm:col-span-2">
+                  <FieldLabel>Dự án tham gia</FieldLabel>
+                  <div className="flex flex-col gap-3 rounded-lg border p-4 bg-muted/10 mt-1.5">
+                    <div className="flex items-center gap-2">
+                      <Controller
+                        control={form.control}
+                        name="allProjects"
+                        render={({ field }) => (
+                          <Checkbox
+                            id="invite-all-projects"
+                            checked={field.value}
+                            onCheckedChange={(checked) => {
+                              field.onChange(checked);
+                              if (checked) {
+                                form.setValue("projectIds", []);
+                              }
+                            }}
+                          />
+                        )}
+                      />
+                      <label
+                        htmlFor="invite-all-projects"
+                        className="text-sm font-medium leading-none cursor-pointer"
+                      >
+                        Tất cả dự án (tự động thêm vào toàn bộ dự án hiện tại và tương lai)
+                      </label>
+                    </div>
+
+                    {!form.watch("allProjects") && (
+                      <div className="border-t pt-3 mt-1">
+                        <span className="text-xs font-semibold text-muted-foreground block mb-2">
+                          Chọn cụ thể dự án:
+                        </span>
+                        <div className="grid gap-3 sm:grid-cols-2 max-h-40 overflow-y-auto">
+                          {projects.map((project) => {
+                            const selectedIds = form.watch("projectIds") || [];
+                            const isChecked = selectedIds.includes(project._id);
+                            return (
+                              <div
+                                key={project._id}
+                                className="flex items-center gap-2"
+                              >
+                                <Checkbox
+                                  id={`invite-project-${project._id}`}
+                                  checked={isChecked}
+                                  onCheckedChange={(checked) => {
+                                    if (checked) {
+                                      form.setValue("projectIds", [...selectedIds, project._id]);
+                                    } else {
+                                      form.setValue(
+                                        "projectIds",
+                                        selectedIds.filter((id) => id !== project._id),
+                                      );
+                                    }
+                                  }}
+                                />
+                                <label
+                                  htmlFor={`invite-project-${project._id}`}
+                                  className="text-xs font-medium cursor-pointer truncate"
+                                >
+                                  {project.name} ({project.key})
+                                </label>
+                              </div>
+                            );
+                          })}
+                        </div>
+                      </div>
+                    )}
+                  </div>
                 </Field>
               </FieldGroup>
               {form.formState.errors.root?.message ? (
@@ -194,7 +287,7 @@ export function WorkspaceMembersManager({
         <CardHeader>
           <SectionHeading
             eyebrow="Workspace directory"
-            title="Thành viên và lời mời"
+            title={canManage ? "Quản lý thành viên" : "Danh sách thành viên"}
             meta={`${members.length + invitations.length} records`}
           />
         </CardHeader>
@@ -202,7 +295,10 @@ export function WorkspaceMembersManager({
           {!canManage ? (
             <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
               {members.map((member) => (
-                <Card key={member._id} className="overflow-hidden shadow-sm border bg-card text-card-foreground">
+                <Card
+                  key={member._id}
+                  className="overflow-hidden shadow-sm border bg-card text-card-foreground"
+                >
                   <CardHeader className="flex flex-row items-center gap-4 pb-4">
                     <Avatar className="size-12">
                       <AvatarImage src={member.avatarUrl} alt={member.name} />
@@ -239,8 +335,13 @@ export function WorkspaceMembersManager({
                     >
                       <div className="flex min-w-0 items-center gap-3">
                         <Avatar>
-                          <AvatarImage src={member.avatarUrl} alt={member.name} />
-                          <AvatarFallback>{initials(member.name)}</AvatarFallback>
+                          <AvatarImage
+                            src={member.avatarUrl}
+                            alt={member.name}
+                          />
+                          <AvatarFallback>
+                            {initials(member.name)}
+                          </AvatarFallback>
                         </Avatar>
                         <div className="min-w-0">
                           <strong className="block truncate">
@@ -347,14 +448,16 @@ export function WorkspaceMembersManager({
                           </div>
                           <Badge
                             variant={
-                              invite.status === MEMBER_INVITATION_STATUSES.pending
+                              invite.status ===
+                              MEMBER_INVITATION_STATUSES.pending
                                 ? "warning"
                                 : "secondary"
                             }
                           >
                             {invite.status}
                           </Badge>
-                          {invite.status === MEMBER_INVITATION_STATUSES.pending ? (
+                          {invite.status ===
+                          MEMBER_INVITATION_STATUSES.pending ? (
                             <div className="flex flex-wrap gap-2">
                               <Button
                                 variant="outline"

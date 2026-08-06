@@ -10,6 +10,7 @@ import {
   WorkspaceInvitationSchema,
 } from "./workspace-invitation.schema";
 import { WorkspaceDocument, WorkspaceSchema } from "./workspace.schema";
+import { ProjectDocument, ProjectSchema } from "../projects/project.schema";
 
 @Module({
   imports: [
@@ -20,6 +21,7 @@ import { WorkspaceDocument, WorkspaceSchema } from "./workspace.schema";
         schema: WorkspaceInvitationSchema,
       },
       { name: WorkspaceDocument.name, schema: WorkspaceSchema },
+      { name: ProjectDocument.name, schema: ProjectSchema },
     ]),
   ],
   controllers: [MembersController],

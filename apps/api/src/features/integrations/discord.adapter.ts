@@ -76,6 +76,14 @@ interface DiscordChannel {
   type: number;
   parent_id?: string | null;
 }
+interface DiscordGuildMemberSearchResult {
+  nick?: string | null;
+  user: {
+    id: string;
+    username: string;
+    global_name?: string | null;
+  };
+}
 interface DiscordApiError {
   message?: string;
   code?: number;
@@ -360,6 +368,8 @@ export class DiscordAdapter {
     workspaceId: string,
     dto: ConfigureDiscordWorkspaceDto,
   ): Promise<Record<string, unknown>> {
+    const existingWorkspace = await this.workspaces.findOne({ workspaceId }).exec();
+
     // Strict 1-to-1 relationship check: Ensure guildId is not linked to another workspace
     const existingOtherWorkspace = await this.workspaces
       .findOne({
@@ -425,6 +435,15 @@ export class DiscordAdapter {
       await this.registerSlashCommands(guild.id);
     } catch (e) {
       console.error(`Failed to register Discord slash commands for guild ${guild.id}:`, e);
+    }
+
+    if (existingWorkspace?.guildId) {
+      const existingIntegrations = await this.integrations
+        .find({ workspaceId }, { projectKey: 1 })
+        .exec();
+      for (const existingIntegration of existingIntegrations) {
+        await this.deleteProjectChannels(workspaceId, existingIntegration.projectKey);
+      }
     }
 
     const provisioned = await this.provisionAll(workspaceId);
@@ -504,6 +523,7 @@ export class DiscordAdapter {
       const designerName = `${project.key.toLowerCase()}-design`;
       const membersName = `${project.key.toLowerCase()}-members`;
       const reportsName = `${project.key.toLowerCase()}-reports`;
+      const prName = `${project.key.toLowerCase()}-pr`;
       const meetingName = `${project.key.toLowerCase()}-meeting`;
 
       const canReuseManual =
@@ -519,6 +539,7 @@ export class DiscordAdapter {
         designerChannel,
         membersChannel,
         reportsChannel,
+        prChannel,
         meetingChannel,
       ] = await Promise.all([
         this.ensureTextChannel(
@@ -594,6 +615,15 @@ export class DiscordAdapter {
           `Tasks Dash reports channel for ${project.key}`,
           existing?.reportsChannelId,
         ),
+        this.ensureTextChannel(
+          workspace.guildId,
+          channels,
+          prName,
+          parentId,
+          `Dedicated pull request updates for project ${project.key} · ${project.name}`,
+          `Tasks Dash PR channel for ${project.key}`,
+          existing?.prChannelId,
+        ),
         this.ensureVoiceChannel(
           workspace.guildId,
           channels,
@@ -663,6 +693,8 @@ export class DiscordAdapter {
               membersChannelName: membersChannel.name,
               reportsChannelId: reportsChannel.id,
               reportsChannelName: reportsChannel.name,
+              prChannelId: prChannel.id,
+              prChannelName: prChannel.name,
               meetingChannelId: meetingChannel.id,
               meetingChannelName: meetingChannel.name,
               guildId: workspace.guildId,
@@ -693,7 +725,7 @@ export class DiscordAdapter {
         workspaceId,
         project.key,
         `${project.key} connected`,
-        `8 dedicated channels created under folder TASKS DASH - ${project.key.toUpperCase()}:\n• #${generalChannel.name}\n• #${updatesChannel.name}\n• #${deploymentChannel.name}\n• #${docsChannel.name}\n• #${designerChannel.name}\n• #${membersChannel.name}\n• #${reportsChannel.name}\n• #${meetingChannel.name}`,
+        `9 dedicated channels created under folder TASKS DASH - ${project.key.toUpperCase()}:\n• #${generalChannel.name}\n• #${updatesChannel.name}\n• #${deploymentChannel.name}\n• #${docsChannel.name}\n• #${designerChannel.name}\n• #${membersChannel.name}\n• #${reportsChannel.name}\n• #${prChannel.name}\n• #${meetingChannel.name}`,
       );
       await this.events.emitAsync(DISCORD_PROJECT_PROVISIONED_EVENT, {
         workspaceId,
@@ -879,17 +911,27 @@ export class DiscordAdapter {
 
   async checkMemberInGuild(workspaceId: string, username: string): Promise<boolean> {
     try {
-      const response = await fetch(
-        "https://discord.com/api/v9/unique-username/username-attempt-unauthed",
-        {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ username: username.trim() }),
-        },
+      const workspace = await this.workspaces.findOne({ workspaceId }).lean().exec();
+      if (!workspace?.guildId) return false;
+
+      const query = username.trim().replace(/^@/, "");
+      if (!query) return false;
+
+      const response = await this.botRequest<DiscordGuildMemberSearchResult[]>(
+        `/guilds/${workspace.guildId}/members/search?query=${encodeURIComponent(query)}`,
       );
-      if (!response.ok) return false;
-      const data = (await response.json()) as { taken?: boolean };
-      return data.taken === true;
+
+      return response.some((member) => {
+        const candidates = [
+          member.user.username,
+          member.user.global_name,
+          member.nick,
+        ]
+          .filter((value): value is string => Boolean(value))
+          .map((value) => value.toLowerCase());
+
+        return candidates.includes(query.toLowerCase());
+      });
     } catch {
       return false;
     }
@@ -917,7 +959,7 @@ export class DiscordAdapter {
           Buffer.from(publicKeyHex, "hex"),
         ]),
         format: "der" as const,
-        type: "public" as const,
+        type: "spki" as const,
       };
       const { verify } = require("node:crypto");
       return verify(undefined, data, key, Buffer.from(signature, "hex"));
@@ -927,24 +969,105 @@ export class DiscordAdapter {
     }
   }
 
-  async registerSlashCommands(guildId: string): Promise<void> {
-    const applicationId = this.config.get<string>("DISCORD_APPLICATION_ID");
-    if (!applicationId) return;
+  private slashMessage(content: string): { type: number; data: { content: string } } {
+    return { type: 4, data: { content } };
+  }
 
-    const commands = [
+  private slashEmbed(
+    title: string,
+    lines: string[],
+    color = 0x5865f2,
+  ): { type: number; data: { embeds: Array<Record<string, unknown>> } } {
+    return {
+      type: 4,
+      data: {
+        embeds: [
+          {
+            title,
+            description: lines.join("\n").slice(0, 4000),
+            color,
+          },
+        ],
+      },
+    };
+  }
+
+  private commandOption(options: any[], name: string): string | undefined {
+    const value = options.find((opt: any) => opt.name === name)?.value;
+    return typeof value === "string" ? value : undefined;
+  }
+
+  private async resolveRepositoryFromProject(
+    workspaceId: string,
+    projectKey?: string,
+  ): Promise<string | null> {
+    if (!projectKey) return null;
+    const project = await this.projects
+      .getByKey(workspaceId, projectKey)
+      .catch(() => null);
+    return project?.repositoryFullName ?? null;
+  }
+
+  private async resolveRepositoryScopedNumber(
+    workspaceId: string,
+    rawValue: string | undefined,
+    projectKey: string | undefined,
+    listResolver: (
+      workspaceId: string,
+      projectKey?: string,
+    ) => Promise<Array<{ repositoryFullName: string; number: number }>>,
+    invalidNumberMessage: string,
+    unresolvedRepositoryMessage: string,
+  ): Promise<
+    | { repositoryFullName: string; number: number }
+    | { error: { type: number; data: { content: string } } }
+  > {
+    if (!rawValue) {
+      return { error: this.slashMessage(invalidNumberMessage) };
+    }
+
+    if (rawValue.includes(":")) {
+      const [repositoryFullName, numberRaw] = rawValue.split(":");
+      const number = Number(numberRaw);
+      if (!Number.isFinite(number) || number <= 0) {
+        return { error: this.slashMessage(invalidNumberMessage) };
+      }
+      return { repositoryFullName, number };
+    }
+
+    const number = Number(rawValue);
+    if (!Number.isFinite(number) || number <= 0) {
+      return { error: this.slashMessage(invalidNumberMessage) };
+    }
+
+    const repositoryFullName =
+      (await this.resolveRepositoryFromProject(workspaceId, projectKey)) ??
+      (await listResolver(workspaceId, projectKey)
+        .then((items) => items[0]?.repositoryFullName ?? null)
+        .catch(() => null));
+
+    if (!repositoryFullName) {
+      return { error: this.slashMessage(unresolvedRepositoryMessage) };
+    }
+
+    return { repositoryFullName, number };
+  }
+
+  private githubSlashCommands(): any[] {
+    return [
       {
         name: "prs",
-        description: "Quản lý Pull Requests trên GitHub",
+        description: "Quan ly Pull Request tren GitHub",
         options: [
           {
             name: "list",
-            description: "Hiển thị danh sách Pull Requests đang mở",
-            type: 1, // SUB_COMMAND
+            description: "Hien thi danh sach Pull Request dang mo",
+            type: 1,
             options: [
               {
                 name: "project_key",
-                description: "Mã dự án (ví dụ: TD)",
-                type: 3, // STRING
+                description: "Ma du an, vi du TD",
+                type: 3,
                 required: false,
               },
             ],
@@ -952,18 +1075,18 @@ export class DiscordAdapter {
           {
             name: "merge",
             description: "Merge Pull Request",
-            type: 1, // SUB_COMMAND
+            type: 1,
             options: [
               {
                 name: "pr",
-                description: "Nhập số PR hoặc gõ tìm kiếm PR đang mở",
+                description: "Chon Pull Request dang mo",
                 type: 3,
                 required: true,
                 autocomplete: true,
               },
               {
                 name: "project_key",
-                description: "Mã dự án (ví dụ: TD)",
+                description: "Ma du an, vi du TD",
                 type: 3,
                 required: false,
               },
@@ -971,25 +1094,25 @@ export class DiscordAdapter {
           },
           {
             name: "comment",
-            description: "Viết bình luận lên Pull Request",
-            type: 1, // SUB_COMMAND
+            description: "Viet binh luan len Pull Request",
+            type: 1,
             options: [
               {
                 name: "pr",
-                description: "Nhập số PR hoặc gõ tìm kiếm PR đang mở",
+                description: "Chon Pull Request dang mo",
                 type: 3,
                 required: true,
                 autocomplete: true,
               },
               {
                 name: "text",
-                description: "Nội dung bình luận",
+                description: "Noi dung binh luan",
                 type: 3,
                 required: true,
               },
               {
                 name: "project_key",
-                description: "Mã dự án (ví dụ: TD)",
+                description: "Ma du an, vi du TD",
                 type: 3,
                 required: false,
               },
@@ -997,25 +1120,143 @@ export class DiscordAdapter {
           },
           {
             name: "assign",
-            description: "Assign thành viên cho Pull Request",
-            type: 1, // SUB_COMMAND
+            description: "Assign thanh vien cho Pull Request",
+            type: 1,
             options: [
               {
                 name: "pr",
-                description: "Nhập số PR hoặc gõ tìm kiếm PR đang mở",
+                description: "Chon Pull Request dang mo",
                 type: 3,
                 required: true,
                 autocomplete: true,
               },
               {
                 name: "github_username",
-                description: "Username GitHub của thành viên",
+                description: "Username GitHub can assign",
                 type: 3,
                 required: true,
               },
               {
                 name: "project_key",
-                description: "Mã dự án (ví dụ: TD)",
+                description: "Ma du an, vi du TD",
+                type: 3,
+                required: false,
+              },
+            ],
+          },
+          {
+            name: "review-request",
+            description: "Yeu cau reviewer cho Pull Request",
+            type: 1,
+            options: [
+              {
+                name: "pr",
+                description: "Chon Pull Request dang mo",
+                type: 3,
+                required: true,
+                autocomplete: true,
+              },
+              {
+                name: "github_username",
+                description: "Username GitHub reviewer",
+                type: 3,
+                required: true,
+              },
+              {
+                name: "project_key",
+                description: "Ma du an, vi du TD",
+                type: 3,
+                required: false,
+              },
+            ],
+          },
+          {
+            name: "approve",
+            description: "Approve Pull Request",
+            type: 1,
+            options: [
+              {
+                name: "pr",
+                description: "Chon Pull Request dang mo",
+                type: 3,
+                required: true,
+                autocomplete: true,
+              },
+              {
+                name: "text",
+                description: "Noi dung review, co the bo trong",
+                type: 3,
+                required: false,
+              },
+              {
+                name: "project_key",
+                description: "Ma du an, vi du TD",
+                type: 3,
+                required: false,
+              },
+            ],
+          },
+          {
+            name: "request-changes",
+            description: "Yeu cau thay doi tren Pull Request",
+            type: 1,
+            options: [
+              {
+                name: "pr",
+                description: "Chon Pull Request dang mo",
+                type: 3,
+                required: true,
+                autocomplete: true,
+              },
+              {
+                name: "text",
+                description: "Ly do yeu cau thay doi",
+                type: 3,
+                required: true,
+              },
+              {
+                name: "project_key",
+                description: "Ma du an, vi du TD",
+                type: 3,
+                required: false,
+              },
+            ],
+          },
+          {
+            name: "close",
+            description: "Dong Pull Request",
+            type: 1,
+            options: [
+              {
+                name: "pr",
+                description: "Chon Pull Request dang mo",
+                type: 3,
+                required: true,
+                autocomplete: true,
+              },
+              {
+                name: "project_key",
+                description: "Ma du an, vi du TD",
+                type: 3,
+                required: false,
+              },
+            ],
+          },
+          {
+            name: "reopen",
+            description: "Mo lai Pull Request",
+            type: 1,
+            options: [
+              {
+                name: "pr",
+                description: "Nhap so PR hoac repo:number",
+                type: 3,
+                required: true,
+                autocomplete: true,
+              },
+              {
+                name: "project_key",
+                description: "Ma du an, vi du TD",
                 type: 3,
                 required: false,
               },
@@ -1023,13 +1264,489 @@ export class DiscordAdapter {
           },
         ],
       },
+      {
+        name: "issues",
+        description: "Quan ly Issues tren GitHub",
+        options: [
+          {
+            name: "list",
+            description: "Hien thi danh sach Issue dang mo",
+            type: 1,
+            options: [
+              {
+                name: "project_key",
+                description: "Ma du an, vi du TD",
+                type: 3,
+                required: false,
+              },
+            ],
+          },
+          {
+            name: "create",
+            description: "Tao issue moi",
+            type: 1,
+            options: [
+              {
+                name: "title",
+                description: "Tieu de issue",
+                type: 3,
+                required: true,
+              },
+              {
+                name: "text",
+                description: "Mo ta issue",
+                type: 3,
+                required: true,
+              },
+              {
+                name: "project_key",
+                description: "Ma du an da link repo",
+                type: 3,
+                required: false,
+              },
+              {
+                name: "repository",
+                description: "Chon repository neu khong dung project_key",
+                type: 3,
+                required: false,
+                autocomplete: true,
+              },
+            ],
+          },
+          {
+            name: "comment",
+            description: "Comment vao issue",
+            type: 1,
+            options: [
+              {
+                name: "issue",
+                description: "Chon issue dang mo",
+                type: 3,
+                required: true,
+                autocomplete: true,
+              },
+              {
+                name: "text",
+                description: "Noi dung binh luan",
+                type: 3,
+                required: true,
+              },
+              {
+                name: "project_key",
+                description: "Ma du an, vi du TD",
+                type: 3,
+                required: false,
+              },
+            ],
+          },
+          {
+            name: "assign",
+            description: "Assign thanh vien cho issue",
+            type: 1,
+            options: [
+              {
+                name: "issue",
+                description: "Chon issue dang mo",
+                type: 3,
+                required: true,
+                autocomplete: true,
+              },
+              {
+                name: "github_username",
+                description: "Username GitHub can assign",
+                type: 3,
+                required: true,
+              },
+              {
+                name: "project_key",
+                description: "Ma du an, vi du TD",
+                type: 3,
+                required: false,
+              },
+            ],
+          },
+          {
+            name: "close",
+            description: "Dong issue",
+            type: 1,
+            options: [
+              {
+                name: "issue",
+                description: "Chon issue dang mo",
+                type: 3,
+                required: true,
+                autocomplete: true,
+              },
+              {
+                name: "project_key",
+                description: "Ma du an, vi du TD",
+                type: 3,
+                required: false,
+              },
+            ],
+          },
+          {
+            name: "reopen",
+            description: "Mo lai issue",
+            type: 1,
+            options: [
+              {
+                name: "issue",
+                description: "Nhap so issue hoac repo:number",
+                type: 3,
+                required: true,
+                autocomplete: true,
+              },
+              {
+                name: "project_key",
+                description: "Ma du an, vi du TD",
+                type: 3,
+                required: false,
+              },
+            ],
+          },
+        ],
+      },
+      {
+        name: "workflows",
+        description: "Quan ly GitHub Actions workflow runs",
+        options: [
+          {
+            name: "list",
+            description: "Hien thi workflow runs gan day",
+            type: 1,
+            options: [
+              {
+                name: "project_key",
+                description: "Ma du an, vi du TD",
+                type: 3,
+                required: false,
+              },
+            ],
+          },
+          {
+            name: "rerun",
+            description: "Chay lai workflow run",
+            type: 1,
+            options: [
+              {
+                name: "run",
+                description: "Chon workflow run",
+                type: 3,
+                required: true,
+                autocomplete: true,
+              },
+              {
+                name: "project_key",
+                description: "Ma du an, vi du TD",
+                type: 3,
+                required: false,
+              },
+            ],
+          },
+          {
+            name: "cancel",
+            description: "Huy workflow run",
+            type: 1,
+            options: [
+              {
+                name: "run",
+                description: "Chon workflow run",
+                type: 3,
+                required: true,
+                autocomplete: true,
+              },
+              {
+                name: "project_key",
+                description: "Ma du an, vi du TD",
+                type: 3,
+                required: false,
+              },
+            ],
+          },
+          {
+            name: "rerun-failed",
+            description: "Chay lai cac failed jobs",
+            type: 1,
+            options: [
+              {
+                name: "run",
+                description: "Chon workflow run",
+                type: 3,
+                required: true,
+                autocomplete: true,
+              },
+              {
+                name: "project_key",
+                description: "Ma du an, vi du TD",
+                type: 3,
+                required: false,
+              },
+            ],
+          },
+        ],
+      },
+      {
+        name: "checks",
+        description: "Quan ly GitHub check suites",
+        options: [
+          {
+            name: "list",
+            description: "Hien thi check suites gan day",
+            type: 1,
+            options: [
+              {
+                name: "project_key",
+                description: "Ma du an, vi du TD",
+                type: 3,
+                required: false,
+              },
+            ],
+          },
+          {
+            name: "rerequest",
+            description: "Yeu cau chay lai check suite",
+            type: 1,
+            options: [
+              {
+                name: "suite",
+                description: "Chon check suite",
+                type: 3,
+                required: true,
+                autocomplete: true,
+              },
+              {
+                name: "project_key",
+                description: "Ma du an, vi du TD",
+                type: 3,
+                required: false,
+              },
+            ],
+          },
+        ],
+      },
+      {
+        name: "deployments",
+        description: "Quan ly GitHub deployments",
+        options: [
+          {
+            name: "list",
+            description: "Hien thi deployments gan day",
+            type: 1,
+            options: [
+              {
+                name: "project_key",
+                description: "Ma du an, vi du TD",
+                type: 3,
+                required: false,
+              },
+            ],
+          },
+          {
+            name: "mark",
+            description: "Cap nhat deployment status",
+            type: 1,
+            options: [
+              {
+                name: "deployment",
+                description: "Chon deployment",
+                type: 3,
+                required: true,
+                autocomplete: true,
+              },
+              {
+                name: "state",
+                description: "Trang thai moi",
+                type: 3,
+                required: true,
+              },
+              {
+                name: "description",
+                description: "Mo ta status",
+                type: 3,
+                required: false,
+              },
+              {
+                name: "environment_url",
+                description: "URL moi truong, neu co",
+                type: 3,
+                required: false,
+              },
+              {
+                name: "project_key",
+                description: "Ma du an, vi du TD",
+                type: 3,
+                required: false,
+              },
+            ],
+          },
+        ],
+      },
+      {
+        name: "dependabot",
+        description: "Quan ly Dependabot alerts",
+        options: [
+          {
+            name: "list",
+            description: "Hien thi Dependabot alerts dang mo",
+            type: 1,
+            options: [
+              {
+                name: "project_key",
+                description: "Ma du an, vi du TD",
+                type: 3,
+                required: false,
+              },
+            ],
+          },
+          {
+            name: "dismiss",
+            description: "Dismiss Dependabot alert",
+            type: 1,
+            options: [
+              {
+                name: "alert",
+                description: "Chon Dependabot alert",
+                type: 3,
+                required: true,
+                autocomplete: true,
+              },
+              {
+                name: "reason",
+                description: "fix_started | inaccurate | no_bandwidth | not_used | tolerable_risk",
+                type: 3,
+                required: true,
+              },
+              {
+                name: "comment",
+                description: "Ghi chu dismiss",
+                type: 3,
+                required: false,
+              },
+              {
+                name: "project_key",
+                description: "Ma du an, vi du TD",
+                type: 3,
+                required: false,
+              },
+            ],
+          },
+          {
+            name: "reopen",
+            description: "Mo lai Dependabot alert",
+            type: 1,
+            options: [
+              {
+                name: "alert",
+                description: "Nhap repo:number cua alert",
+                type: 3,
+                required: true,
+                autocomplete: true,
+              },
+              {
+                name: "project_key",
+                description: "Ma du an, vi du TD",
+                type: 3,
+                required: false,
+              },
+            ],
+          },
+        ],
+      },
+      {
+        name: "code-scanning",
+        description: "Quan ly Code Scanning alerts",
+        options: [
+          {
+            name: "list",
+            description: "Hien thi Code Scanning alerts dang mo",
+            type: 1,
+            options: [
+              {
+                name: "project_key",
+                description: "Ma du an, vi du TD",
+                type: 3,
+                required: false,
+              },
+            ],
+          },
+          {
+            name: "dismiss",
+            description: "Dismiss Code Scanning alert",
+            type: 1,
+            options: [
+              {
+                name: "alert",
+                description: "Chon Code Scanning alert",
+                type: 3,
+                required: true,
+                autocomplete: true,
+              },
+              {
+                name: "reason",
+                description: "false positive | won't fix | used in tests",
+                type: 3,
+                required: true,
+              },
+              {
+                name: "comment",
+                description: "Ghi chu dismiss",
+                type: 3,
+                required: false,
+              },
+              {
+                name: "project_key",
+                description: "Ma du an, vi du TD",
+                type: 3,
+                required: false,
+              },
+            ],
+          },
+          {
+            name: "reopen",
+            description: "Mo lai Code Scanning alert",
+            type: 1,
+            options: [
+              {
+                name: "alert",
+                description: "Nhap repo:number cua alert",
+                type: 3,
+                required: true,
+                autocomplete: true,
+              },
+              {
+                name: "project_key",
+                description: "Ma du an, vi du TD",
+                type: 3,
+                required: false,
+              },
+            ],
+          },
+        ],
+      },
+      {
+        name: "repos",
+        description: "Tra cuu repositories GitHub da ket noi",
+        options: [
+          {
+            name: "list",
+            description: "Liet ke repository ma GitHub App dang truy cap",
+            type: 1,
+          },
+        ],
+      },
     ];
+  }
+
+  async registerSlashCommands(guildId: string): Promise<void> {
+    const applicationId = this.config.get<string>("DISCORD_APPLICATION_ID");
+    if (!applicationId) return;
 
     await this.botRequest(
       `/applications/${applicationId}/guilds/${guildId}/commands`,
       {
         method: "PUT",
-        body: JSON.stringify(commands),
+        body: JSON.stringify(this.githubSlashCommands()),
       },
     );
   }
@@ -1043,18 +1760,16 @@ export class DiscordAdapter {
 
     const guildId = body.guild_id;
     if (!guildId) {
-      return {
-        type: 4,
-        data: { content: "Lệnh chỉ được thực hiện trong Discord Server." },
-      };
+      return this.slashMessage("Lenh chi duoc thuc hien trong Discord Server.");
     }
 
-    const workspace = await this.workspaces.findOne({ guildId, enabled: true }).exec();
+    const workspace = await this.workspaces
+      .findOne({ guildId, enabled: true })
+      .exec();
     if (!workspace) {
-      return {
-        type: 4,
-        data: { content: "Server Discord này chưa được liên kết với Workspace nào." },
-      };
+      return this.slashMessage(
+        "Server Discord nay chua duoc lien ket voi Workspace nao.",
+      );
     }
 
     if (type === 4) {
@@ -1065,156 +1780,745 @@ export class DiscordAdapter {
       return this.handleCommandInteraction(workspace.workspaceId, body);
     }
 
-    return { type: 4, data: { content: "Loại tương tác không được hỗ trợ." } };
+    return this.slashMessage("Loai tuong tac khong duoc ho tro.");
   }
 
-  private async handleAutocompleteInteraction(workspaceId: string, body: any): Promise<any> {
+  private async handleAutocompleteInteraction(
+    workspaceId: string,
+    body: any,
+  ): Promise<any> {
+    const commandName = body.data?.name;
     const options = body.data?.options?.[0]?.options ?? [];
     const focusedOption = options.find((opt: any) => opt.focused === true);
-    if (!focusedOption || focusedOption.name !== "pr") {
+    if (!focusedOption) {
       return { type: 8, data: { choices: [] } };
     }
 
-    const projectKeyOpt = options.find((opt: any) => opt.name === "project_key")?.value;
+    const projectKeyOpt = this.commandOption(options, "project_key");
     const typedVal = String(focusedOption.value ?? "").toLowerCase();
+    let choices: Array<{ name: string; value: string }> = [];
 
-    const prs = await this.githubApp.listOpenPullRequests(workspaceId, projectKeyOpt).catch(() => []);
-    const choices = prs
-      .map((pr) => {
-        const repoName = pr.repositoryFullName.split("/")[1] || pr.repositoryFullName;
-        const name = `[${repoName}] #${pr.number} - ${pr.title}`.slice(0, 100);
+    if (focusedOption.name === "pr") {
+      const prs = await this.githubApp
+        .listOpenPullRequests(workspaceId, projectKeyOpt)
+        .catch(() => []);
+      choices = prs.map((pr) => {
+        const repoName =
+          pr.repositoryFullName.split("/")[1] || pr.repositoryFullName;
         return {
-          name,
+          name: `[${repoName}] #${pr.number} - ${pr.title}`.slice(0, 100),
           value: `${pr.repositoryFullName}:${pr.number}`,
         };
-      })
-      .filter((choice) => choice.name.toLowerCase().includes(typedVal))
-      .slice(0, 25);
+      });
+    } else if (focusedOption.name === "issue") {
+      const issues = await this.githubApp
+        .listOpenIssues(workspaceId, projectKeyOpt)
+        .catch(() => []);
+      choices = issues.map((issue) => {
+        const repoName =
+          issue.repositoryFullName.split("/")[1] ||
+          issue.repositoryFullName;
+        return {
+          name: `[${repoName}] #${issue.number} - ${issue.title}`.slice(
+            0,
+            100,
+          ),
+          value: `${issue.repositoryFullName}:${issue.number}`,
+        };
+      });
+    } else if (focusedOption.name === "run") {
+      const runs = await this.githubApp
+        .listWorkflowRuns(workspaceId, projectKeyOpt)
+        .catch(() => []);
+      choices = runs.map((run) => {
+        const repoName =
+          run.repositoryFullName.split("/")[1] || run.repositoryFullName;
+        return {
+          name: `[${repoName}] #${run.id} ${run.workflowName} (${run.status})`.slice(
+            0,
+            100,
+          ),
+          value: `${run.repositoryFullName}:${run.id}`,
+        };
+      });
+    } else if (focusedOption.name === "suite") {
+      const suites = await this.githubApp
+        .listCheckSuites(workspaceId, projectKeyOpt)
+        .catch(() => []);
+      choices = suites.map((suite) => {
+        const repoName =
+          suite.repositoryFullName.split("/")[1] || suite.repositoryFullName;
+        return {
+          name: `[${repoName}] #${suite.id} ${suite.appName} (${suite.status})`.slice(
+            0,
+            100,
+          ),
+          value: `${suite.repositoryFullName}:${suite.id}`,
+        };
+      });
+    } else if (focusedOption.name === "deployment") {
+      const deployments = await this.githubApp
+        .listDeployments(workspaceId, projectKeyOpt)
+        .catch(() => []);
+      choices = deployments.map((deployment) => {
+        const repoName =
+          deployment.repositoryFullName.split("/")[1] ||
+          deployment.repositoryFullName;
+        return {
+          name: `[${repoName}] #${deployment.id} ${deployment.environment} (${deployment.state})`.slice(
+            0,
+            100,
+          ),
+          value: `${deployment.repositoryFullName}:${deployment.id}`,
+        };
+      });
+    } else if (
+      focusedOption.name === "alert" &&
+      commandName === "dependabot"
+    ) {
+      const alerts = await this.githubApp
+        .listDependabotAlerts(workspaceId, projectKeyOpt)
+        .catch(() => []);
+      choices = alerts.map((alert) => {
+        const repoName =
+          alert.repositoryFullName.split("/")[1] || alert.repositoryFullName;
+        return {
+          name: `[${repoName}] #${alert.number} ${alert.packageName} (${alert.severity})`.slice(
+            0,
+            100,
+          ),
+          value: `${alert.repositoryFullName}:${alert.number}`,
+        };
+      });
+    } else if (
+      focusedOption.name === "alert" &&
+      commandName === "code-scanning"
+    ) {
+      const alerts = await this.githubApp
+        .listCodeScanningAlerts(workspaceId, projectKeyOpt)
+        .catch(() => []);
+      choices = alerts.map((alert) => {
+        const repoName =
+          alert.repositoryFullName.split("/")[1] || alert.repositoryFullName;
+        return {
+          name: `[${repoName}] #${alert.number} ${alert.rule} (${alert.severity})`.slice(
+            0,
+            100,
+          ),
+          value: `${alert.repositoryFullName}:${alert.number}`,
+        };
+      });
+    } else if (focusedOption.name === "repository" && commandName === "issues") {
+      const repositories = await this.githubApp.repositories(workspaceId).catch(
+        () => [],
+      );
+      choices = repositories.map((repository) => ({
+        name: repository.full_name.slice(0, 100),
+        value: repository.full_name,
+      }));
+    }
 
     return {
       type: 8,
-      data: { choices },
+      data: {
+        choices: choices
+          .filter((choice) => choice.name.toLowerCase().includes(typedVal))
+          .slice(0, 25),
+      },
     };
   }
 
-  private async handleCommandInteraction(workspaceId: string, body: any): Promise<any> {
+  private async handleCommandInteraction(
+    workspaceId: string,
+    body: any,
+  ): Promise<any> {
+    const commandName = body.data?.name;
     const subcommandData = body.data?.options?.[0];
     if (!subcommandData) {
-      return { type: 4, data: { content: "Không tìm thấy lệnh con." } };
+      return this.slashMessage("Khong tim thay lenh con.");
     }
 
     const subcommand = subcommandData.name;
     const options = subcommandData.options ?? [];
-
-    const projectKeyOpt = options.find((opt: any) => opt.name === "project_key")?.value;
-    const prRaw = options.find((opt: any) => opt.name === "pr")?.value;
-
-    let repoFullName = "";
-    let prNumber = 0;
-
-    if (prRaw) {
-      if (prRaw.includes(":")) {
-        const [repo, num] = prRaw.split(":");
-        repoFullName = repo;
-        prNumber = Number(num);
-      } else {
-        prNumber = Number(prRaw);
-        if (isNaN(prNumber)) {
-          return { type: 4, data: { content: "Số PR không hợp lệ." } };
-        }
-        if (projectKeyOpt) {
-          const project = await this.projects.getByKey(workspaceId, projectKeyOpt).catch(() => null);
-          if (project?.repositoryFullName) {
-            repoFullName = project.repositoryFullName;
-          }
-        }
-        if (!repoFullName) {
-          const repos = await this.githubApp.listOpenPullRequests(workspaceId).catch(() => []);
-          if (repos.length > 0) {
-            repoFullName = repos[0].repositoryFullName;
-          }
-        }
-        if (!repoFullName) {
-          return {
-            type: 4,
-            data: { content: "Không xác định được Repository. Vui lòng chọn PR từ danh sách gợi ý hoặc nhập thêm tham số project_key." },
-          };
-        }
-      }
-    }
+    const projectKeyOpt = this.commandOption(options, "project_key");
 
     try {
-      if (subcommand === "list") {
-        const prs = await this.githubApp.listOpenPullRequests(workspaceId, projectKeyOpt);
-        if (prs.length === 0) {
-          return { type: 4, data: { content: "Hiện tại không có Pull Request nào đang mở." } };
+      if (commandName === "prs") {
+        if (subcommand === "list") {
+          const prs = await this.githubApp.listOpenPullRequests(
+            workspaceId,
+            projectKeyOpt,
+          );
+          if (prs.length === 0) {
+            return this.slashMessage(
+              "Hien tai khong co Pull Request nao dang mo.",
+            );
+          }
+          const lines = prs.map(
+            (pr) =>
+              `- **#${pr.number}** ${pr.title} (${pr.draft ? "draft" : pr.state}, nhanh \`${pr.branch}\` boi @${pr.author}) - [Xem PR](${pr.html_url})`,
+          );
+          return this.slashEmbed("Pull Requests dang mo", lines);
         }
-        const lines = prs.map(
-          (pr) =>
-            `- **#${pr.number}** ${pr.title} (nhánh \`${pr.branch}\` bởi @${pr.author}) - [Xem PR](${pr.html_url})`,
+
+        const target = await this.resolveRepositoryScopedNumber(
+          workspaceId,
+          this.commandOption(options, "pr"),
+          projectKeyOpt,
+          (currentWorkspaceId, currentProjectKey) =>
+            this.githubApp.listOpenPullRequests(
+              currentWorkspaceId,
+              currentProjectKey,
+            ),
+          "So PR khong hop le.",
+          "Khong xac dinh duoc repository. Vui long chon PR tu goi y hoac nhap them project_key.",
         );
-        return {
-          type: 4,
-          data: {
-            embeds: [
-              {
-                title: `Pull Requests đang mở`,
-                description: lines.join("\n").slice(0, 4000),
-                color: 0x5865f2,
-              },
-            ],
-          },
-        };
-      }
+        if ("error" in target) return target.error;
 
-      if (subcommand === "merge") {
-        await this.githubApp.mergePullRequest(workspaceId, repoFullName, prNumber);
-        return {
-          type: 4,
-          data: {
-            content: `✅ Đã merge thành công PR **#${prNumber}** trong repository **${repoFullName}**!`,
-          },
-        };
-      }
-
-      if (subcommand === "comment") {
-        const text = options.find((opt: any) => opt.name === "text")?.value;
-        if (!text) {
-          return { type: 4, data: { content: "Nội dung bình luận không được để trống." } };
+        if (subcommand === "merge") {
+          await this.githubApp.mergePullRequest(
+            workspaceId,
+            target.repositoryFullName,
+            target.number,
+          );
+          return this.slashMessage(
+            `Da merge thanh cong PR **#${target.number}** trong repository **${target.repositoryFullName}**.`,
+          );
         }
-        await this.githubApp.commentOnPullRequest(workspaceId, repoFullName, prNumber, text);
-        return {
-          type: 4,
-          data: {
-            content: `💬 Đã gửi bình luận lên PR **#${prNumber}** của **${repoFullName}** thành công!`,
-          },
-        };
+
+        if (subcommand === "comment") {
+          const text = this.commandOption(options, "text");
+          if (!text) {
+            return this.slashMessage(
+              "Noi dung binh luan khong duoc de trong.",
+            );
+          }
+          await this.githubApp.commentOnPullRequest(
+            workspaceId,
+            target.repositoryFullName,
+            target.number,
+            text,
+          );
+          return this.slashMessage(
+            `Da gui binh luan len PR **#${target.number}** cua **${target.repositoryFullName}** thanh cong.`,
+          );
+        }
+
+        if (subcommand === "assign") {
+          const assignee = this.commandOption(options, "github_username");
+          if (!assignee) {
+            return this.slashMessage(
+              "Username GitHub nguoi duoc assign khong duoc de trong.",
+            );
+          }
+          await this.githubApp.assignPullRequest(
+            workspaceId,
+            target.repositoryFullName,
+            target.number,
+            assignee,
+          );
+          return this.slashMessage(
+            `Da assign **@${assignee}** cho PR **#${target.number}** cua **${target.repositoryFullName}**.`,
+          );
+        }
+
+        if (subcommand === "review-request") {
+          const reviewer = this.commandOption(options, "github_username");
+          if (!reviewer) {
+            return this.slashMessage(
+              "Username GitHub reviewer khong duoc de trong.",
+            );
+          }
+          await this.githubApp.requestReviewOnPullRequest(
+            workspaceId,
+            target.repositoryFullName,
+            target.number,
+            reviewer,
+          );
+          return this.slashMessage(
+            `Da gui yeu cau review cho **@${reviewer}** tren PR **#${target.number}**.`,
+          );
+        }
+
+        if (subcommand === "approve") {
+          await this.githubApp.submitPullRequestReview(
+            workspaceId,
+            target.repositoryFullName,
+            target.number,
+            "APPROVE",
+            this.commandOption(options, "text"),
+          );
+          return this.slashMessage(
+            `Da approve PR **#${target.number}** cua **${target.repositoryFullName}**.`,
+          );
+        }
+
+        if (subcommand === "request-changes") {
+          const text = this.commandOption(options, "text");
+          if (!text) {
+            return this.slashMessage(
+              "Noi dung yeu cau thay doi khong duoc de trong.",
+            );
+          }
+          await this.githubApp.submitPullRequestReview(
+            workspaceId,
+            target.repositoryFullName,
+            target.number,
+            "REQUEST_CHANGES",
+            text,
+          );
+          return this.slashMessage(
+            `Da gui yeu cau thay doi cho PR **#${target.number}** cua **${target.repositoryFullName}**.`,
+          );
+        }
+
+        if (subcommand === "close" || subcommand === "reopen") {
+          await this.githubApp.updatePullRequestState(
+            workspaceId,
+            target.repositoryFullName,
+            target.number,
+            subcommand === "close" ? "closed" : "open",
+          );
+          return this.slashMessage(
+            `${subcommand === "close" ? "Da dong" : "Da mo lai"} PR **#${target.number}** cua **${target.repositoryFullName}**.`,
+          );
+        }
       }
 
-      if (subcommand === "assign") {
-        const assignee = options.find((opt: any) => opt.name === "github_username")?.value;
-        if (!assignee) {
-          return { type: 4, data: { content: "Username GitHub người được assign không được để trống." } };
+      if (commandName === "issues") {
+        if (subcommand === "list") {
+          const issues = await this.githubApp.listOpenIssues(
+            workspaceId,
+            projectKeyOpt,
+          );
+          if (issues.length === 0) {
+            return this.slashMessage("Hien tai khong co Issue nao dang mo.");
+          }
+          const lines = issues.map(
+            (issue) =>
+              `- **#${issue.number}** ${issue.title} (${issue.state}, boi @${issue.author}) - [Xem Issue](${issue.html_url})`,
+          );
+          return this.slashEmbed("Issues dang mo", lines, 0x2ea043);
         }
-        await this.githubApp.assignPullRequest(workspaceId, repoFullName, prNumber, assignee);
-        return {
-          type: 4,
-          data: {
-            content: `👤 Đã assign **@${assignee}** cho PR **#${prNumber}** của **${repoFullName}** thành công!`,
+
+        if (subcommand === "create") {
+          const title = this.commandOption(options, "title");
+          const text = this.commandOption(options, "text");
+          const repositoryFullName =
+            this.commandOption(options, "repository") ??
+            (await this.resolveRepositoryFromProject(
+              workspaceId,
+              projectKeyOpt,
+            ));
+          if (!title || !text) {
+            return this.slashMessage(
+              "Tieu de va mo ta issue khong duoc de trong.",
+            );
+          }
+          if (!repositoryFullName) {
+            return this.slashMessage(
+              "Can cung cap project_key hoac repository de tao issue.",
+            );
+          }
+          const issue = await this.githubApp.createIssueInRepository(
+            workspaceId,
+            repositoryFullName,
+            title,
+            text,
+          );
+          return this.slashMessage(
+            `Da tao issue moi trong **${repositoryFullName}**: ${String(issue["html_url"] ?? issue["url"] ?? "")}`,
+          );
+        }
+
+        const target = await this.resolveRepositoryScopedNumber(
+          workspaceId,
+          this.commandOption(options, "issue"),
+          projectKeyOpt,
+          (currentWorkspaceId, currentProjectKey) =>
+            this.githubApp.listOpenIssues(
+              currentWorkspaceId,
+              currentProjectKey,
+            ),
+          "So issue khong hop le.",
+          "Khong xac dinh duoc repository. Vui long chon issue tu goi y hoac nhap them project_key.",
+        );
+        if ("error" in target) return target.error;
+
+        if (subcommand === "comment") {
+          const text = this.commandOption(options, "text");
+          if (!text) {
+            return this.slashMessage(
+              "Noi dung binh luan khong duoc de trong.",
+            );
+          }
+          await this.githubApp.commentOnIssue(
+            workspaceId,
+            target.repositoryFullName,
+            target.number,
+            text,
+          );
+          return this.slashMessage(
+            `Da gui binh luan len issue **#${target.number}** cua **${target.repositoryFullName}**.`,
+          );
+        }
+
+        if (subcommand === "assign") {
+          const assignee = this.commandOption(options, "github_username");
+          if (!assignee) {
+            return this.slashMessage(
+              "Username GitHub nguoi duoc assign khong duoc de trong.",
+            );
+          }
+          await this.githubApp.assignIssue(
+            workspaceId,
+            target.repositoryFullName,
+            target.number,
+            assignee,
+          );
+          return this.slashMessage(
+            `Da assign **@${assignee}** cho issue **#${target.number}** cua **${target.repositoryFullName}**.`,
+          );
+        }
+
+        if (subcommand === "close" || subcommand === "reopen") {
+          await this.githubApp.updateIssueState(
+            workspaceId,
+            target.repositoryFullName,
+            target.number,
+            subcommand === "close" ? "closed" : "open",
+          );
+          return this.slashMessage(
+            `${subcommand === "close" ? "Da dong" : "Da mo lai"} issue **#${target.number}** cua **${target.repositoryFullName}**.`,
+          );
+        }
+      }
+
+      if (commandName === "workflows") {
+        if (subcommand === "list") {
+          const runs = await this.githubApp.listWorkflowRuns(
+            workspaceId,
+            projectKeyOpt,
+          );
+          if (runs.length === 0) {
+            return this.slashMessage("Khong tim thay workflow run nao.");
+          }
+          const lines = runs.slice(0, 20).map(
+            (run) =>
+              `- **#${run.id}** ${run.workflowName} / ${run.name} (${run.status}${run.conclusion ? `, ${run.conclusion}` : ""}, nhanh \`${run.branch}\`) - [Xem run](${run.html_url})`,
+          );
+          return this.slashEmbed("Workflow runs gan day", lines, 0xf59e0b);
+        }
+
+        const target = await this.resolveRepositoryScopedNumber(
+          workspaceId,
+          this.commandOption(options, "run"),
+          projectKeyOpt,
+          async (currentWorkspaceId, currentProjectKey) => {
+            const runs = await this.githubApp.listWorkflowRuns(
+              currentWorkspaceId,
+              currentProjectKey,
+            );
+            return runs.map((run) => ({
+              repositoryFullName: run.repositoryFullName,
+              number: run.id,
+            }));
           },
-        };
+          "Workflow run khong hop le.",
+          "Khong xac dinh duoc repository cua workflow run.",
+        );
+        if ("error" in target) return target.error;
+
+        if (subcommand === "rerun") {
+          await this.githubApp.rerunWorkflowRun(
+            workspaceId,
+            target.repositoryFullName,
+            target.number,
+          );
+          return this.slashMessage(
+            `Da yeu cau chay lai workflow run **#${target.number}** cua **${target.repositoryFullName}**.`,
+          );
+        }
+
+        if (subcommand === "cancel") {
+          await this.githubApp.cancelWorkflowRun(
+            workspaceId,
+            target.repositoryFullName,
+            target.number,
+          );
+          return this.slashMessage(
+            `Da gui yeu cau huy workflow run **#${target.number}** cua **${target.repositoryFullName}**.`,
+          );
+        }
+
+        if (subcommand === "rerun-failed") {
+          await this.githubApp.rerunFailedWorkflowJobs(
+            workspaceId,
+            target.repositoryFullName,
+            target.number,
+          );
+          return this.slashMessage(
+            `Da yeu cau chay lai cac failed jobs cua workflow run **#${target.number}** cua **${target.repositoryFullName}**.`,
+          );
+        }
+      }
+
+      if (commandName === "checks") {
+        if (subcommand === "list") {
+          const suites = await this.githubApp.listCheckSuites(
+            workspaceId,
+            projectKeyOpt,
+          );
+          if (suites.length === 0) {
+            return this.slashMessage("Khong tim thay check suite nao.");
+          }
+          const lines = suites.slice(0, 20).map(
+            (suite) =>
+              `- **#${suite.id}** ${suite.appName} (${suite.status}${suite.conclusion ? `, ${suite.conclusion}` : ""}, nhanh \`${suite.branch}\`) - \`${suite.headSha.slice(0, 7)}\``,
+          );
+          return this.slashEmbed("Check suites gan day", lines, 0x1f6feb);
+        }
+
+        const target = await this.resolveRepositoryScopedNumber(
+          workspaceId,
+          this.commandOption(options, "suite"),
+          projectKeyOpt,
+          async (currentWorkspaceId, currentProjectKey) => {
+            const suites = await this.githubApp.listCheckSuites(
+              currentWorkspaceId,
+              currentProjectKey,
+            );
+            return suites.map((suite) => ({
+              repositoryFullName: suite.repositoryFullName,
+              number: suite.id,
+            }));
+          },
+          "Check suite khong hop le.",
+          "Khong xac dinh duoc repository cua check suite.",
+        );
+        if ("error" in target) return target.error;
+
+        if (subcommand === "rerequest") {
+          await this.githubApp.rerequestCheckSuite(
+            workspaceId,
+            target.repositoryFullName,
+            target.number,
+          );
+          return this.slashMessage(
+            `Da yeu cau chay lai check suite **#${target.number}** cua **${target.repositoryFullName}**.`,
+          );
+        }
+      }
+
+      if (commandName === "deployments") {
+        if (subcommand === "list") {
+          const deployments = await this.githubApp.listDeployments(
+            workspaceId,
+            projectKeyOpt,
+          );
+          if (deployments.length === 0) {
+            return this.slashMessage("Khong tim thay deployment nao.");
+          }
+          const lines = deployments.slice(0, 20).map(
+            (deployment) =>
+              `- **#${deployment.id}** ${deployment.environment} (${deployment.state}, ref \`${deployment.ref}\`, boi @${deployment.creator})`,
+          );
+          return this.slashEmbed("Deployments gan day", lines, 0x8957e5);
+        }
+
+        const target = await this.resolveRepositoryScopedNumber(
+          workspaceId,
+          this.commandOption(options, "deployment"),
+          projectKeyOpt,
+          async (currentWorkspaceId, currentProjectKey) => {
+            const deployments = await this.githubApp.listDeployments(
+              currentWorkspaceId,
+              currentProjectKey,
+            );
+            return deployments.map((deployment) => ({
+              repositoryFullName: deployment.repositoryFullName,
+              number: deployment.id,
+            }));
+          },
+          "Deployment khong hop le.",
+          "Khong xac dinh duoc repository cua deployment.",
+        );
+        if ("error" in target) return target.error;
+
+        if (subcommand === "mark") {
+          const state = this.commandOption(options, "state");
+          if (!state) {
+            return this.slashMessage("State deployment khong duoc de trong.");
+          }
+          await this.githubApp.createDeploymentStatus(
+            workspaceId,
+            target.repositoryFullName,
+            target.number,
+            state,
+            this.commandOption(options, "description"),
+            this.commandOption(options, "environment_url"),
+          );
+          return this.slashMessage(
+            `Da cap nhat deployment **#${target.number}** cua **${target.repositoryFullName}** sang state **${state}**.`,
+          );
+        }
+      }
+
+      if (commandName === "dependabot") {
+        if (subcommand === "list") {
+          const alerts = await this.githubApp.listDependabotAlerts(
+            workspaceId,
+            projectKeyOpt,
+          );
+          if (alerts.length === 0) {
+            return this.slashMessage("Khong tim thay Dependabot alert nao dang mo.");
+          }
+          const lines = alerts.slice(0, 20).map(
+            (alert) =>
+              `- **#${alert.number}** ${alert.packageName} (${alert.ecosystem}, ${alert.severity}) - [Mo alert](${alert.html_url})`,
+          );
+          return this.slashEmbed("Dependabot alerts dang mo", lines, 0xd1242f);
+        }
+
+        const target = await this.resolveRepositoryScopedNumber(
+          workspaceId,
+          this.commandOption(options, "alert"),
+          projectKeyOpt,
+          async (currentWorkspaceId, currentProjectKey) => {
+            const alerts = await this.githubApp.listDependabotAlerts(
+              currentWorkspaceId,
+              currentProjectKey,
+            );
+            return alerts.map((alert) => ({
+              repositoryFullName: alert.repositoryFullName,
+              number: alert.number,
+            }));
+          },
+          "Dependabot alert khong hop le.",
+          "Khong xac dinh duoc repository cua Dependabot alert.",
+        );
+        if ("error" in target) return target.error;
+
+        if (subcommand === "dismiss") {
+          const reason = this.commandOption(options, "reason");
+          if (!reason) {
+            return this.slashMessage("Dismiss reason khong duoc de trong.");
+          }
+          await this.githubApp.updateDependabotAlert(
+            workspaceId,
+            target.repositoryFullName,
+            target.number,
+            "dismissed",
+            reason,
+            this.commandOption(options, "comment"),
+          );
+          return this.slashMessage(
+            `Da dismiss Dependabot alert **#${target.number}** cua **${target.repositoryFullName}** voi reason **${reason}**.`,
+          );
+        }
+
+        if (subcommand === "reopen") {
+          await this.githubApp.updateDependabotAlert(
+            workspaceId,
+            target.repositoryFullName,
+            target.number,
+            "open",
+          );
+          return this.slashMessage(
+            `Da mo lai Dependabot alert **#${target.number}** cua **${target.repositoryFullName}**.`,
+          );
+        }
+      }
+
+      if (commandName === "code-scanning") {
+        if (subcommand === "list") {
+          const alerts = await this.githubApp.listCodeScanningAlerts(
+            workspaceId,
+            projectKeyOpt,
+          );
+          if (alerts.length === 0) {
+            return this.slashMessage(
+              "Khong tim thay Code Scanning alert nao dang mo.",
+            );
+          }
+          const lines = alerts.slice(0, 20).map(
+            (alert) =>
+              `- **#${alert.number}** ${alert.rule} (${alert.severity}, ${alert.tool}) - [Mo alert](${alert.html_url})`,
+          );
+          return this.slashEmbed("Code Scanning alerts dang mo", lines, 0xfb8500);
+        }
+
+        const target = await this.resolveRepositoryScopedNumber(
+          workspaceId,
+          this.commandOption(options, "alert"),
+          projectKeyOpt,
+          async (currentWorkspaceId, currentProjectKey) => {
+            const alerts = await this.githubApp.listCodeScanningAlerts(
+              currentWorkspaceId,
+              currentProjectKey,
+            );
+            return alerts.map((alert) => ({
+              repositoryFullName: alert.repositoryFullName,
+              number: alert.number,
+            }));
+          },
+          "Code Scanning alert khong hop le.",
+          "Khong xac dinh duoc repository cua Code Scanning alert.",
+        );
+        if ("error" in target) return target.error;
+
+        if (subcommand === "dismiss") {
+          const reason = this.commandOption(options, "reason");
+          if (!reason) {
+            return this.slashMessage("Dismiss reason khong duoc de trong.");
+          }
+          await this.githubApp.updateCodeScanningAlert(
+            workspaceId,
+            target.repositoryFullName,
+            target.number,
+            "dismissed",
+            reason,
+            this.commandOption(options, "comment"),
+          );
+          return this.slashMessage(
+            `Da dismiss Code Scanning alert **#${target.number}** cua **${target.repositoryFullName}** voi reason **${reason}**.`,
+          );
+        }
+
+        if (subcommand === "reopen") {
+          await this.githubApp.updateCodeScanningAlert(
+            workspaceId,
+            target.repositoryFullName,
+            target.number,
+            "open",
+          );
+          return this.slashMessage(
+            `Da mo lai Code Scanning alert **#${target.number}** cua **${target.repositoryFullName}**.`,
+          );
+        }
+      }
+
+      if (commandName === "repos" && subcommand === "list") {
+        const repositories = await this.githubApp.repositories(workspaceId);
+        if (repositories.length === 0) {
+          return this.slashMessage(
+            "Workspace nay chua co repository nao duoc GitHub App truy cap.",
+          );
+        }
+        const lines = repositories.map(
+          (repository) =>
+            `- **${repository.full_name}** (${repository.private ? "private" : "public"}, default \`${repository.default_branch}\`${repository.linkedProjectKey ? `, linked ${repository.linkedProjectKey}` : ""}) - [Mo repo](${repository.html_url})`,
+        );
+        return this.slashEmbed("Repositories da ket noi", lines, 0x0969da);
       }
     } catch (e: any) {
       console.error(e);
-      return {
-        type: 4,
-        data: {
-          content: `❌ Thao tác thất bại: ${e.message || "Lỗi không xác định từ GitHub API."}`,
-        },
-      };
+      return this.slashMessage(
+        `Thao tac that bai: ${e.message || "Loi khong xac dinh tu GitHub API."}`,
+      );
     }
 
-    return { type: 4, data: { content: "Lệnh không hợp lệ." } };
+    return this.slashMessage("Lenh khong hop le.");
   }
 
   async connect(
@@ -1423,6 +2727,8 @@ export class DiscordAdapter {
       membersChannelName: item.membersChannelName ?? null,
       reportsChannelId: item.reportsChannelId ?? null,
       reportsChannelName: item.reportsChannelName ?? null,
+      prChannelId: item.prChannelId ?? null,
+      prChannelName: item.prChannelName ?? null,
       meetingChannelId: item.meetingChannelId ?? null,
       meetingChannelName: item.meetingChannelName ?? null,
       guildId: item.guildId ?? null,
@@ -1633,6 +2939,14 @@ export class DiscordAdapter {
           : "#reports",
       });
     }
+    if (integration.prChannelId) {
+      result.push({
+        id: integration.prChannelId,
+        name: integration.prChannelName
+          ? `#${integration.prChannelName}`
+          : "#pr",
+      });
+    }
     return result;
   }
 
@@ -1659,6 +2973,7 @@ export class DiscordAdapter {
       if (item.designerChannelId) knownChannelIds.add(item.designerChannelId);
       if (item.membersChannelId) knownChannelIds.add(item.membersChannelId);
       if (item.reportsChannelId) knownChannelIds.add(item.reportsChannelId);
+      if (item.prChannelId) knownChannelIds.add(item.prChannelId);
       if (item.meetingChannelId) knownChannelIds.add(item.meetingChannelId);
     }
     if (workspace.categoryId) knownChannelIds.add(workspace.categoryId);
@@ -1718,6 +3033,8 @@ export class DiscordAdapter {
           membersChannelName: 1,
           reportsChannelId: 1,
           reportsChannelName: 1,
+          prChannelId: 1,
+          prChannelName: 1,
           meetingChannelId: 1,
           meetingChannelName: 1,
         },
@@ -1743,17 +3060,42 @@ export class DiscordAdapter {
     const integration = await this.integrations
       .findOne({ workspaceId, projectKey: projectKey.toUpperCase() })
       .exec();
-    if (!integration) return { deletedChannelsCount: 0 };
 
     const channelIdsToDelete = new Set<string>();
-    if (integration.channelId) channelIdsToDelete.add(integration.channelId);
-    if (integration.deploymentChannelId) channelIdsToDelete.add(integration.deploymentChannelId);
-    if (integration.docsChannelId) channelIdsToDelete.add(integration.docsChannelId);
-    if (integration.generalChannelId) channelIdsToDelete.add(integration.generalChannelId);
-    if (integration.designerChannelId) channelIdsToDelete.add(integration.designerChannelId);
-    if (integration.membersChannelId) channelIdsToDelete.add(integration.membersChannelId);
-    if (integration.reportsChannelId) channelIdsToDelete.add(integration.reportsChannelId);
-    if (integration.meetingChannelId) channelIdsToDelete.add(integration.meetingChannelId);
+    if (integration) {
+      if (integration.channelId) channelIdsToDelete.add(integration.channelId);
+      if (integration.deploymentChannelId) channelIdsToDelete.add(integration.deploymentChannelId);
+      if (integration.docsChannelId) channelIdsToDelete.add(integration.docsChannelId);
+      if (integration.generalChannelId) channelIdsToDelete.add(integration.generalChannelId);
+      if (integration.designerChannelId) channelIdsToDelete.add(integration.designerChannelId);
+      if (integration.membersChannelId) channelIdsToDelete.add(integration.membersChannelId);
+      if (integration.reportsChannelId) channelIdsToDelete.add(integration.reportsChannelId);
+      if (integration.prChannelId) channelIdsToDelete.add(integration.prChannelId);
+      if (integration.meetingChannelId) channelIdsToDelete.add(integration.meetingChannelId);
+    }
+
+    let projectCategoryId: string | null = null;
+    try {
+      const discordChannels = await this.botRequest<DiscordChannel[]>(
+        `/guilds/${workspace.guildId}/channels`,
+      );
+      const expectedCategoryName = `TASKS DASH - ${projectKey.toUpperCase()}`;
+      const projectCategory = discordChannels.find(
+        (channel) =>
+          channel.type === DISCORD_CATEGORY_CHANNEL &&
+          channel.name === expectedCategoryName,
+      );
+      if (projectCategory) {
+        projectCategoryId = projectCategory.id;
+        for (const channel of discordChannels) {
+          if (channel.parent_id === projectCategory.id) {
+            channelIdsToDelete.add(channel.id);
+          }
+        }
+      }
+    } catch {
+      /* fall back to deleting tracked channel ids only */
+    }
 
     let deletedChannelsCount = 0;
     for (const channelId of channelIdsToDelete) {
@@ -1768,6 +3110,18 @@ export class DiscordAdapter {
         /* ignore individual deletion failure */
       }
     }
+    if (projectCategoryId) {
+      try {
+        await this.botRequest(
+          `/channels/${projectCategoryId}`,
+          { method: "DELETE" },
+          `Tasks Dash project ${projectKey} category deletion cleanup`,
+        );
+        deletedChannelsCount++;
+      } catch {
+        /* ignore category deletion failure */
+      }
+    }
 
     await this.integrations.deleteOne({ workspaceId, projectKey: projectKey.toUpperCase() }).exec();
     return { deletedChannelsCount };
@@ -1775,11 +3129,22 @@ export class DiscordAdapter {
 
   async findGuildMemberId(guildId: string, username: string): Promise<string | null> {
     try {
-      const response = await this.botRequest<Array<{ user: { id: string; username: string } }>>(
-        `/guilds/${guildId}/members/search?query=${encodeURIComponent(username)}`,
+      const query = username.trim().replace(/^@/, "");
+      const response = await this.botRequest<DiscordGuildMemberSearchResult[]>(
+        `/guilds/${guildId}/members/search?query=${encodeURIComponent(query)}`,
       );
       if (response && response.length > 0) {
-        const match = response.find(m => m.user.username.toLowerCase() === username.toLowerCase()) || response[0];
+        const match =
+          response.find((member) => {
+            const candidates = [
+              member.user.username,
+              member.user.global_name,
+              member.nick,
+            ]
+              .filter((value): value is string => Boolean(value))
+              .map((value) => value.toLowerCase());
+            return candidates.includes(query.toLowerCase());
+          }) || response[0];
         return match.user.id;
       }
     } catch (e) {
@@ -1801,7 +3166,20 @@ export class DiscordAdapter {
       const existing = channels.find(
         (c) => c.type === DISCORD_TEXT_CHANNEL && c.name.toLowerCase() === prChannelName,
       );
-      if (existing) return existing.id;
+      if (existing) {
+        if (integration && integration.prChannelId !== existing.id) {
+          await this.integrations.updateOne(
+            { _id: integration._id },
+            {
+              $set: {
+                prChannelId: existing.id,
+                prChannelName: existing.name,
+              },
+            },
+          ).exec();
+        }
+        return existing.id;
+      }
       
       let parentId = workspace.categoryId ?? null;
       if (!parentId && integration?.channelId) {
@@ -1822,6 +3200,17 @@ export class DiscordAdapter {
         },
         `Tasks Dash PR channel provisioning for ${projectKey}`,
       );
+      if (integration) {
+        await this.integrations.updateOne(
+          { _id: integration._id },
+          {
+            $set: {
+              prChannelId: created.id,
+              prChannelName: created.name,
+            },
+          },
+        ).exec();
+      }
       return created.id;
     } catch (e) {
       console.error("Failed to get/create PR channel in Discord:", e);

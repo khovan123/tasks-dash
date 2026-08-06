@@ -33,10 +33,8 @@ import {
   WorkspaceInvitationDocument,
   WorkspaceInvitationHydratedDocument,
 } from "./workspace-invitation.schema";
-import {
-  WorkspaceDocument,
-  WorkspaceHydratedDocument,
-} from "./workspace.schema";
+import { WorkspaceDocument, WorkspaceHydratedDocument } from "./workspace.schema";
+import { ProjectDocument, ProjectHydratedDocument } from "../projects/project.schema";
 
 interface IdentityProfile {
   name: string;
@@ -65,6 +63,8 @@ export class MembersService {
     private readonly invitations: Model<WorkspaceInvitationHydratedDocument>,
     @InjectModel(WorkspaceDocument.name)
     private readonly workspaces: Model<WorkspaceHydratedDocument>,
+    @InjectModel(ProjectDocument.name)
+    private readonly projects: Model<ProjectHydratedDocument>,
   ) {}
 
   private normalizeEmail(email: string): string {
@@ -314,6 +314,8 @@ export class MembersService {
       email,
       dto.role,
       invitedByMemberId,
+      dto.projectIds,
+      dto.allProjects,
     );
     return this.publicInvitation(invitation);
   }
@@ -323,6 +325,8 @@ export class MembersService {
     email: string,
     role: MemberRole,
     invitedByMemberId: string | undefined,
+    projectIds?: string[],
+    allProjects?: boolean,
   ): Promise<WorkspaceInvitationHydratedDocument> {
     await this.invitations.updateMany(
       {
@@ -341,6 +345,8 @@ export class MembersService {
       status: MEMBER_INVITATION_STATUSES.pending,
       expiresAt: this.inviteExpiry(),
       invitedByMemberId,
+      projectIds: projectIds ?? [],
+      allProjects: allProjects ?? false,
     });
     const inviteUrl = `${this.config
       .getOrThrow<string>("WEB_APP_URL")
@@ -369,6 +375,8 @@ export class MembersService {
       invitation.email,
       invitation.role,
       invitation.invitedByMemberId,
+      invitation.projectIds,
+      invitation.allProjects,
     );
     return this.publicInvitation(replacement);
   }
@@ -454,6 +462,45 @@ export class MembersService {
         );
         acceptedMember = created[0];
       }
+
+      const memberIdStr = String(acceptedMember._id);
+      if (invitation.allProjects) {
+        const allProjects = await this.projects
+          .find({ workspaceId: invitation.workspaceId })
+          .session(session)
+          .exec();
+        for (const project of allProjects) {
+          if (!project.memberIds.includes(memberIdStr)) {
+            project.memberIds.push(memberIdStr);
+          }
+          if (!project.memberRoles) {
+            project.memberRoles = new Map();
+          }
+          project.memberRoles.set(memberIdStr, invitation.role);
+          project.markModified("memberRoles");
+          await project.save({ session });
+        }
+      } else if (invitation.projectIds && invitation.projectIds.length > 0) {
+        const matchedProjects = await this.projects
+          .find({
+            workspaceId: invitation.workspaceId,
+            _id: { $in: invitation.projectIds },
+          })
+          .session(session)
+          .exec();
+        for (const project of matchedProjects) {
+          if (!project.memberIds.includes(memberIdStr)) {
+            project.memberIds.push(memberIdStr);
+          }
+          if (!project.memberRoles) {
+            project.memberRoles = new Map();
+          }
+          project.memberRoles.set(memberIdStr, invitation.role);
+          project.markModified("memberRoles");
+          await project.save({ session });
+        }
+      }
+
       invitation.status = MEMBER_INVITATION_STATUSES.accepted;
       invitation.acceptedByMemberId = String(acceptedMember._id);
       invitation.acceptedAt = new Date();

@@ -1,4 +1,6 @@
 import {
+  IsArray,
+  IsBoolean,
   IsEmail,
   IsIn,
   IsOptional,
@@ -12,6 +14,15 @@ import { MemberRole, MEMBER_ROLES } from "@tasks-dash/contracts";
 export class InviteWorkspaceMemberDto {
   @IsEmail() @MaxLength(254) email!: string;
   @IsIn(Object.values(MEMBER_ROLES)) role: MemberRole = MEMBER_ROLES.viewer;
+
+  @IsOptional()
+  @IsArray()
+  @IsString({ each: true })
+  projectIds?: string[];
+
+  @IsOptional()
+  @IsBoolean()
+  allProjects?: boolean;
 }
 
 export class UpdateWorkspaceMemberRoleDto {

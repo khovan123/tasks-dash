@@ -174,7 +174,7 @@ export function ProjectMembersManager({
     setUpdatingRoleId(memberId);
     setError(null);
     try {
-      await apiRequest(`/api/workspace/members/${memberId}/role`, {
+      await apiRequest(`/api/projects/${projectKey}/members/${memberId}/role`, {
         method: "PATCH",
         body: JSON.stringify({ role: nextRole }),
       });
