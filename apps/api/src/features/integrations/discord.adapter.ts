@@ -2940,12 +2940,14 @@ export class DiscordAdapter {
       url?: string;
       fields?: Array<{ name: string; value: string; inline?: boolean }>;
     },
+    mention?: string | null,
   ): Promise<void> {
     await this.botRequest<{ id: string }>(
       `/channels/${channelId}/messages/${messageId}`,
       {
         method: "PATCH",
         body: JSON.stringify({
+          ...(mention !== undefined ? { content: mention } : {}),
           embeds: [
             {
               title: embed.title.slice(0, 256),
@@ -2955,7 +2957,13 @@ export class DiscordAdapter {
               fields: embed.fields ?? [],
             },
           ],
-          allowed_mentions: { parse: [] },
+          allowed_mentions: (() => {
+            const ids = mention ? mention.match(/\d{17,21}/g) || [] : [];
+            const uniqueIds = Array.from(new Set(ids));
+            return uniqueIds.length > 0
+              ? { parse: [], users: uniqueIds }
+              : { parse: [] };
+          })(),
         }),
       },
     );

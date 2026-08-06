@@ -74,8 +74,12 @@ function uniqueValues<T extends string>(values: T[]): T[] {
   return [...new Set(values.filter(Boolean))];
 }
 
+import { Subject } from "rxjs";
+
 @Injectable()
 export class WorkItemsService {
+  readonly events$ = new Subject<{ type: string; workspaceId: string; projectKey: string; data: any }>();
+
   constructor(
     @InjectModel(WorkItemDocument.name)
     private readonly items: Model<WorkItemHydratedDocument>,
@@ -275,6 +279,7 @@ export class WorkItemsService {
       console.error("Failed to log task transition to Discord:", e);
     }
 
+    this.events$.next({ type: "updated", workspaceId, projectKey: item.projectKey, data: item });
     return item;
   }
 
@@ -420,6 +425,7 @@ export class WorkItemsService {
       console.error("Failed to log task creation to Discord:", e);
     }
 
+    this.events$.next({ type: "created", workspaceId, projectKey: key, data: item });
     return item;
   }
 
@@ -458,6 +464,7 @@ export class WorkItemsService {
         },
       })),
     );
+    this.events$.next({ type: "reordered", workspaceId, projectKey: key, data: normalizedKeys });
     return { updated: result.modifiedCount };
   }
 
@@ -491,6 +498,7 @@ export class WorkItemsService {
     const item = await this.find(workspaceId, key);
     item.assigneeId = assigneeId ?? undefined;
     await item.save();
+    this.events$.next({ type: "updated", workspaceId, projectKey: item.projectKey, data: item });
     return item;
   }
 
@@ -549,6 +557,7 @@ export class WorkItemsService {
     ]).slice(-100);
     item.set("github", github);
     await item.save();
+    this.events$.next({ type: "updated", workspaceId, projectKey: item.projectKey, data: item });
     return item;
   }
 
@@ -605,6 +614,7 @@ export class WorkItemsService {
     github.pullRequestState = input.state;
     item.set("github", github);
     await item.save();
+    this.events$.next({ type: "updated", workspaceId, projectKey: item.projectKey, data: item });
     return item;
   }
 
@@ -736,6 +746,7 @@ export class WorkItemsService {
       console.error("Failed to log task update to Discord:", e);
     }
 
+    this.events$.next({ type: "updated", workspaceId, projectKey: item.projectKey, data: item });
     return item;
   }
 

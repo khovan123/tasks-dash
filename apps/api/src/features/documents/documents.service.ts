@@ -9,6 +9,8 @@ import { ConfigService } from "@nestjs/config";
 import { InjectModel } from "@nestjs/mongoose";
 import { isValidObjectId, Model } from "mongoose";
 import { ProjectsService } from "../projects/projects.service";
+import { DiscordAdapter } from "../integrations/discord.adapter";
+import { MemberDocument, MemberHydratedDocument } from "../members/member.schema";
 import {
   CreateDocumentFolderDto,
   RenameDocumentFolderDto,
@@ -62,8 +64,11 @@ export class DocumentsService {
     private readonly documents: Model<DocumentHydratedDocument>,
     @InjectModel(DocumentVersionDocument.name)
     private readonly versions: Model<DocumentVersionHydratedDocument>,
+    @InjectModel(MemberDocument.name)
+    private readonly members: Model<MemberHydratedDocument>,
     private readonly projects: ProjectsService,
     private readonly config: ConfigService,
+    private readonly discord: DiscordAdapter,
   ) {}
 
   private async botRequest<T>(path: string, init: RequestInit = {}): Promise<T> {
@@ -211,12 +216,53 @@ export class DocumentsService {
     };
   }
 
-  private async sendDocLog(channelId: string, title: string, description: string, color = 0x3b82f6) {
+  private async resolveActorMention(
+    workspaceId: string,
+    guildId: string,
+    actorId: string,
+  ): Promise<{ mention: string; text: string }> {
     try {
+      const member = await this.members.findOne({ _id: actorId, workspaceId }).exec();
+      if (member) {
+        if (member.discordUsername) {
+          const discordId = await this.discord.findGuildMemberId(
+            guildId,
+            member.discordUsername,
+          );
+          if (discordId) {
+            return {
+              mention: `<@${discordId}>`,
+              text: `@${member.discordUsername}`,
+            };
+          }
+          return {
+            mention: `@${member.discordUsername}`,
+            text: `@${member.discordUsername}`,
+          };
+        }
+        const textName = member.githubLogin || member.email || "Unknown";
+        return { mention: `@${textName}`, text: `@${textName}` };
+      }
+    } catch (e) {
+      console.error("Failed to resolve actor mention:", e);
+    }
+    return { mention: "@unknown", text: "@unknown" };
+  }
+
+  private async sendDocLog(
+    channelId: string,
+    title: string,
+    description: string,
+    color = 0x3b82f6,
+    mention?: string | null,
+  ) {
+    try {
+      const userIds = mention ? (mention.match(/\d{17,21}/g) || []) : [];
       await this.botRequest(`/channels/${channelId}/messages`, {
         method: "POST",
         headers: { "content-type": "application/json" },
         body: JSON.stringify({
+          ...(mention ? { content: mention } : {}),
           embeds: [
             {
               title,
@@ -225,7 +271,9 @@ export class DocumentsService {
               timestamp: new Date().toISOString(),
             },
           ],
-          allowed_mentions: { parse: [] },
+          allowed_mentions: userIds.length > 0
+            ? { parse: [], users: userIds }
+            : { parse: [] },
         }),
       });
     } catch (e) {
@@ -250,7 +298,14 @@ export class DocumentsService {
         name: dto.name.trim(),
         createdByMemberId: actorId,
       });
-      await this.sendDocLog(context.channelId, "Folder Created", `📁 Folder **${folder.name}** was created.`);
+      const actorMention = await this.resolveActorMention(workspaceId, context.guildId, actorId);
+      await this.sendDocLog(
+        context.channelId,
+        "Folder Created",
+        `📁 Folder **${folder.name}** was created by ${actorMention.mention}.`,
+        0x3b82f6,
+        actorMention.mention,
+      );
       return { id: String(folder._id), name: folder.name, parentFolderId: folder.parentFolderId ?? null };
     } catch (error) {
       if ((error as { code?: number }).code === 11000) {
@@ -264,17 +319,30 @@ export class DocumentsService {
     workspaceId: string,
     projectKey: string,
     folderId: string,
+    actorId: string,
     dto: RenameDocumentFolderDto,
   ): Promise<Record<string, unknown>> {
     const context = await this.projectContext(workspaceId, projectKey);
     const folder = await this.folderById(workspaceId, projectKey, folderId);
     folder.name = dto.name.trim();
     await folder.save();
-    await this.sendDocLog(context.channelId, "Folder Renamed", `📁 Folder renamed to **${folder.name}**.`);
+    const actorMention = await this.resolveActorMention(workspaceId, context.guildId, actorId);
+    await this.sendDocLog(
+      context.channelId,
+      "Folder Renamed",
+      `📁 Folder renamed to **${folder.name}** by ${actorMention.mention}.`,
+      0x3b82f6,
+      actorMention.mention,
+    );
     return { id: String(folder._id), name: folder.name };
   }
 
-  async deleteFolder(workspaceId: string, projectKey: string, folderId: string): Promise<void> {
+  async deleteFolder(
+    workspaceId: string,
+    projectKey: string,
+    folderId: string,
+    actorId: string,
+  ): Promise<void> {
     const context = await this.projectContext(workspaceId, projectKey);
     const folder = await this.folderById(workspaceId, projectKey, folderId);
     const containsItems = await Promise.all([
@@ -285,7 +353,14 @@ export class DocumentsService {
       throw new ConflictException("Only empty document folders can be deleted.");
     }
     await this.folders.deleteOne({ _id: folder._id }).exec();
-    await this.sendDocLog(context.channelId, "Folder Deleted", `❌ Folder **${folder.name}** was deleted.`);
+    const actorMention = await this.resolveActorMention(workspaceId, context.guildId, actorId);
+    await this.sendDocLog(
+      context.channelId,
+      "Folder Deleted",
+      `❌ Folder **${folder.name}** was deleted by ${actorMention.mention}.`,
+      0xef4444,
+      actorMention.mention,
+    );
   }
 
   private async uploadMessage(
@@ -293,13 +368,28 @@ export class DocumentsService {
     file: UploadedDiscordDocumentFile,
     documentName: string,
     version: number,
+    mention?: string | null,
+    parentMessageId?: string | null,
   ): Promise<DiscordMessage> {
     const data = new FormData();
+    const userIds = mention ? (mention.match(/\d{17,21}/g) || []) : [];
     data.append(
       "payload_json",
       JSON.stringify({
-        content: `📄 ${documentName.slice(0, 160)} · v${version}`,
-        allowed_mentions: { parse: [] },
+        content: mention
+          ? `${mention} has uploaded: 📄 ${documentName.slice(0, 160)} · v${version}`
+          : `📄 ${documentName.slice(0, 160)} · v${version}`,
+        allowed_mentions: userIds.length > 0
+          ? { parse: [], users: userIds }
+          : { parse: [] },
+        ...(parentMessageId
+          ? {
+              message_reference: {
+                message_id: parentMessageId,
+                fail_if_not_exists: false,
+              },
+            }
+          : {}),
       }),
     );
     data.append(
@@ -323,7 +413,30 @@ export class DocumentsService {
     const context = await this.projectContext(workspaceId, projectKey);
     const previousVersion = document.currentVersion;
     const nextVersion = previousVersion + 1;
-    const message = await this.uploadMessage(context.channelId, file, document.name, nextVersion);
+    const actorMention = await this.resolveActorMention(workspaceId, context.guildId, actorId);
+
+    let parentMessageId: string | undefined = undefined;
+    if (previousVersion > 0) {
+      const v1 = await this.versions
+        .findOne({
+          workspaceId,
+          documentId: String(document._id),
+          version: 1,
+        })
+        .exec();
+      if (v1) {
+        parentMessageId = v1.discordMessageId;
+      }
+    }
+    
+    const message = await this.uploadMessage(
+      context.channelId,
+      file,
+      document.name,
+      nextVersion,
+      actorMention.mention,
+      parentMessageId,
+    );
     const attachment = message.attachments[0];
     if (!attachment) {
       await this.deleteDiscordMessage(context.channelId, message.id);
@@ -352,11 +465,27 @@ export class DocumentsService {
       if (updated.modifiedCount !== 1) {
         throw new ConflictException("Another document version was uploaded at the same time. Retry the upload.");
       }
-      await this.sendDocLog(
-        context.channelId,
-        previousVersion === 0 ? "Document Uploaded" : "New Document Version",
-        `📄 **${document.name}** (v${nextVersion}) was stored successfully.`,
-      );
+
+      if (parentMessageId) {
+        await this.discord.sendThreadReply(
+          context.channelId,
+          parentMessageId,
+          {
+            title: "New Document Version",
+            description: `📄 **${document.name}** (v${nextVersion}) was stored successfully by ${actorMention.mention}.`,
+            color: 0x3b82f6,
+          },
+          actorMention.mention,
+        );
+      } else {
+        await this.sendDocLog(
+          context.channelId,
+          "Document Uploaded",
+          `📄 **${document.name}** (v${nextVersion}) was stored successfully by ${actorMention.mention}.`,
+          0x3b82f6,
+          actorMention.mention,
+        );
+      }
       return {
         documentId: String(document._id),
         version: version.version,
@@ -430,11 +559,45 @@ export class DocumentsService {
     if (dto.tags !== undefined) document.tags = dto.tags.map((tag) => tag.trim()).filter(Boolean);
     document.updatedByMemberId = actorId;
     await document.save();
-    await this.sendDocLog(context.channelId, "Document Updated", `📄 Document **${document.name}** details were updated.`);
+    const actorMention = await this.resolveActorMention(workspaceId, context.guildId, actorId);
+
+    const v1 = await this.versions
+      .findOne({
+        workspaceId,
+        documentId: String(document._id),
+        version: 1,
+      })
+      .exec();
+
+    if (v1) {
+      await this.discord.sendThreadReply(
+        context.channelId,
+        v1.discordMessageId,
+        {
+          title: "Document Updated",
+          description: `📄 Document **${document.name}** details were updated by ${actorMention.mention}.`,
+          color: 0x3b82f6,
+        },
+        actorMention.mention,
+      );
+    } else {
+      await this.sendDocLog(
+        context.channelId,
+        "Document Updated",
+        `📄 Document **${document.name}** details were updated by ${actorMention.mention}.`,
+        0x3b82f6,
+        actorMention.mention,
+      );
+    }
     return { id: String(document._id), name: document.name, folderId: document.folderId ?? null, tags: document.tags };
   }
 
-  async deleteDocument(workspaceId: string, projectKey: string, documentId: string): Promise<void> {
+  async deleteDocument(
+    workspaceId: string,
+    projectKey: string,
+    documentId: string,
+    actorId: string,
+  ): Promise<void> {
     const context = await this.projectContext(workspaceId, projectKey);
     const document = await this.documentById(workspaceId, projectKey, documentId);
     const versions = await this.versions.find({ workspaceId, documentId: String(document._id) }).exec();
@@ -443,7 +606,14 @@ export class DocumentsService {
     }
     await this.versions.deleteMany({ workspaceId, documentId: String(document._id) }).exec();
     await this.documents.deleteOne({ _id: document._id }).exec();
-    await this.sendDocLog(context.channelId, "Document Deleted", `❌ Document **${document.name}** was deleted.`);
+    const actorMention = await this.resolveActorMention(workspaceId, context.guildId, actorId);
+    await this.sendDocLog(
+      context.channelId,
+      "Document Deleted",
+      `❌ Document **${document.name}** was deleted by ${actorMention.mention}.`,
+      0xef4444,
+      actorMention.mention,
+    );
   }
 
   async downloadUrl(workspaceId: string, projectKey: string, documentId: string): Promise<string> {

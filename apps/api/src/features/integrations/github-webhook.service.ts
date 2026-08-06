@@ -911,6 +911,45 @@ export class GithubWebhookService {
 
       const isCompleted = run.status === "completed";
       const success = run.conclusion === "success";
+
+      // 1. Look up PR and PR Author details
+      const prs = (payload as any).workflow_run?.pull_requests || [];
+      let prAuthor: string | undefined = undefined;
+      let prNumber: number | undefined = undefined;
+
+      for (const pr of prs) {
+        if (pr.user?.login) {
+          prAuthor = pr.user.login;
+          prNumber = pr.number;
+          break;
+        }
+      }
+
+      if (!prAuthor && run.head_branch) {
+        const workItem = await this.workItemsModel
+          .findOne({
+            workspaceId: context.workspaceId,
+            projectKey: context.projectKey,
+            "github.branches": run.head_branch,
+          })
+          .exec();
+        if (workItem?.github?.pullRequestNumber) {
+          prNumber = workItem.github.pullRequestNumber;
+          const prLink = workItem.github.pullRequests.find((p) => p.number === prNumber);
+          prAuthor = prLink?.authorLogin;
+        }
+      }
+
+      // 2. Resolve Discord mention for the PR author
+      let prAuthorMention: string | null = null;
+      if (prAuthor) {
+        prAuthorMention = await this.resolveDiscordMention(
+          context.workspaceId,
+          context.projectKey,
+          prAuthor,
+        );
+      }
+      const prAuthorDisplay = prAuthorMention ?? (prAuthor ? `@${prAuthor}` : "unknown");
       
       const statusIcon = isCompleted
         ? (success ? ":white_check_mark:" : ":x:")
@@ -920,7 +959,8 @@ export class GithubWebhookService {
       const actor = run.actor?.login ?? "unknown";
       const description = [
         `:finish_flag: **Workflow:** \`${run.name ?? "Workflow"}\` #${run.run_number ?? "?"}`,
-        `:bust_in_silhouette: **GitHub:** @${actor}`,
+        `:bust_in_silhouette: **GitHub Actor:** @${actor}`,
+        prNumber ? `:memo: **PR:** #${prNumber} (Author: ${prAuthorDisplay})` : "",
         `:seedling: **Branch:** \`${run.head_branch ?? "?"}\``,
         `:bar_chart: **Status:** \`${run.conclusion ?? run.status}\``,
         run.html_url ? `:link: **[View CI/CD Run](${run.html_url})**` : "",
@@ -949,17 +989,26 @@ export class GithubWebhookService {
             existingLog.discordChannelId,
             existingLog.discordMessageId,
             embed,
+            prAuthorMention,
           );
         } catch (err) {
           this.logger.warn(`Could not edit existing workflow run log message, sending a new one: ${String(err)}`);
-          const msgId = await this.discord.sendToChannel(integration.deploymentChannelId, embed);
+          const msgId = await this.discord.sendToChannel(
+            integration.deploymentChannelId,
+            embed,
+            prAuthorMention,
+          );
           await this.workflowLogs.updateOne(
             { _id: existingLog._id },
             { $set: { discordMessageId: msgId, discordChannelId: integration.deploymentChannelId } },
           ).exec();
         }
       } else {
-        const msgId = await this.discord.sendToChannel(integration.deploymentChannelId, embed);
+        const msgId = await this.discord.sendToChannel(
+          integration.deploymentChannelId,
+          embed,
+          prAuthorMention,
+        );
         await this.workflowLogs.create({
           workspaceId: context.workspaceId,
           projectKey: context.projectKey,

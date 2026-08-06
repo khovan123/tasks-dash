@@ -68,9 +68,10 @@ export class DocumentsController {
     @WorkspaceId() workspaceId: string,
     @Param("projectKey") projectKey: string,
     @Param("folderId") folderId: string,
+    @CurrentSession() session: AuthSession,
     @Body() body: RenameDocumentFolderDto,
   ): Promise<Record<string, unknown>> {
-    return this.service.renameFolder(workspaceId, projectKey, folderId, body);
+    return this.service.renameFolder(workspaceId, projectKey, folderId, session.memberId, body);
   }
 
   @Delete("folders/:folderId")
@@ -79,8 +80,9 @@ export class DocumentsController {
     @WorkspaceId() workspaceId: string,
     @Param("projectKey") projectKey: string,
     @Param("folderId") folderId: string,
+    @CurrentSession() session: AuthSession,
   ): Promise<void> {
-    await this.service.deleteFolder(workspaceId, projectKey, folderId);
+    await this.service.deleteFolder(workspaceId, projectKey, folderId, session.memberId);
   }
 
   @Post("upload")
@@ -137,8 +139,9 @@ export class DocumentsController {
     @WorkspaceId() workspaceId: string,
     @Param("projectKey") projectKey: string,
     @Param("documentId") documentId: string,
+    @CurrentSession() session: AuthSession,
   ): Promise<void> {
-    await this.service.deleteDocument(workspaceId, projectKey, documentId);
+    await this.service.deleteDocument(workspaceId, projectKey, documentId, session.memberId);
   }
 
   @Get(":documentId/download")
