@@ -4,8 +4,8 @@ import {
   NotFoundException,
 } from "@nestjs/common";
 import { EventEmitter2 } from "@nestjs/event-emitter";
-import { InjectModel } from "@nestjs/mongoose";
-import { Model } from "mongoose";
+import { InjectConnection, InjectModel } from "@nestjs/mongoose";
+import { Connection, Model } from "mongoose";
 import { MemberRole, MEMBER_ROLES } from "@tasks-dash/contracts";
 import { Project } from "./project.domain";
 import {
@@ -31,6 +31,8 @@ export class ProjectsService {
   constructor(
     @InjectModel(ProjectDocument.name)
     private readonly projects: Model<ProjectHydratedDocument>,
+    @InjectConnection()
+    private readonly connection: Connection,
     private readonly events: EventEmitter2,
   ) {}
 
@@ -257,6 +259,32 @@ export class ProjectsService {
     if (result.deletedCount === 0) {
       throw new NotFoundException(`Project ${normalizedKey} was not found.`);
     }
+
+    // Force clean up all project-related database collections
+    const collectionsToClean = [
+      "work_items",
+      "sprints",
+      "automation_rules",
+      "automation_runs",
+      "workflows",
+      "documents",
+      "document_folders",
+      "document_versions",
+      "design_catalog_items",
+      "discord_integrations",
+    ];
+
+    for (const colName of collectionsToClean) {
+      try {
+        await this.connection.collection(colName).deleteMany({
+          workspaceId,
+          projectKey: normalizedKey,
+        });
+      } catch (err) {
+        // ignore individual collection clean up failure
+      }
+    }
+
     try {
       await this.events.emitAsync(PROJECT_DELETED_EVENT, {
         workspaceId,
