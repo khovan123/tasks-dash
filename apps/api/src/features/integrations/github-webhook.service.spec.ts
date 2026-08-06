@@ -40,13 +40,29 @@ function createService(options: {
     emitAsync: jest.fn().mockResolvedValue([]),
   } as unknown as EventEmitter2;
 
+  const discord = {
+    getProjectIntegration: jest.fn().mockResolvedValue(null),
+    sendToChannel: jest.fn().mockResolvedValue("msg-id"),
+    sendThreadReply: jest.fn().mockResolvedValue("msg-id"),
+  } as unknown as import("./discord.adapter").DiscordAdapter;
+  const prLogs = {
+    findOne: jest.fn().mockReturnValue({ exec: jest.fn().mockResolvedValue(null) }),
+    create: jest.fn().mockResolvedValue({}),
+  } as unknown as import("mongoose").Model<import("./integration.schemas").GithubPullRequestLogHydratedDocument>;
+  const members = {
+    findOne: jest.fn().mockReturnValue({ exec: jest.fn().mockResolvedValue(null) }),
+  } as unknown as import("mongoose").Model<import("../members/member.schema").MemberHydratedDocument>;
+
   return new GithubWebhookService(
     {} as ConfigService,
     github,
     projects,
     workItems,
     events,
+    discord,
     {} as never,
+    prLogs,
+    members,
   ) as unknown as TestableGithubWebhookService;
 }
 

@@ -3,7 +3,15 @@
 import type { DragEvent } from "react";
 import React, { useState, useMemo } from "react";
 import { format } from "date-fns";
-import { AlertCircle, Clock, Search, User, GitPullRequest, GitBranch, GitCommit } from "lucide-react";
+import {
+  AlertCircle,
+  Clock,
+  Search,
+  User,
+  GitPullRequest,
+  GitBranch,
+  GitCommit,
+} from "lucide-react";
 import {
   WorkItemTypeIcon,
   WORK_ITEM_TYPE_LABELS,
@@ -20,7 +28,11 @@ import {
   WorkItemDetailDrawer,
   type DetailWorkItem,
 } from "@/components/work-item-detail-drawer";
-import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
+import {
+  Popover,
+  PopoverContent,
+  PopoverTrigger,
+} from "@/components/ui/popover";
 
 interface WorkflowStatus {
   id: string;
@@ -383,88 +395,116 @@ export function KanbanBoard({
                             </span>
 
                             {/* GitHub Pull Request Link */}
-                            {item.github?.pullRequests && item.github.pullRequests.length > 0 && (
-                              <Popover>
-                                <PopoverTrigger asChild>
-                                  <button
-                                    type="button"
+                            {item.github?.pullRequests &&
+                              item.github.pullRequests.length > 0 && (
+                                <Popover>
+                                  <PopoverTrigger asChild>
+                                    <button
+                                      type="button"
+                                      onClick={(e) => e.stopPropagation()}
+                                      className="flex items-center justify-center p-0.5 rounded hover:bg-muted text-muted-foreground hover:text-primary transition shrink-0"
+                                      title="GitHub Pull Requests"
+                                    >
+                                      <GitPullRequest className="size-3.5 text-blue-500" />
+                                    </button>
+                                  </PopoverTrigger>
+                                  <PopoverContent
+                                    className="w-80 p-4 shadow-xl"
+                                    align="start"
                                     onClick={(e) => e.stopPropagation()}
-                                    className="flex items-center justify-center p-0.5 rounded hover:bg-muted text-muted-foreground hover:text-primary transition shrink-0"
-                                    title="GitHub Pull Requests"
                                   >
-                                    <GitPullRequest className="size-3.5 text-blue-500" />
-                                  </button>
-                                </PopoverTrigger>
-                                <PopoverContent
-                                  className="w-80 p-4 shadow-xl"
-                                  align="start"
-                                  onClick={(e) => e.stopPropagation()}
-                                >
-                                  <div className="flex flex-col gap-3.5 text-xs text-foreground">
-                                    {item.github.pullRequests.map((pr) => {
-                                      const latestCommit = item.github?.commits?.find(c => c.sha === pr.headSha) ||
-                                                           item.github?.commits?.find(c => c.branch === pr.headBranch) ||
-                                                           item.github?.commits?.[0];
-                                      const stateColor = pr.state === "MERGED"
-                                        ? "bg-purple-50 text-purple-700 border-purple-200 dark:bg-purple-950/30 dark:text-purple-400 dark:border-purple-900/50"
-                                        : pr.state === "CLOSED"
-                                          ? "bg-rose-50 text-rose-700 border-rose-200 dark:bg-rose-950/30 dark:text-rose-400 dark:border-rose-900/50"
-                                          : "bg-emerald-50 text-emerald-700 border-emerald-200 dark:bg-emerald-950/30 dark:text-emerald-400 dark:border-emerald-900/50";
-                                      
-                                      return (
-                                        <div key={pr.number} className="flex flex-col gap-2.5 pb-2.5 last:pb-0 last:border-b-0 border-b border-border/50">
-                                          <div className="flex flex-col gap-1.5">
-                                            <a
-                                              href={pr.url}
-                                              target="_blank"
-                                              rel="noreferrer"
-                                              className="font-semibold text-primary hover:underline leading-snug text-[13px] flex items-start gap-1"
-                                            >
-                                              <span className="shrink-0 text-muted-foreground font-normal">#{pr.number}</span>
-                                              <span>·</span>
-                                              <span>{pr.title}</span>
-                                            </a>
-                                            <div className="flex flex-wrap items-center gap-2">
-                                              <span className={cn("px-2 py-0.5 text-[10px] font-semibold rounded border", stateColor)}>
-                                                {pr.state === "MERGED" ? "Merged" : pr.state === "CLOSED" ? "Closed" : "Open"}
-                                              </span>
-                                              <span className="text-[11px] text-muted-foreground">
-                                                {pr.headBranch} → {pr.baseBranch} {pr.authorLogin ? `· @${pr.authorLogin}` : ""}
-                                              </span>
-                                            </div>
-                                          </div>
+                                    <div className="flex flex-col gap-3.5 text-xs text-foreground">
+                                      {item.github.pullRequests.map((pr) => {
+                                        const latestCommit =
+                                          item.github?.commits?.find(
+                                            (c) => c.sha === pr.headSha,
+                                          ) ||
+                                          item.github?.commits?.find(
+                                            (c) => c.branch === pr.headBranch,
+                                          ) ||
+                                          item.github?.commits?.[0];
+                                        const stateColor =
+                                          pr.state === "MERGED"
+                                            ? "bg-purple-50 text-purple-700 border-purple-200 dark:bg-purple-950/30 dark:text-purple-400 dark:border-purple-900/50"
+                                            : pr.state === "CLOSED"
+                                              ? "bg-rose-50 text-rose-700 border-rose-200 dark:bg-rose-950/30 dark:text-rose-400 dark:border-rose-900/50"
+                                              : "bg-emerald-50 text-emerald-700 border-emerald-200 dark:bg-emerald-950/30 dark:text-emerald-400 dark:border-emerald-900/50";
 
-                                          <div className="flex flex-col gap-1.5 pt-1.5 border-t border-border/40">
-                                            <div className="flex items-center gap-1.5 font-semibold text-foreground text-[11px]">
-                                              <GitBranch className="size-3.5 text-muted-foreground" />
-                                              <span>Branch</span>
-                                            </div>
-                                            <code className="px-1.5 py-0.5 rounded bg-muted/65 text-[11px] font-mono text-muted-foreground break-all">
-                                              {pr.headBranch}
-                                            </code>
-                                          </div>
-
-                                          {latestCommit && (
+                                        return (
+                                          <div
+                                            key={pr.number}
+                                            className="flex flex-col gap-2.5 pb-2.5 last:pb-0 last:border-b-0 border-b border-border/50"
+                                          >
                                             <div className="flex flex-col gap-1.5">
-                                              <div className="flex items-center gap-1.5 font-semibold text-foreground text-[11px]">
-                                                <GitCommit className="size-3.5 text-muted-foreground" />
-                                                <span>Commit gần nhất</span>
-                                              </div>
-                                              <p className="text-[11px] text-muted-foreground leading-relaxed pl-1">
-                                                <span className="font-mono font-semibold text-foreground bg-muted/50 px-1 py-0.5 rounded mr-1">
-                                                  {latestCommit.sha.slice(0, 7)}
+                                              <a
+                                                href={pr.url}
+                                                target="_blank"
+                                                rel="noreferrer"
+                                                className="font-semibold text-primary hover:underline leading-snug text-[13px] flex items-start gap-1"
+                                              >
+                                                <span className="shrink-0 text-muted-foreground font-normal">
+                                                  #{pr.number}
                                                 </span>
-                                                · {latestCommit.message}
-                                              </p>
+                                                <span>·</span>
+                                                <span>{pr.title}</span>
+                                              </a>
+                                              <div className="flex flex-wrap items-center gap-2">
+                                                <span
+                                                  className={cn(
+                                                    "px-2 py-0.5 text-[10px] font-semibold rounded border",
+                                                    stateColor,
+                                                  )}
+                                                >
+                                                  {pr.state === "MERGED"
+                                                    ? "Merged"
+                                                    : pr.state === "CLOSED"
+                                                      ? "Closed"
+                                                      : "Open"}
+                                                </span>
+                                                <span className="text-[11px] text-muted-foreground">
+                                                  {pr.headBranch} →{" "}
+                                                  {pr.baseBranch}{" "}
+                                                  {pr.authorLogin
+                                                    ? `· @${pr.authorLogin}`
+                                                    : ""}
+                                                </span>
+                                              </div>
                                             </div>
-                                          )}
-                                        </div>
-                                      );
-                                    })}
-                                  </div>
-                                </PopoverContent>
-                              </Popover>
-                            )}
+
+                                            <div className="flex flex-col gap-1.5 pt-1.5 border-t border-border/40">
+                                              <div className="flex items-center gap-1.5 font-semibold text-foreground text-[11px]">
+                                                <GitBranch className="size-3.5 text-muted-foreground" />
+                                                <span>Branch</span>
+                                              </div>
+                                              <code className="px-1.5 py-0.5 rounded bg-muted/65 text-[11px] font-mono text-muted-foreground break-all">
+                                                {pr.headBranch}
+                                              </code>
+                                            </div>
+
+                                            {latestCommit && (
+                                              <div className="flex flex-col gap-1.5">
+                                                <div className="flex items-center gap-1.5 font-semibold text-foreground text-[11px]">
+                                                  <GitCommit className="size-3.5 text-muted-foreground" />
+                                                  <span>Commit gần nhất</span>
+                                                </div>
+                                                <p className="text-[11px] text-muted-foreground leading-relaxed pl-1">
+                                                  <span className="font-mono font-semibold text-foreground bg-muted/50 px-1 py-0.5 rounded mr-1">
+                                                    {latestCommit.sha.slice(
+                                                      0,
+                                                      7,
+                                                    )}
+                                                  </span>
+                                                  · {latestCommit.message}
+                                                </p>
+                                              </div>
+                                            )}
+                                          </div>
+                                        );
+                                      })}
+                                    </div>
+                                  </PopoverContent>
+                                </Popover>
+                              )}
 
                             {/* Due date if exists */}
                             {formattedDate && (
