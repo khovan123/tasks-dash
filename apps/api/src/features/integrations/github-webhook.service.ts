@@ -961,6 +961,8 @@ export class GithubWebhookService {
       } else {
         const msgId = await this.discord.sendToChannel(integration.deploymentChannelId, embed);
         await this.workflowLogs.create({
+          workspaceId: context.workspaceId,
+          projectKey: context.projectKey,
           workflowRunId: run.id,
           discordMessageId: msgId,
           discordChannelId: integration.deploymentChannelId,

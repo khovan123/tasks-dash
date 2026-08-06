@@ -140,6 +140,7 @@ TaskDiscordLogSchema.index({ workItemKey: 1 }, { unique: true });
 
 @Schema({ collection: "github_workflow_logs", timestamps: true })
 export class GithubWorkflowLogDocument extends BaseMongoDocument {
+  @Prop({ required: true, index: true }) projectKey!: string;
   @Prop({ required: true, index: true }) workflowRunId!: number;
   @Prop({ required: true }) discordMessageId!: string;
   @Prop({ required: true }) discordChannelId!: string;
