@@ -24,6 +24,7 @@ import { Card, CardContent } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { cn } from "@/lib/utils";
 import { PriorityIcon } from "@/components/priority-icon";
+import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import {
   WorkItemDetailDrawer,
   type DetailWorkItem,
@@ -84,6 +85,16 @@ interface WorkspaceMember {
   id: string;
   name: string;
   email: string;
+  avatarUrl?: string;
+}
+
+function getInitials(name: string): string {
+  return name
+    .trim()
+    .split(/\s+/)
+    .slice(0, 2)
+    .map((part) => part[0]?.toUpperCase() ?? "")
+    .join("");
 }
 
 export function KanbanBoard({
@@ -91,11 +102,15 @@ export function KanbanBoard({
   initialItems,
   statuses,
   members,
+  canManageTasks = false,
+  canCompleteSprint = false,
 }: {
   projectKey: string;
   initialItems: KanbanItem[];
   statuses: WorkflowStatus[];
   members: WorkspaceMember[];
+  canManageTasks?: boolean;
+  canCompleteSprint?: boolean;
 }) {
   const [items, setItems] = useState<KanbanItem[]>(initialItems);
   const [draggedKey, setDraggedKey] = useState<string | null>(null);
@@ -186,16 +201,19 @@ export function KanbanBoard({
   }
 
   function handleDragStart(event: DragEvent, itemKey: string) {
+    if (!canManageTasks) return;
     setDraggedKey(itemKey);
     event.dataTransfer.effectAllowed = "move";
     event.dataTransfer.setData("text/plain", itemKey);
   }
 
   function handleDragOver(event: DragEvent) {
+    if (!canManageTasks) return;
     event.preventDefault();
   }
 
   function handleDrop(event: DragEvent, targetStatusId: string) {
+    if (!canManageTasks) return;
     event.preventDefault();
     const itemKey = draggedKey ?? event.dataTransfer.getData("text/plain");
     setDraggedKey(null);
@@ -250,12 +268,17 @@ export function KanbanBoard({
                   key={member.id}
                   onClick={() => setSelectedAssigneeId(member.id)}
                   className={cn(
-                    "flex size-7 items-center justify-center rounded-full border border-background bg-primary text-[10px] font-black text-primary-foreground hover:scale-105 transition",
+                    "flex size-7 items-center justify-center rounded-full border border-background hover:scale-105 transition overflow-hidden",
                     isSelected && "ring-2 ring-primary ring-offset-1 z-20",
                   )}
                   title={member.name}
                 >
-                  {initials}
+                  <Avatar className="size-7 border-0">
+                    <AvatarImage src={member.avatarUrl} alt={member.name} />
+                    <AvatarFallback className="bg-primary text-[10px] font-black text-primary-foreground">
+                      {initials}
+                    </AvatarFallback>
+                  </Avatar>
                 </button>
               );
             })}
@@ -274,11 +297,13 @@ export function KanbanBoard({
           </Button>
         </div>
 
-        <div className="flex items-center gap-2">
-          <Button size="sm" variant="secondary">
-            Complete sprint
-          </Button>
-        </div>
+        {canCompleteSprint && (
+          <div className="flex items-center gap-2">
+            <Button size="sm" variant="secondary">
+              Complete sprint
+            </Button>
+          </div>
+        )}
       </div>
 
       {error && (
@@ -297,8 +322,8 @@ export function KanbanBoard({
               key={status.id}
               className="flex w-72 shrink-0 flex-col rounded-xl bg-muted/40 border-t-4 border-l border-r border-b p-3 min-h-125"
               style={{ borderTopColor: status.color || "#64748b" }}
-              onDragOver={handleDragOver}
-              onDrop={(e) => handleDrop(e, status.id)}
+              onDragOver={(e) => canManageTasks && handleDragOver(e)}
+              onDrop={(e) => canManageTasks && handleDrop(e, status.id)}
             >
               {/* Column Header */}
               <div className="flex items-center justify-between mb-3 px-1">
@@ -332,17 +357,21 @@ export function KanbanBoard({
                     <Card
                       key={item.key}
                       className={cn(
-                        "cursor-pointer border bg-card transition hover:shadow-sm active:cursor-grabbing",
+                        "border bg-card transition hover:shadow-sm",
+                        canManageTasks ? "cursor-pointer active:cursor-grabbing hover:border-primary/45" : "cursor-default",
                         isOverdue
                           ? "border-destructive/70 hover:border-destructive"
                           : isDueSoon
                             ? "border-warning/70 hover:border-warning"
-                            : "hover:border-primary/45",
+                            : "",
                         draggedKey === item.key && "opacity-40",
                       )}
-                      draggable
-                      onDragStart={(e) => handleDragStart(e, item.key)}
-                      onDragEnd={() => setDraggedKey(null)}
+                      draggable={canManageTasks}
+                      onDragStart={(e) => {
+                        if (!canManageTasks) return;
+                        handleDragStart(e, item.key);
+                      }}
+                      onDragEnd={() => canManageTasks && setDraggedKey(null)}
                       onClick={() => {
                         setDetailItem(item);
                         setDrawerOpen(true);
@@ -540,12 +569,18 @@ export function KanbanBoard({
 
                           {/* Assignee Avatar */}
                           {assignee ? (
-                            <div
-                              className="flex size-5 items-center justify-center rounded-full bg-primary text-[8px] font-black text-primary-foreground"
+                            <Avatar
+                              className="size-5"
                               title={`Assigned to ${assignee.name}`}
                             >
-                              {getInitials(assignee.name)}
-                            </div>
+                              <AvatarImage
+                                src={assignee.avatarUrl}
+                                alt={assignee.name}
+                              />
+                              <AvatarFallback className="bg-primary text-[8px] font-black text-primary-foreground">
+                                {getInitials(assignee.name)}
+                              </AvatarFallback>
+                            </Avatar>
                           ) : (
                             <div
                               className="flex size-5 items-center justify-center rounded-full bg-muted text-[8px] text-muted-foreground border"
@@ -579,6 +614,7 @@ export function KanbanBoard({
         members={members}
         projectKey={projectKey}
         onUpdate={handleItemUpdate}
+        canEdit={canManageTasks}
       />
     </div>
   );

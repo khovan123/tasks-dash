@@ -74,14 +74,14 @@ export function BacklogBoard({
   statusNames,
   statuses,
   members,
-  canCreateWorkItem = false,
+  canManageTasks = false,
 }: {
   projectKey: string;
   initialItems: BacklogItem[];
   statusNames: Record<string, string>;
   statuses: any[];
   members: BacklogMember[];
-  canCreateWorkItem?: boolean;
+  canManageTasks?: boolean;
 }) {
   const membersMap = new Map(members.map((member) => [member.id, member]));
 
@@ -150,7 +150,7 @@ export function BacklogBoard({
                 <span className="text-xs text-muted-foreground">
                   {saving ? "Đang lưu…" : `${items.length} items`}
                 </span>
-                {canCreateWorkItem && (
+                {canManageTasks && (
                   <NewWorkItemModal
                     projectKey={projectKey}
                     statuses={statuses}
@@ -191,10 +191,11 @@ export function BacklogBoard({
                   dueDate !== null &&
                   dueDate.getTime() - now.getTime() <= 2 * 24 * 60 * 60 * 1000;
 
-                return (
+                 return (
                   <article
                     className={cn(
-                      "grid cursor-pointer grid-cols-[auto_minmax(0,1fr)_auto] items-center gap-3 rounded-lg border bg-card p-3 transition hover:bg-muted/20 active:cursor-grabbing",
+                      "grid border bg-card p-3 transition",
+                      canManageTasks ? "cursor-pointer active:cursor-grabbing hover:bg-muted/20" : "cursor-default",
                       isOverdue
                         ? "border-destructive/70 hover:border-destructive"
                         : isDueSoon
@@ -206,19 +207,23 @@ export function BacklogBoard({
                       setDetailItem(item);
                       setDrawerOpen(true);
                     }}
-                    draggable
+                    draggable={canManageTasks}
                     key={item.key}
                     onDragStart={(event) => {
+                      if (!canManageTasks) return;
                       setDraggedKey(item.key);
                       event.dataTransfer.effectAllowed = "move";
                       event.dataTransfer.setData("text/plain", item.key);
                     }}
-                    onDragEnd={() => setDraggedKey(null)}
-                    onDragOver={(event) => event.preventDefault()}
-                    onDrop={(event) => drop(event, index)}
+                    onDragEnd={() => canManageTasks && setDraggedKey(null)}
+                    onDragOver={(event) => canManageTasks && event.preventDefault()}
+                    onDrop={(event) => canManageTasks && drop(event, index)}
                   >
                     <div
-                      className="cursor-grab active:cursor-grabbing p-1 hover:bg-muted rounded transition"
+                      className={cn(
+                        "p-1 rounded transition",
+                        canManageTasks ? "cursor-grab active:cursor-grabbing hover:bg-muted" : "cursor-default opacity-50"
+                      )}
                       onClick={(e) => e.stopPropagation()}
                     >
                       <WorkItemTypeIcon type={item.type} size={18} />
@@ -305,7 +310,7 @@ export function BacklogBoard({
                   </article>
                 );
               })}
-              {canCreateWorkItem && (
+              {canManageTasks && (
                 <div className="mt-3 flex justify-center border-t pt-3">
                   <NewWorkItemModal
                     projectKey={projectKey}
@@ -337,6 +342,7 @@ export function BacklogBoard({
         members={members}
         projectKey={projectKey}
         onUpdate={handleItemUpdate}
+        canEdit={canManageTasks}
       />
     </>
   );
