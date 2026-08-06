@@ -48,7 +48,7 @@ function InvitePageContent() {
       console.error(err);
       setError(
         err.message ||
-        "Không thể xác thực tài khoản Discord. Vui lòng chắc chắn bạn đã tham gia server Discord trước."
+        "Không thể xác thực tài khoản Discord. Vui lòng kiểm tra lại Username của bạn."
       );
     } finally {
       setValidating(false);

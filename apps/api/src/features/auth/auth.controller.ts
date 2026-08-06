@@ -105,13 +105,13 @@ export class AuthController {
       throw new BadRequestException("Lời mời không hợp lệ hoặc đã hết hạn.");
     }
 
-    const inGuild = await this.discord.checkMemberInGuild(
+    const exists = await this.discord.checkMemberInGuild(
       invitation.workspaceId,
       discordUsername,
     );
-    if (!inGuild) {
+    if (!exists) {
       throw new BadRequestException(
-        "Không tìm thấy username Discord này trong Server. Vui lòng tham gia Server Discord của Workspace trước.",
+        "Username Discord này không tồn tại. Vui lòng kiểm tra chính xác tên tài khoản của bạn.",
       );
     }
 

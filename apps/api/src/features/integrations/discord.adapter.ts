@@ -867,10 +867,21 @@ export class DiscordAdapter {
   }
 
   async checkMemberInGuild(workspaceId: string, username: string): Promise<boolean> {
-    const workspace = await this.workspaces.findOne({ workspaceId, enabled: true }).exec();
-    if (!workspace) return true;
-    const discordUserId = await this.findGuildMemberId(workspace.guildId, username.trim());
-    return Boolean(discordUserId);
+    try {
+      const response = await fetch(
+        "https://discord.com/api/v9/unique-username/username-attempt-unauthed",
+        {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ username: username.trim() }),
+        },
+      );
+      if (!response.ok) return false;
+      const data = (await response.json()) as { taken?: boolean };
+      return data.taken === true;
+    } catch {
+      return false;
+    }
   }
 
   async connect(
