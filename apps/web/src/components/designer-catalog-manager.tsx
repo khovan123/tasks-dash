@@ -3,7 +3,7 @@
 import { zodResolver } from "@hookform/resolvers/zod";
 import { DESIGN_CATALOG_TYPES } from "@tasks-dash/contracts";
 import { useRouter } from "next/navigation";
-import { FormProvider, useForm } from "react-hook-form";
+import { Controller, FormProvider, useForm } from "react-hook-form";
 import { ExternalLink, Figma, Plus, Trash2 } from "lucide-react";
 import {
   DesignCatalogFormValues,
@@ -35,9 +35,12 @@ import {
 } from "@/components/ui/field";
 import { Input } from "@/components/ui/input";
 import {
-  NativeSelect,
-  NativeSelectOption,
-} from "@/components/ui/native-select";
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
 import { Textarea } from "@/components/ui/textarea";
 
 interface DesignCatalogItem {
@@ -52,9 +55,11 @@ interface DesignCatalogItem {
 export function DesignerCatalogManager({
   projectKey,
   items,
+  canManageCatalog,
 }: {
   projectKey: string;
   items: DesignCatalogItem[];
+  canManageCatalog: boolean;
 }) {
   const router = useRouter();
   const form = useForm<DesignCatalogFormValues>({
@@ -110,58 +115,103 @@ export function DesignerCatalogManager({
   }
 
   return (
-    <div className="space-y-6">
-      <FormProvider {...form}>
-        <form onSubmit={form.handleSubmit(submit)} noValidate>
-          <FormCard
-            eyebrow="Designer catalog"
-            title="Gắn Figma vào project"
-            footer={
-              <Button disabled={form.formState.isSubmitting}>
-                <Plus />
-                {form.formState.isSubmitting ? "Đang thêm…" : "Thêm vào catalog"}
-              </Button>
-            }
-          >
-            <FieldGroup>
+    <div className="flex flex-col gap-6">
+      {canManageCatalog && (
+        <FormProvider {...form}>
+          <form onSubmit={form.handleSubmit(submit)} noValidate>
+            <FormCard
+              eyebrow="Designer catalog"
+              title="Liên kết Figma"
+              footer={
+                <Button
+                  disabled={form.formState.isSubmitting || !canManageCatalog}
+                >
+                  <Plus data-icon="inline-start" />
+                  {form.formState.isSubmitting
+                    ? "Đang thêm…"
+                    : "Thêm vào catalog"}
+                </Button>
+              }
+            >
+              <FieldGroup>
+                <Field>
+                  <FieldLabel htmlFor="design-name">Tên</FieldLabel>
+                  <Input
+                    id="design-name"
+                    {...form.register("name")}
+                    disabled={!canManageCatalog}
+                    placeholder="Checkout / Payment Button"
+                  />
+                </Field>
+                <Field>
+                  <FieldLabel htmlFor="design-type">Loại</FieldLabel>
+                  <Controller
+                    control={form.control}
+                    name="type"
+                    render={({ field }) => (
+                      <Select
+                        onValueChange={field.onChange}
+                        value={field.value}
+                        disabled={!canManageCatalog}
+                      >
+                        <SelectTrigger id="design-type" className="w-full">
+                          <SelectValue placeholder="Chọn loại" />
+                        </SelectTrigger>
+                        <SelectContent>
+                          {Object.values(DESIGN_CATALOG_TYPES).map((type) => (
+                            <SelectItem key={type} value={type}>
+                              {type}
+                            </SelectItem>
+                          ))}
+                        </SelectContent>
+                      </Select>
+                    )}
+                  />
+                </Field>
+              </FieldGroup>
               <Field>
-                <FieldLabel htmlFor="design-name">Tên</FieldLabel>
-                <Input id="design-name" {...form.register("name")} placeholder="Checkout / Payment Button" />
+                <FieldLabel htmlFor="figma-url">Figma URL</FieldLabel>
+                <Input
+                  id="figma-url"
+                  {...form.register("figmaUrl")}
+                  disabled={!canManageCatalog}
+                  placeholder="https://www.figma.com/design/..."
+                />
               </Field>
               <Field>
-                <FieldLabel htmlFor="design-type">Loại</FieldLabel>
-                <NativeSelect id="design-type" {...form.register("type")}>
-                  {Object.values(DESIGN_CATALOG_TYPES).map((type) => (
-                    <NativeSelectOption key={type} value={type}>{type}</NativeSelectOption>
-                  ))}
-                </NativeSelect>
+                <FieldLabel htmlFor="design-description">Mô tả</FieldLabel>
+                <Textarea
+                  id="design-description"
+                  {...form.register("description")}
+                  disabled={!canManageCatalog}
+                  placeholder="Mục đích, state và quy tắc sử dụng"
+                />
               </Field>
-            </FieldGroup>
-            <Field>
-              <FieldLabel htmlFor="figma-url">Figma URL</FieldLabel>
-              <Input id="figma-url" {...form.register("figmaUrl")} placeholder="https://www.figma.com/design/..." />
-            </Field>
-            <Field>
-              <FieldLabel htmlFor="design-description">Mô tả</FieldLabel>
-              <Textarea id="design-description" {...form.register("description")} placeholder="Mục đích, state và quy tắc sử dụng" />
-            </Field>
-            <Field>
-              <FieldLabel htmlFor="design-tags">Tags</FieldLabel>
-              <Input id="design-tags" {...form.register("tags")} placeholder="mobile, checkout, v2" />
-            </Field>
-            {form.formState.errors.root?.message ? (
-              <FieldError>{form.formState.errors.root.message}</FieldError>
-            ) : null}
-          </FormCard>
-        </form>
-      </FormProvider>
+              <Field>
+                <FieldLabel htmlFor="design-tags">Tags</FieldLabel>
+                <Input
+                  id="design-tags"
+                  {...form.register("tags")}
+                  disabled={!canManageCatalog}
+                  placeholder="mobile, checkout, v2"
+                />
+              </Field>
+              {form.formState.errors.root?.message ? (
+                <FieldError>{form.formState.errors.root.message}</FieldError>
+              ) : null}
+            </FormCard>
+          </form>
+        </FormProvider>
+      )}
 
       {items.length === 0 ? (
         <Empty>
           <Figma className="size-10 text-primary" />
           <EmptyHeader>
             <EmptyTitle>Catalog đang trống</EmptyTitle>
-            <EmptyDescription>Thêm Figma file, page, component hoặc FigJam board đầu tiên.</EmptyDescription>
+            <EmptyDescription>
+              Thêm Figma file, page, component hoặc FigJam board đầu tiên.
+            </EmptyDescription>
           </EmptyHeader>
         </Empty>
       ) : (
@@ -176,21 +226,28 @@ export function DesignerCatalogManager({
                     size="icon-sm"
                     type="button"
                     aria-label={`Xóa ${item.name}`}
+                    disabled={!canManageCatalog}
                     onClick={() => void remove(item._id)}
                   >
                     <Trash2 className="text-destructive" />
                   </Button>
                 </div>
                 <CardTitle>{item.name}</CardTitle>
-                <CardDescription>{item.description || "Chưa có mô tả."}</CardDescription>
+                <CardDescription>
+                  {item.description || "Chưa có mô tả."}
+                </CardDescription>
               </CardHeader>
               <CardContent className="flex flex-wrap gap-2">
-                {item.tags.map((tag) => <Badge key={tag} variant="secondary">{tag}</Badge>)}
+                {item.tags.map((tag) => (
+                  <Badge key={tag} variant="secondary">
+                    {tag}
+                  </Badge>
+                ))}
               </CardContent>
               <CardFooter>
                 <Button asChild>
                   <a href={item.figmaUrl} target="_blank" rel="noreferrer">
-                    <ExternalLink /> Mở trong Figma
+                    <ExternalLink data-icon="inline-start" /> Mở trong Figma
                   </a>
                 </Button>
               </CardFooter>
