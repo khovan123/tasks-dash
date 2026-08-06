@@ -19,6 +19,7 @@ import {
 import {
   BootstrapWorkspaceDto,
   InviteWorkspaceMemberDto,
+  UpdateMemberProfileDto,
   UpdateWorkspaceMemberRoleDto,
 } from "./members.dto";
 import { MembersService } from "./members.service";
@@ -39,6 +40,24 @@ export class MembersController {
   @Get("members")
   list(@WorkspaceId() workspaceId: string): Promise<Record<string, unknown>> {
     return this.service.list(workspaceId);
+  }
+
+  @Get("me")
+  async getMyProfile(
+    @WorkspaceId() workspaceId: string,
+    @CurrentSession() session: AuthSession,
+  ): Promise<Record<string, unknown>> {
+    const data = await this.service.updateMyProfile(workspaceId, session.userId, {});
+    return data;
+  }
+
+  @Patch("me")
+  updateMyProfile(
+    @WorkspaceId() workspaceId: string,
+    @CurrentSession() session: AuthSession,
+    @Body() body: UpdateMemberProfileDto,
+  ): Promise<Record<string, unknown>> {
+    return this.service.updateMyProfile(workspaceId, session.userId, body);
   }
 
   @Post("invitations")

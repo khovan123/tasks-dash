@@ -353,8 +353,15 @@ export class WorkItemsService {
           });
           if (assignee) {
             assigneeName = assignee.name;
-            if (assignee.githubUsername) {
-              assigneeGithub = assignee.githubUsername;
+            if (assignee.githubLogin) {
+              assigneeGithub = assignee.githubLogin;
+            } else if (assignee.authIdentityId) {
+              const identity = await this.connection.collection("auth_identities").findOne({
+                _id: typeof assignee.authIdentityId === "string" ? new Types.ObjectId(assignee.authIdentityId) : assignee.authIdentityId,
+              });
+              if (identity?.login) {
+                assigneeGithub = identity.login;
+              }
             }
             if (assignee.discordUsername) {
               const discordUserId = await this.discord.findGuildMemberId(
@@ -383,18 +390,24 @@ export class WorkItemsService {
           `**Summary:** ${item.summary}`,
           `**Type:** ${item.type}`,
           `**Priority:** ${item.priority}`,
-          `**Assignee:** ${assigneeName} ${assigneeMention ? `(${assigneeMention})` : ""}`,
           `**Start Date:** ${item.startedAt ? format(item.startedAt, "dd/MM/yyyy") : "N/A"}`,
           `**Due Date:** ${item.dueDate ? format(item.dueDate, "dd/MM/yyyy") : "N/A"}`,
           `**Duration:** ${durationStr}`,
           assigneeGithub ? `**GitHub Username:** ${assigneeGithub}` : "",
+          assigneeMention ? `**Assignee:** ${assigneeMention}` : "",
         ].filter(Boolean);
 
-        const msgId = await this.discord.sendToChannel(integration.channelId, {
-          title: `Task Created: ${item.key}`,
-          description: descriptionParts.join("\n"),
-          color: 0x238636,
-        });
+        const pingContent = assigneeMention.startsWith("<@") ? assigneeMention : null;
+
+        const msgId = await this.discord.sendToChannel(
+          integration.channelId,
+          {
+            title: `Task Created: ${item.key}`,
+            description: descriptionParts.join("\n"),
+            color: 0x238636,
+          },
+          pingContent,
+        );
 
         await this.taskLogs.create({
           workspaceId,

@@ -77,6 +77,7 @@ export class DiscordIntegrationDocument extends BaseMongoDocument {
   @Prop({ trim: true }) meetingChannelId?: string;
   @Prop({ trim: true }) meetingChannelName?: string;
   @Prop({ trim: true }) guildId?: string;
+  @Prop({ trim: true }) membersDirectoryMessageId?: string;
   @Prop({ enum: ["BOT", "MANUAL"], default: "MANUAL" })
   provisionedBy!: "BOT" | "MANUAL";
   @Prop({ default: true }) enabled!: boolean;

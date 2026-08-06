@@ -1,8 +1,8 @@
 import { Injectable, UnauthorizedException, Logger } from "@nestjs/common";
 import { ConfigService } from "@nestjs/config";
 import { EventEmitter2 } from "@nestjs/event-emitter";
-import { InjectModel } from "@nestjs/mongoose";
-import { Model } from "mongoose";
+import { InjectConnection, InjectModel } from "@nestjs/mongoose";
+import { Connection, Model } from "mongoose";
 import { createHmac, randomUUID, timingSafeEqual } from "node:crypto";
 import {
   AUTOMATION_TRIGGERS,
@@ -24,7 +24,10 @@ import {
   GithubPullRequestLinkInput,
   WorkItemsService,
 } from "../work-items/work-items.service";
-import { WorkItemDocument, WorkItemHydratedDocument } from "../work-items/work-item.schema";
+import {
+  WorkItemDocument,
+  WorkItemHydratedDocument,
+} from "../work-items/work-item.schema";
 import { DiscordAdapter } from "./discord.adapter";
 import { GithubAppService } from "./github-app.service";
 import {
@@ -33,7 +36,10 @@ import {
   GithubWebhookDeliveryDocument,
   GithubWebhookDeliveryHydratedDocument,
 } from "./integration.schemas";
-import { MemberDocument, MemberHydratedDocument } from "../members/member.schema";
+import {
+  MemberDocument,
+  MemberHydratedDocument,
+} from "../members/member.schema";
 
 export const AUTOMATION_GITHUB_PULL_REQUEST_EVENT =
   "automation.github.pull-request";
@@ -245,6 +251,8 @@ export class GithubWebhookService {
     private readonly members: Model<MemberHydratedDocument>,
     @InjectModel(WorkItemDocument.name)
     private readonly workItemsModel: Model<WorkItemHydratedDocument>,
+    @InjectConnection()
+    private readonly connection: Connection,
   ) {}
 
   verify(rawBody: Buffer | undefined, signature: string | undefined): void {
@@ -337,6 +345,9 @@ export class GithubWebhookService {
     event: string,
     payload: Record<string, unknown>,
   ): Promise<Record<string, unknown>> {
+    console.log(
+      `[GithubWebhook] event=${event} action=${String(payload.action ?? "(none)")} delivery=${deliveryId}`,
+    );
     if (event === GITHUB_WEBHOOK_EVENTS.installation) {
       const installation = payload.installation as { id?: number } | undefined;
       const action = String(payload.action ?? "");
@@ -530,14 +541,28 @@ export class GithubWebhookService {
             pullRequestNumber: pullRequest.number,
           })
           .exec();
+        console.log(
+          `[GithubWebhook] PR #${pullRequest.number} action=${action} existingLog=${existingLog ? existingLog._id : "null"}`,
+        );
         const author = pullRequest.user?.login ?? "unknown";
-        const mention = await this.resolveDiscordMention(context.workspaceId, context.projectKey, author);
+        const mention = await this.resolveDiscordMention(
+          context.workspaceId,
+          context.projectKey,
+          author,
+        );
+        // mention is either "<@discordId>" (real ping) or "@discordUsername" (text-only) or null
+        const mentionDisplay = mention?.startsWith("<@")
+          ? mention
+          : (mention ?? null);
         const prTitle = `[PR #${pullRequest.number}] ${pullRequest.title ?? "Pull request"}`;
         const description = [
-          `:bust_in_silhouette: **GitHub:** @${author} ${mention ? `(${mention})` : ""}`,
+          `:bust_in_silhouette: **GitHub:** @${author}`,
           `:seedling: \`${pullRequest.head?.ref ?? "?"}\` → \`${pullRequest.base?.ref ?? "?"}\``,
           `:pushpin: **Action:** \`${pullRequest.merged ? "merged" : action}\``,
-        ].join("\n");
+          mentionDisplay ? `:bell: **Assignee:** ${mentionDisplay}` : null,
+        ].filter(Boolean).join("\n");
+        // Real ping only when mention is a Discord ID (<@...>)
+        const pingContent = mention?.startsWith("<@") ? mention : null;
         const color = pullRequest.merged
           ? COLOR_PR_MERGED
           : action === GITHUB_PULL_REQUEST_ACTIONS.closed
@@ -545,31 +570,52 @@ export class GithubWebhookService {
             : COLOR_PR_OPEN;
 
         if (!existingLog) {
-          if (action === GITHUB_PULL_REQUEST_ACTIONS.opened || action === GITHUB_PULL_REQUEST_ACTIONS.reopened) {
+          if (
+            action === GITHUB_PULL_REQUEST_ACTIONS.opened ||
+            action === GITHUB_PULL_REQUEST_ACTIONS.reopened
+          ) {
             const msgId = await this.discord.sendToChannel(
               prChannelId,
-              {
-                title: prTitle,
-                description,
-                color,
-                url: pullRequest.html_url,
-              },
+              { title: prTitle, description, color, url: pullRequest.html_url },
+              pingContent,
             );
             await this.prLogs.create({
+              workspaceId: context.workspaceId,
               repositoryFullName: context.repositoryFullName,
               pullRequestNumber: pullRequest.number,
               discordMessageId: msgId,
               discordChannelId: prChannelId,
             });
           }
+          // action=edited with no log: skip — no message to update
         } else {
-          if (action === GITHUB_PULL_REQUEST_ACTIONS.closed || action === GITHUB_PULL_REQUEST_ACTIONS.reopened) {
-            const statusText = pullRequest.merged ? "Merged" : action === GITHUB_PULL_REQUEST_ACTIONS.closed ? "Closed" : "Reopened";
+          if (
+            action === GITHUB_PULL_REQUEST_ACTIONS.closed ||
+            action === GITHUB_PULL_REQUEST_ACTIONS.reopened
+          ) {
+            const statusText = pullRequest.merged
+              ? "Merged"
+              : action === GITHUB_PULL_REQUEST_ACTIONS.closed
+                ? "Closed"
+                : "Reopened";
             const replyTitle = `PR #${pullRequest.number} is now ${statusText}`;
             await this.discord.sendThreadReply(
               existingLog.discordChannelId,
               existingLog.discordMessageId,
-              { title: replyTitle, description, color, url: pullRequest.html_url },
+              {
+                title: replyTitle,
+                description,
+                color,
+                url: pullRequest.html_url,
+              },
+              pingContent,
+            );
+          }
+          if (action === GITHUB_PULL_REQUEST_ACTIONS.edited) {
+            await this.discord.editMessage(
+              existingLog.discordChannelId,
+              existingLog.discordMessageId,
+              { title: prTitle, description, color, url: pullRequest.html_url },
             );
           }
         }
@@ -678,6 +724,71 @@ export class GithubWebhookService {
         action,
         authorLogin: body.review?.user?.login ?? pullRequest.user?.login,
       });
+    }
+
+    // Post PR review status to Discord #td-pr channel
+    try {
+      const existingLog = await this.prLogs
+        .findOne({
+          repositoryFullName: context.repositoryFullName,
+          pullRequestNumber: pullRequest.number,
+        })
+        .exec();
+
+      if (existingLog) {
+        const reviewer = body.review?.user?.login ?? "unknown";
+        const author = pullRequest.user?.login ?? "unknown";
+
+        const [reviewerMention, authorMention] = await Promise.all([
+          this.resolveDiscordMention(context.workspaceId, context.projectKey, reviewer),
+          this.resolveDiscordMention(context.workspaceId, context.projectKey, author),
+        ]);
+
+        const reviewerDisplay = reviewerMention ?? `@${reviewer}`;
+        const authorDisplay = authorMention ?? `@${author}`;
+
+        const stateText =
+          details.reviewState === GITHUB_REVIEW_STATES.approved
+            ? "Approved"
+            : details.reviewState === GITHUB_REVIEW_STATES.changesRequested
+              ? "Requested Changes"
+              : "Commented";
+
+        const actionText =
+          details.reviewState === GITHUB_REVIEW_STATES.approved
+            ? "approved"
+            : details.reviewState === GITHUB_REVIEW_STATES.changesRequested
+              ? "requested changes"
+              : "commented";
+
+        const reviewAny = body.review as any;
+        const commentText = reviewAny?.body ? `\n>>> ${reviewAny.body}` : "";
+        const title = `PR Review: ${stateText}`;
+        const description = `**@${reviewer}** submitted a review on PR #${pullRequest.number}.${commentText}`;
+        
+        const color =
+          details.reviewState === GITHUB_REVIEW_STATES.approved
+            ? COLOR_PR_OPEN // Xanh
+            : details.reviewState === GITHUB_REVIEW_STATES.changesRequested
+              ? COLOR_PR_CLOSED // Đỏ
+              : 0x8957e5; // Tím
+
+        const pingContent = `${reviewerDisplay} đã ${actionText} trên PR của ${authorDisplay}`;
+
+        await this.discord.sendThreadReply(
+          existingLog.discordChannelId,
+          existingLog.discordMessageId,
+          {
+            title,
+            description,
+            url: reviewAny?.html_url || pullRequest.html_url,
+            color,
+          },
+          pingContent,
+        );
+      }
+    } catch (err) {
+      this.logger.error("Failed to post PR review to Discord:", err);
     }
 
     return {
@@ -833,37 +944,49 @@ export class GithubWebhookService {
       const prLogCandidates: any[] = [];
       for (const pr of prs) {
         if (pr.number) {
-          const prLog = await this.prLogs.findOne({
-            repositoryFullName: context.repositoryFullName,
-            pullRequestNumber: pr.number,
-          }).exec();
+          const prLog = await this.prLogs
+            .findOne({
+              repositoryFullName: context.repositoryFullName,
+              pullRequestNumber: pr.number,
+            })
+            .exec();
           if (prLog) prLogCandidates.push(prLog);
         }
       }
       if (prLogCandidates.length === 0 && run.head_branch) {
-        const workItem = await this.workItemsModel.findOne({
-          workspaceId: context.workspaceId,
-          projectKey: context.projectKey,
-          "github.branches": run.head_branch,
-        }).exec();
+        const workItem = await this.workItemsModel
+          .findOne({
+            workspaceId: context.workspaceId,
+            projectKey: context.projectKey,
+            "github.branches": run.head_branch,
+          })
+          .exec();
         if (workItem?.github?.pullRequestNumber) {
-          const prLog = await this.prLogs.findOne({
-            repositoryFullName: context.repositoryFullName,
-            pullRequestNumber: workItem.github.pullRequestNumber,
-          }).exec();
+          const prLog = await this.prLogs
+            .findOne({
+              repositoryFullName: context.repositoryFullName,
+              pullRequestNumber: workItem.github.pullRequestNumber,
+            })
+            .exec();
           if (prLog) prLogCandidates.push(prLog);
         }
       }
 
       for (const prLog of prLogCandidates) {
-        await this.discord.sendThreadReply(prLog.discordChannelId, prLog.discordMessageId, {
-          title: `[CI/CD] Build Status`,
-          description: `${statusIcon} Workflow **${run.name ?? "Workflow"}** #${run.run_number ?? "?"} conclusion: **${run.conclusion ?? run.status}**\n${run.html_url ? `[View Workflow Run](${run.html_url})` : ""}`,
-          color: success ? COLOR_DEPLOY_SUCCESS : COLOR_DEPLOY_FAILED,
-        });
+        await this.discord.sendThreadReply(
+          prLog.discordChannelId,
+          prLog.discordMessageId,
+          {
+            title: `[CI/CD] Build Status`,
+            description: `${statusIcon} Workflow **${run.name ?? "Workflow"}** #${run.run_number ?? "?"} conclusion: **${run.conclusion ?? run.status}**\n${run.html_url ? `[View Workflow Run](${run.html_url})` : ""}`,
+            color: success ? COLOR_DEPLOY_SUCCESS : COLOR_DEPLOY_FAILED,
+          },
+        );
       }
     } catch (err) {
-      this.logger.error(`Failed to post CI/CD status on PR Discord thread: ${String(err)}`);
+      this.logger.error(
+        `Failed to post CI/CD status on PR Discord thread: ${String(err)}`,
+      );
     }
 
     return { accepted: true };
@@ -875,12 +998,29 @@ export class GithubWebhookService {
     githubLogin: string,
   ): Promise<string | null> {
     try {
-      const member = await this.members
+      let member = await this.members
         .findOne({
           workspaceId,
           githubLogin: { $regex: new RegExp(`^${githubLogin}$`, "i") },
         })
         .exec();
+
+      if (!member) {
+        const identity = await this.connection
+          .collection("auth_identities")
+          .findOne({
+            login: { $regex: new RegExp(`^${githubLogin}$`, "i") },
+          });
+        if (identity) {
+          member = await this.members
+            .findOne({
+              workspaceId,
+              authIdentityId: String(identity._id),
+            })
+            .exec();
+        }
+      }
+
       if (member?.discordUsername) {
         const integration = await this.discord.getProjectIntegration(
           workspaceId,
@@ -955,9 +1095,10 @@ export class GithubWebhookService {
           author,
         );
         const description = [
-          `${mention ? `${mention} ` : ""}**@${author}** commented:`,
+          `**@${author}** commented:`,
           `>>> ${commentBody}`,
         ].join("\n");
+        const pingContent = mention?.startsWith("<@") ? mention : null;
 
         await this.discord.sendThreadReply(
           existingLog.discordChannelId,
@@ -968,6 +1109,7 @@ export class GithubWebhookService {
             url: payload.comment.html_url || prUrl,
             color: COLOR_PR_OPEN,
           },
+          pingContent,
         );
       } else {
         const prChannelId = await this.discord.getOrCreatePrChannel(
@@ -981,18 +1123,24 @@ export class GithubWebhookService {
             author,
           );
           const description = [
-            `${mention ? `${mention} ` : ""}**@${author}** commented on PR #${prNumber}:`,
+            `**@${author}** commented on PR #${prNumber}:`,
             `>>> ${commentBody}`,
           ].join("\n");
+          const pingContent = mention?.startsWith("<@") ? mention : null;
 
-          const msgId = await this.discord.sendToChannel(prChannelId, {
-            title: `New Comment on PR #${prNumber}`,
-            description,
-            url: payload.comment.html_url || prUrl,
-            color: COLOR_PR_OPEN,
-          });
+          const msgId = await this.discord.sendToChannel(
+            prChannelId,
+            {
+              title: `New Comment on PR #${prNumber}`,
+              description,
+              url: payload.comment.html_url || prUrl,
+              color: COLOR_PR_OPEN,
+            },
+            pingContent,
+          );
 
           await this.prLogs.create({
+            workspaceId: context.workspaceId,
             repositoryFullName: context.repositoryFullName,
             pullRequestNumber: prNumber,
             discordMessageId: msgId,

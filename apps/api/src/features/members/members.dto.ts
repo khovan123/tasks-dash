@@ -67,3 +67,10 @@ export class DeleteWorkspaceDto {
 export class BootstrapWorkspaceDto extends CreateWorkspaceDto {
   @IsEmail() @MaxLength(254) ownerEmail!: string;
 }
+
+export class UpdateMemberProfileDto {
+  @IsOptional()
+  @IsString()
+  @MaxLength(100)
+  discordUsername?: string;
+}

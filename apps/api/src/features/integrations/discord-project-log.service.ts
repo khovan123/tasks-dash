@@ -4,9 +4,15 @@ import { OnEvent } from "@nestjs/event-emitter";
 import { InjectModel } from "@nestjs/mongoose";
 import { Model } from "mongoose";
 import { MEMBER_ROLES } from "@tasks-dash/contracts";
-import { MemberDocument, MemberHydratedDocument } from "../members/member.schema";
+import {
+  MemberDocument,
+  MemberHydratedDocument,
+} from "../members/member.schema";
 import { DiscordAdapter } from "./discord.adapter";
-import { DiscordIntegrationDocument, DiscordIntegrationHydratedDocument } from "./integration.schemas";
+import {
+  DiscordIntegrationDocument,
+  DiscordIntegrationHydratedDocument,
+} from "./integration.schemas";
 
 /**
  * Manages per-project Discord channel logging:
@@ -26,11 +32,17 @@ export class DiscordProjectLogService {
   ) {}
 
   @OnEvent("workspace.members.changed", { async: true })
-  async syncMembersDirectory({ workspaceId }: { workspaceId: string }): Promise<void> {
+  async syncMembersDirectory({
+    workspaceId,
+  }: {
+    workspaceId: string;
+  }): Promise<void> {
     try {
       await this.discord.syncMemberRolesAndPermissions(workspaceId);
     } catch (e) {
-      this.logger.warn(`Failed to sync Discord roles/permissions: ${String(e)}`);
+      this.logger.warn(
+        `Failed to sync Discord roles/permissions: ${String(e)}`,
+      );
     }
 
     const projectIntegrations = await this.integrations
@@ -40,7 +52,14 @@ export class DiscordProjectLogService {
 
     const allMembers = await this.members
       .find({ workspaceId })
-      .select({ name: 1, email: 1, role: 1, avatarUrl: 1, githubLogin: 1, discordUsername: 1 })
+      .select({
+        name: 1,
+        email: 1,
+        role: 1,
+        avatarUrl: 1,
+        githubLogin: 1,
+        discordUsername: 1,
+      })
       .sort({ role: 1, name: 1 })
       .lean()
       .exec();
@@ -50,18 +69,56 @@ export class DiscordProjectLogService {
       try {
         const lines = allMembers.map((m) => {
           const github = m.githubLogin ? `GitHub: @${m.githubLogin}` : "";
-          const discord = m.discordUsername ? `Discord: @${m.discordUsername}` : "";
+          const discord = m.discordUsername
+            ? `Discord: @${m.discordUsername}`
+            : "";
           const identity = [github, discord].filter(Boolean).join(" · ");
-          const roleEmoji = m.role === MEMBER_ROLES.owner ? ":crown:" : m.role === MEMBER_ROLES.designer ? ":paintbrush:" : m.role === MEMBER_ROLES.dev ? ":keyboard:" : ":bust_in_silhouette:";
+          const roleEmoji =
+            m.role === MEMBER_ROLES.owner
+              ? ":crown:"
+              : m.role === MEMBER_ROLES.designer
+                ? ":paintbrush:"
+                : m.role === MEMBER_ROLES.dev
+                  ? ":keyboard:"
+                  : ":bust_in_silhouette:";
           return `${roleEmoji} **${m.name}** (${m.role})${identity ? `\n　${identity}` : ""}`;
         });
 
         const description = lines.join("\n\n") || "_No members yet._";
-        await this.discord.sendToChannel(integration.membersChannelId, {
+        const embed = {
           title: `:busts_in_silhouette: Project Members — ${integration.projectKey}`,
           description: description.slice(0, 4000),
           color: 0x5865f2,
-        });
+        };
+
+        let updated = false;
+        if (integration.membersDirectoryMessageId) {
+          try {
+            await this.discord.editMessage(
+              integration.membersChannelId,
+              integration.membersDirectoryMessageId,
+              embed,
+            );
+            updated = true;
+          } catch (err) {
+            this.logger.log(
+              `Could not edit existing members directory message, sending new one. Error: ${String(err)}`,
+            );
+          }
+        }
+
+        if (!updated) {
+          const msgId = await this.discord.sendToChannel(
+            integration.membersChannelId,
+            embed,
+          );
+          await this.integrations
+            .updateOne(
+              { _id: integration._id },
+              { $set: { membersDirectoryMessageId: msgId } },
+            )
+            .exec();
+        }
       } catch (err) {
         this.logger.warn(
           `Could not sync members directory for project ${integration.projectKey}: ${String(err)}`,
@@ -81,7 +138,9 @@ export class DiscordProjectLogService {
     try {
       await this.discord.syncProjectPermissions(workspaceId, projectKey);
     } catch (e) {
-      this.logger.warn(`Failed to sync Discord project permissions: ${String(e)}`);
+      this.logger.warn(
+        `Failed to sync Discord project permissions: ${String(e)}`,
+      );
     }
   }
 
@@ -92,9 +151,7 @@ export class DiscordProjectLogService {
    */
   @Cron(CronExpression.EVERY_DAY_AT_9PM, { name: "discord-daily-reports" })
   async sendDailyReports(): Promise<void> {
-    const integrations = await this.integrations
-      .find({ enabled: true })
-      .exec();
+    const integrations = await this.integrations.find({ enabled: true }).exec();
 
     for (const integration of integrations) {
       if (!integration.reportsChannelId) continue;

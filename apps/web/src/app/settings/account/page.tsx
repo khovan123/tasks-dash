@@ -1,6 +1,7 @@
 import { Github, Mail, Shield, User2 } from "lucide-react";
 import { LogoutButton } from "@/components/logout-button";
 import { OneTimeLoginCodeCard } from "@/components/one-time-login-code-card";
+import { DiscordUsernameForm } from "@/components/discord-username-form";
 import { apiData } from "@/lib/server/api-data";
 import { AppPage, FormCard, PageHero } from "@/components/layout/app-shell";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
@@ -17,6 +18,10 @@ interface Session {
   workspaceId: string;
 }
 
+interface MyProfile {
+  discordUsername: string | null;
+}
+
 function initials(value: string): string {
   return value
     .split(/\s+/)
@@ -28,7 +33,12 @@ function initials(value: string): string {
 }
 
 export default async function AccountSettingsPage() {
-  const session = await apiData<Session>("/auth/me");
+  const [session, myProfile] = await Promise.all([
+    apiData<Session>("/auth/me"),
+    apiData<MyProfile>("/workspace/me").catch(() => ({
+      discordUsername: null,
+    })),
+  ]);
 
   return (
     <AppPage>
@@ -60,15 +70,10 @@ export default async function AccountSettingsPage() {
             </div>
             <div className="mt-2 text-lg font-bold">{session.email}</div>
           </div>
-          <div className="rounded-2xl border bg-card/60 p-4">
-            <div className="flex items-center gap-2 text-sm font-semibold text-muted-foreground">
-              <Shield className="size-4" />
-              Trạng thái phiên
-            </div>
-            <div className="mt-2 flex items-center gap-2">
-              <Badge variant="success">Đã kết nối workspace</Badge>
-            </div>
-          </div>
+
+          <DiscordUsernameForm
+            initialDiscordUsername={myProfile.discordUsername}
+          />
         </div>
 
         <OneTimeLoginCodeCard />
