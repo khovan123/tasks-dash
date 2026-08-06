@@ -16,6 +16,8 @@ import { Field, FieldDescription, FieldError, FieldGroup, FieldLabel } from "@/c
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
 
+import { Spinner } from "@/components/ui/spinner";
+
 const DEFAULT_VALUES: ProjectFormValues = { key: "", name: "", description: "" };
 
 export function ProjectCreateForm() {
@@ -44,7 +46,19 @@ export function ProjectCreateForm() {
           eyebrow="Create project"
           title="Tạo dự án thật"
           description="Repository được chọn từ GitHub App. Nếu Discord Bot đã cấu hình, hệ thống tự tạo channel Updates và Docs cho project."
-          footer={<Button disabled={form.formState.isSubmitting}><FolderPlus />{form.formState.isSubmitting ? "Đang tạo…" : "Tạo dự án"}</Button>}
+          footer={
+            <Button disabled={form.formState.isSubmitting}>
+              {form.formState.isSubmitting ? (
+                <>
+                  <Spinner className="mr-2" /> Đang tạo
+                </>
+              ) : (
+                <>
+                  <FolderPlus /> Tạo dự án
+                </>
+              )}
+            </Button>
+          }
         >
           <FieldGroup>
             <Field><FieldLabel htmlFor="project-key">Project key</FieldLabel><Input id="project-key" {...form.register("key")} placeholder="TD" />{form.formState.errors.key?.message ? <FieldError>{form.formState.errors.key.message}</FieldError> : null}</Field>
