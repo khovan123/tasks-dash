@@ -1,4 +1,5 @@
 import {
+  BadRequestException,
   Controller,
   Get,
   Post,
@@ -6,12 +7,21 @@ import {
   Req,
   Res,
   UnauthorizedException,
+  Body,
+  Inject,
+  forwardRef,
 } from "@nestjs/common";
 import { ConfigService } from "@nestjs/config";
 import { InjectModel } from "@nestjs/mongoose";
 import { Model } from "mongoose";
-import { randomBytes } from "node:crypto";
+import { createHash, randomBytes } from "node:crypto";
 import type { Request, Response } from "express";
+import { MEMBER_INVITATION_STATUSES } from "@tasks-dash/contracts";
+import {
+  WorkspaceInvitationDocument,
+  WorkspaceInvitationHydratedDocument,
+} from "../members/workspace-invitation.schema";
+import { DiscordAdapter } from "../integrations/discord.adapter";
 import {
   AuthSession,
   CurrentSession,
@@ -68,7 +78,45 @@ export class AuthController {
     private readonly identities: Model<AuthIdentityHydratedDocument>,
     @InjectModel(IntegrationOauthStateDocument.name)
     private readonly oauthStates: Model<IntegrationOauthStateHydratedDocument>,
+    @InjectModel(WorkspaceInvitationDocument.name)
+    private readonly invitations: Model<WorkspaceInvitationHydratedDocument>,
+    @Inject(forwardRef(() => DiscordAdapter))
+    private readonly discord: DiscordAdapter,
   ) {}
+
+  @PublicRoute()
+  @Post("invite/validate-discord")
+  async validateDiscordUsername(
+    @Body("invite") inviteToken: string,
+    @Body("discordUsername") discordUsername: string,
+  ): Promise<{ ok: boolean }> {
+    if (!inviteToken || !discordUsername) {
+      throw new BadRequestException("Invite token and Discord username are required.");
+    }
+    const hash = createHash("sha256").update(inviteToken).digest("hex");
+    const invitation = await this.invitations
+      .findOne({
+        tokenHash: hash,
+        status: MEMBER_INVITATION_STATUSES.pending,
+        expiresAt: { $gt: new Date() },
+      })
+      .exec();
+    if (!invitation) {
+      throw new BadRequestException("Lời mời không hợp lệ hoặc đã hết hạn.");
+    }
+
+    const inGuild = await this.discord.checkMemberInGuild(
+      invitation.workspaceId,
+      discordUsername,
+    );
+    if (!inGuild) {
+      throw new BadRequestException(
+        "Không tìm thấy username Discord này trong Server. Vui lòng tham gia Server Discord của Workspace trước.",
+      );
+    }
+
+    return { ok: true };
+  }
 
   @PublicRoute()
   @Get("github/login")

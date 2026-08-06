@@ -866,6 +866,13 @@ export class DiscordAdapter {
     }
   }
 
+  async checkMemberInGuild(workspaceId: string, username: string): Promise<boolean> {
+    const workspace = await this.workspaces.findOne({ workspaceId, enabled: true }).exec();
+    if (!workspace) return true;
+    const discordUserId = await this.findGuildMemberId(workspace.guildId, username.trim());
+    return Boolean(discordUserId);
+  }
+
   async connect(
     workspaceId: string,
     dto: ConnectDiscordDto,
