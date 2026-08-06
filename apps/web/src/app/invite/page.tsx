@@ -2,11 +2,13 @@
 
 import { Suspense, useState } from "react";
 import { useSearchParams } from "next/navigation";
-import { Github, MailWarning, Loader2 } from "lucide-react";
+import { Github, MailWarning } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { apiRequest } from "@/lib/api/api-request";
+import { Spinner } from "@/components/ui/spinner";
+import { Loading } from "@/components/ui/loading";
 import {
   Card,
   CardContent,
@@ -48,7 +50,7 @@ function InvitePageContent() {
       console.error(err);
       setError(
         err.message ||
-        "Không thể xác thực tài khoản Discord. Vui lòng kiểm tra lại Username của bạn."
+          "Không thể xác thực tài khoản Discord. Vui lòng kiểm tra lại Username của bạn.",
       );
     } finally {
       setValidating(false);
@@ -98,11 +100,16 @@ function InvitePageContent() {
                 </div>
               )}
 
-              <Button asChild size="lg" className="w-full" disabled={!discordUsername.trim() || validating}>
+              <Button
+                asChild
+                size="lg"
+                className="w-full"
+                disabled={!discordUsername.trim() || validating}
+              >
                 <a href={loginUrl} onClick={handleNext}>
                   {validating ? (
                     <>
-                      <Loader2 className="size-4 animate-spin mr-2" /> Đang kiểm tra Discord...
+                      <Spinner className="mr-2" /> Đang kiểm tra Discord...
                     </>
                   ) : (
                     <>
@@ -117,10 +124,14 @@ function InvitePageContent() {
           )}
         </CardContent>
         <CardFooter className="justify-center text-center text-sm text-muted-foreground flex flex-col gap-2">
-          <p>Email GitHub đã xác minh phải trùng chính xác với email trong lời mời.</p>
+          <p>
+            Email GitHub đã xác minh phải trùng chính xác với email trong lời
+            mời.
+          </p>
           {valid && (
             <p className="text-xs text-primary font-semibold mt-2">
-              💡 Sau khi kết nối, Bot sẽ tự động phân vai trò tương ứng và giới hạn quyền truy cập các kênh dự án (Project Category) của bạn.
+              💡 Sau khi kết nối, Bot sẽ tự động phân vai trò tương ứng và giới
+              hạn quyền truy cập các kênh dự án (Project Category) của bạn.
             </p>
           )}
         </CardFooter>
@@ -131,11 +142,13 @@ function InvitePageContent() {
 
 export default function InvitePage() {
   return (
-    <Suspense fallback={
-      <main className="grid min-h-screen place-items-center bg-background/40">
-        <div className="text-sm text-muted-foreground animate-pulse">Đang tải thông tin lời mời...</div>
-      </main>
-    }>
+    <Suspense
+      fallback={
+        <main className="grid min-h-screen place-items-center bg-background/40">
+          <Loading message="Đang tải thông tin lời mời..." />
+        </main>
+      }
+    >
       <InvitePageContent />
     </Suspense>
   );
