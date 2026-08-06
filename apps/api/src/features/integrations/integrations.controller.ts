@@ -20,6 +20,7 @@ import {
   AuthSession,
   CurrentSession,
   PublicRoute,
+  RequireProjectAccess,
   RequireRoles,
   WorkspaceId,
 } from "../../common/auth-context";
@@ -49,22 +50,24 @@ export class IntegrationsController {
   ) {}
 
   @Get("github/status")
-  githubStatus(@WorkspaceId() workspaceId: string): Promise<Record<string, unknown>[]> {
+  githubStatus(
+    @WorkspaceId() workspaceId: string,
+  ): Promise<Record<string, unknown>[]> {
     return this.github.listStatus(workspaceId);
   }
 
   @Get("github/install")
-  @RequireRoles(MEMBER_ROLES.owner, MEMBER_ROLES.admin)
-  @Redirect()
+  @RequireRoles(MEMBER_ROLES.owner)
   async githubInstall(
     @WorkspaceId() workspaceId: string,
-  ): Promise<{ url: string; statusCode: number }> {
+    @Res() response: Response,
+  ): Promise<void> {
     const state = await this.states.create(workspaceId);
-    return { url: this.github.installationUrl(state), statusCode: 302 };
+    response.redirect(this.github.installationUrl(state));
   }
 
   @Get("github/setup")
-  @RequireRoles(MEMBER_ROLES.owner, MEMBER_ROLES.admin)
+  @RequireRoles(MEMBER_ROLES.owner)
   async githubSetup(
     @Query("installation_id") value: string,
     @Query("state") state: string,
@@ -73,7 +76,9 @@ export class IntegrationsController {
   ): Promise<void> {
     const id = Number(value);
     if (!Number.isSafeInteger(id) || id <= 0 || !state) {
-      throw new UnauthorizedException("A valid GitHub installation response is required.");
+      throw new UnauthorizedException(
+        "A valid GitHub installation response is required.",
+      );
     }
     const workspaceId = await this.states.consume(state);
     await this.github.connectInstallation(workspaceId, id, session.userId);
@@ -83,22 +88,30 @@ export class IntegrationsController {
   }
 
   @Get("github/repositories")
-  githubRepositories(@WorkspaceId() workspaceId: string): Promise<GithubRepositoryResponse[]> {
+  githubRepositories(
+    @WorkspaceId() workspaceId: string,
+  ): Promise<GithubRepositoryResponse[]> {
     return this.github.repositories(workspaceId);
   }
 
   @Patch("github/projects/:projectKey/repository")
-  @RequireRoles(MEMBER_ROLES.owner, MEMBER_ROLES.admin, MEMBER_ROLES.projectLead)
+  @RequireProjectAccess()
+  @RequireRoles(MEMBER_ROLES.owner)
   linkGithubRepository(
     @WorkspaceId() workspaceId: string,
     @Param("projectKey") projectKey: string,
     @Body() body: LinkGithubRepositoryDto,
   ): Promise<Record<string, unknown>> {
-    return this.github.linkProjectRepository(workspaceId, projectKey, body.repositoryId);
+    return this.github.linkProjectRepository(
+      workspaceId,
+      projectKey,
+      body.repositoryId,
+    );
   }
 
   @Delete("github/projects/:projectKey/repository")
-  @RequireRoles(MEMBER_ROLES.owner, MEMBER_ROLES.admin, MEMBER_ROLES.projectLead)
+  @RequireProjectAccess()
+  @RequireRoles(MEMBER_ROLES.owner)
   unlinkGithubRepository(
     @WorkspaceId() workspaceId: string,
     @Param("projectKey") projectKey: string,
@@ -108,9 +121,12 @@ export class IntegrationsController {
 
   @PublicRoute()
   @Post("github/webhook")
-  githubWebhook(@Req() request: RawBodyRequest<Request>): Promise<Record<string, unknown>> {
+  githubWebhook(
+    @Req() request: RawBodyRequest<Request>,
+  ): Promise<Record<string, unknown>> {
     const delivery = String(request.headers["x-github-delivery"] ?? "");
-    if (!delivery) throw new UnauthorizedException("GitHub delivery id is required.");
+    if (!delivery)
+      throw new UnauthorizedException("GitHub delivery id is required.");
     this.webhook.verify(
       request.rawBody,
       request.headers["x-hub-signature-256"] as string | undefined,
@@ -123,19 +139,50 @@ export class IntegrationsController {
   }
 
   @Get("discord/workspace/status")
-  discordWorkspaceStatus(@WorkspaceId() workspaceId: string): Promise<Record<string, unknown>> {
+  discordWorkspaceStatus(
+    @WorkspaceId() workspaceId: string,
+  ): Promise<Record<string, unknown>> {
     return this.discord.workspaceStatus(workspaceId);
   }
 
   @Get("discord/install")
-  @RequireRoles(MEMBER_ROLES.owner, MEMBER_ROLES.admin)
-  @Redirect()
-  discordInstall(): { url: string; statusCode: number } {
-    return { url: this.discord.installUrl(), statusCode: 302 };
+  @RequireRoles(MEMBER_ROLES.owner)
+  async discordInstall(
+    @WorkspaceId() workspaceId: string,
+    @Res() response: Response,
+  ): Promise<void> {
+    const state = await this.states.create(workspaceId);
+    response.redirect(this.discord.installUrl(state));
+  }
+
+  @Get("discord/setup")
+  @RequireRoles(MEMBER_ROLES.owner)
+  async discordSetup(
+    @Query("guild_id") guildId: string,
+    @Query("state") state: string,
+    @Res() response: Response,
+  ): Promise<void> {
+    const webAppUrl = this.config.getOrThrow<string>("WEB_APP_URL");
+    if (!guildId || !state) {
+      return response.redirect(
+        `${webAppUrl}/settings/integrations?discord=error`,
+      );
+    }
+    try {
+      const workspaceId = await this.states.consume(state);
+      await this.discord.configureWorkspace(workspaceId, { guildId });
+      return response.redirect(
+        `${webAppUrl}/settings/integrations?discord=connected`,
+      );
+    } catch {
+      return response.redirect(
+        `${webAppUrl}/settings/integrations?discord=error`,
+      );
+    }
   }
 
   @Post("discord/workspace/configure")
-  @RequireRoles(MEMBER_ROLES.owner, MEMBER_ROLES.admin)
+  @RequireRoles(MEMBER_ROLES.owner)
   discordConfigureWorkspace(
     @WorkspaceId() workspaceId: string,
     @Body() body: ConfigureDiscordWorkspaceDto,
@@ -144,13 +191,22 @@ export class IntegrationsController {
   }
 
   @Post("discord/workspace/provision-all")
-  @RequireRoles(MEMBER_ROLES.owner, MEMBER_ROLES.admin)
+  @RequireRoles(MEMBER_ROLES.owner)
   discordProvisionAll(@WorkspaceId() workspaceId: string) {
     return this.discord.provisionAll(workspaceId);
   }
 
+  @Delete("discord/workspace/channels")
+  @RequireRoles(MEMBER_ROLES.owner)
+  discordCleanWorkspaceChannels(
+    @WorkspaceId() workspaceId: string,
+  ): Promise<{ deletedChannelsCount: number; deletedCategoriesCount: number }> {
+    return this.discord.cleanGuildChannels(workspaceId);
+  }
+
   @Post("discord/projects/:projectKey/provision")
-  @RequireRoles(MEMBER_ROLES.owner, MEMBER_ROLES.admin, MEMBER_ROLES.projectLead)
+  @RequireProjectAccess()
+  @RequireRoles(MEMBER_ROLES.owner)
   discordProvisionProject(
     @WorkspaceId() workspaceId: string,
     @Param("projectKey") projectKey: string,
@@ -160,12 +216,14 @@ export class IntegrationsController {
   }
 
   @Get("discord/status")
-  discordStatus(@WorkspaceId() workspaceId: string): Promise<Record<string, unknown>[]> {
+  discordStatus(
+    @WorkspaceId() workspaceId: string,
+  ): Promise<Record<string, unknown>[]> {
     return this.discord.list(workspaceId);
   }
 
   @Post("discord/connect")
-  @RequireRoles(MEMBER_ROLES.owner, MEMBER_ROLES.admin, MEMBER_ROLES.projectLead)
+  @RequireRoles(MEMBER_ROLES.owner)
   discordConnect(
     @WorkspaceId() workspaceId: string,
     @Body() body: ConnectDiscordDto,
@@ -174,7 +232,8 @@ export class IntegrationsController {
   }
 
   @Delete("discord/projects/:projectKey")
-  @RequireRoles(MEMBER_ROLES.owner, MEMBER_ROLES.admin, MEMBER_ROLES.projectLead)
+  @RequireProjectAccess()
+  @RequireRoles(MEMBER_ROLES.owner)
   async discordDisconnect(
     @WorkspaceId() workspaceId: string,
     @Param("projectKey") projectKey: string,
@@ -182,14 +241,29 @@ export class IntegrationsController {
     await this.discord.disconnect(workspaceId, projectKey);
   }
 
+  @Get("discord/projects/:projectKey/channels")
+  @RequireProjectAccess()
+  discordProjectChannels(
+    @WorkspaceId() workspaceId: string,
+    @Param("projectKey") projectKey: string,
+  ): Promise<Array<{ id: string; name: string }>> {
+    return this.discord.getProjectChannels(workspaceId, projectKey);
+  }
+
   @Post("discord/projects/:projectKey/test")
-  @RequireRoles(MEMBER_ROLES.owner, MEMBER_ROLES.admin, MEMBER_ROLES.projectLead)
+  @RequireProjectAccess()
+  @RequireRoles(MEMBER_ROLES.owner)
   async discordTest(
     @WorkspaceId() workspaceId: string,
     @Param("projectKey") projectKey: string,
     @Body() body: DiscordMessageDto,
   ): Promise<{ delivered: boolean }> {
-    await this.discord.send(workspaceId, projectKey, body.title, body.description);
+    await this.discord.send(
+      workspaceId,
+      projectKey,
+      body.title,
+      body.description,
+    );
     return { delivered: true };
   }
 }

@@ -7,9 +7,10 @@ import {
   type MemberRole,
 } from "@tasks-dash/contracts";
 import { useRouter } from "next/navigation";
-import { FormProvider, useForm } from "react-hook-form";
+import { Controller, FormProvider, useForm } from "react-hook-form";
 import { useState } from "react";
 import { MailPlus, RefreshCw, Trash2, UserMinus } from "lucide-react";
+import { RoleBadge } from "@/components/role-badge";
 import {
   InviteMemberValues,
   inviteMemberSchema,
@@ -35,9 +36,18 @@ import {
 } from "@/components/ui/field";
 import { Input } from "@/components/ui/input";
 import {
-  NativeSelect,
-  NativeSelectOption,
-} from "@/components/ui/native-select";
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
+import {
+  Tabs,
+  TabsContent,
+  TabsList,
+  TabsTrigger,
+} from "@/components/ui/tabs";
 
 interface WorkspaceMember {
   _id: string;
@@ -78,7 +88,7 @@ export function WorkspaceMembersManager({
   const [busyId, setBusyId] = useState<string | null>(null);
   const form = useForm<InviteMemberValues>({
     resolver: zodResolver(inviteMemberSchema),
-    defaultValues: { email: "", role: MEMBER_ROLES.member },
+    defaultValues: { email: "", role: MEMBER_ROLES.viewer },
   });
 
   async function runAction(id: string, action: () => Promise<void>): Promise<void> {
@@ -101,7 +111,7 @@ export function WorkspaceMembersManager({
         method: "POST",
         body: JSON.stringify(values),
       });
-      form.reset({ email: "", role: MEMBER_ROLES.member });
+      form.reset({ email: "", role: MEMBER_ROLES.viewer });
       router.refresh();
     } catch (error) {
       form.setError("root", {
@@ -111,7 +121,7 @@ export function WorkspaceMembersManager({
   }
 
   return (
-    <div className="space-y-6">
+    <div className="flex flex-col gap-6">
       <FormProvider {...form}>
         <form onSubmit={form.handleSubmit(invite)} noValidate>
           <FormCard
@@ -119,7 +129,7 @@ export function WorkspaceMembersManager({
             title="Mời thành viên qua email"
             footer={
               <Button disabled={form.formState.isSubmitting}>
-                <MailPlus />
+                <MailPlus data-icon="inline-start" />
                 {form.formState.isSubmitting ? "Đang gửi…" : "Gửi lời mời"}
               </Button>
             }
@@ -130,12 +140,30 @@ export function WorkspaceMembersManager({
                 <Input id="member-email" type="email" {...form.register("email")} placeholder="member@company.com" />
               </Field>
               <Field>
-                <FieldLabel htmlFor="member-role">Role</FieldLabel>
-                <NativeSelect id="member-role" {...form.register("role")}>
-                  {Object.values(MEMBER_ROLES).map((role) => (
-                    <NativeSelectOption key={role} value={role}>{role}</NativeSelectOption>
-                  ))}
-                </NativeSelect>
+                <FieldLabel htmlFor="member-role">Vai trò</FieldLabel>
+                <Controller
+                  control={form.control}
+                  name="role"
+                  render={({ field }) => (
+                    <Select
+                      onValueChange={field.onChange}
+                      value={field.value}
+                    >
+                      <SelectTrigger id="member-role" className="w-full">
+                        <SelectValue placeholder="Chọn vai trò" />
+                      </SelectTrigger>
+                      <SelectContent>
+                        {Object.values(MEMBER_ROLES)
+                          .filter((role) => role !== MEMBER_ROLES.owner)
+                          .map((role) => (
+                            <SelectItem key={role} value={role}>
+                              <RoleBadge role={role} className="border-none shadow-none bg-transparent p-0 dark:bg-transparent" />
+                            </SelectItem>
+                          ))}
+                      </SelectContent>
+                    </Select>
+                  )}
+                />
               </Field>
             </FieldGroup>
             {form.formState.errors.root?.message ? (
@@ -154,115 +182,137 @@ export function WorkspaceMembersManager({
 
       <Card>
         <CardHeader>
-          <SectionHeading eyebrow="Workspace members" title="Thành viên hiện tại" meta={`${members.length} members`} />
-        </CardHeader>
-        <CardContent className="grid gap-3">
-          {members.map((member) => (
-            <article className="grid gap-3 rounded-lg border p-3 md:grid-cols-[minmax(240px,1fr)_minmax(150px,220px)_auto_auto] md:items-center" key={member._id}>
-              <div className="flex min-w-0 items-center gap-3">
-                <Avatar>
-                  <AvatarImage src={member.avatarUrl} alt={member.name} />
-                  <AvatarFallback>{initials(member.name)}</AvatarFallback>
-                </Avatar>
-                <div className="min-w-0">
-                  <strong className="block truncate">{member.name}</strong>
-                  <span className="block truncate text-sm text-muted-foreground">{member.email}</span>
-                </div>
-              </div>
-              <NativeSelect
-                value={member.role}
-                disabled={busyId === member._id}
-                onChange={(event) =>
-                  void runAction(member._id, async () => {
-                    await apiRequest(`/api/workspace/members/${member._id}/role`, {
-                      method: "PATCH",
-                      body: JSON.stringify({ role: event.target.value as MemberRole }),
-                    });
-                  })
-                }
-              >
-                {Object.values(MEMBER_ROLES).map((role) => (
-                  <NativeSelectOption key={role} value={role}>{role}</NativeSelectOption>
-                ))}
-              </NativeSelect>
-              <Badge variant="info">{member.status}</Badge>
-              <Button
-                variant="destructive"
-                size="sm"
-                type="button"
-                disabled={busyId === member._id}
-                onClick={() =>
-                  void runAction(member._id, async () => {
-                    await apiRequest(`/api/workspace/members/${member._id}`, { method: "DELETE" });
-                  })
-                }
-              >
-                <UserMinus /> Xóa
-              </Button>
-            </article>
-          ))}
-        </CardContent>
-      </Card>
-
-      <Card>
-        <CardHeader>
-          <SectionHeading eyebrow="Invitation queue" title="Lời mời" meta={`${invitations.length} invitations`} />
+          <SectionHeading eyebrow="Workspace directory" title="Thành viên và lời mời" meta={`${members.length + invitations.length} records`} />
         </CardHeader>
         <CardContent>
-          {invitations.length === 0 ? (
-            <Empty>
-              <EmptyHeader>
-                <EmptyTitle>Chưa có lời mời</EmptyTitle>
-                <EmptyDescription>Invitation mới sẽ xuất hiện tại đây.</EmptyDescription>
-              </EmptyHeader>
-            </Empty>
-          ) : (
-            <div className="grid gap-3">
-              {invitations.map((invite) => (
-                <article className="grid gap-3 rounded-lg border p-3 md:grid-cols-[minmax(240px,1fr)_auto_auto] md:items-center" key={invite._id}>
-                  <div>
-                    <strong className="block">{invite.email}</strong>
-                    <span className="text-sm text-muted-foreground">
-                      {invite.role} · hết hạn {new Date(invite.expiresAt).toLocaleString("vi-VN")}
-                    </span>
-                  </div>
-                  <Badge variant={invite.status === MEMBER_INVITATION_STATUSES.pending ? "warning" : "secondary"}>
-                    {invite.status}
-                  </Badge>
-                  {invite.status === MEMBER_INVITATION_STATUSES.pending ? (
-                    <div className="flex flex-wrap gap-2">
-                      <Button
-                        variant="outline"
-                        size="sm"
-                        type="button"
-                        disabled={busyId === invite._id}
-                        onClick={() =>
-                          void runAction(invite._id, async () => {
-                            await apiRequest(`/api/workspace/invitations/${invite._id}/resend`, { method: "POST" });
-                          })
-                        }
-                      >
-                        <RefreshCw /> Gửi lại
-                      </Button>
-                      <Button
-                        variant="destructive"
-                        size="sm"
-                        type="button"
-                        disabled={busyId === invite._id}
-                        onClick={() =>
-                          void runAction(invite._id, async () => {
-                            await apiRequest(`/api/workspace/invitations/${invite._id}`, { method: "DELETE" });
-                          })
-                        }
-                      >
-                        <Trash2 /> Thu hồi
-                      </Button>
+          <Tabs defaultValue="members">
+            <TabsList>
+              <TabsTrigger value="members">Members</TabsTrigger>
+              <TabsTrigger value="invitations">Invitations</TabsTrigger>
+            </TabsList>
+            <TabsContent value="members">
+              <div className="grid gap-3">
+                {members.map((member) => (
+                  <article className="grid gap-3 rounded-lg border p-3 md:grid-cols-[minmax(240px,1fr)_minmax(150px,220px)_auto_auto] md:items-center" key={member._id}>
+                    <div className="flex min-w-0 items-center gap-3">
+                      <Avatar>
+                        <AvatarImage src={member.avatarUrl} alt={member.name} />
+                        <AvatarFallback>{initials(member.name)}</AvatarFallback>
+                      </Avatar>
+                      <div className="min-w-0">
+                        <strong className="block truncate">{member.name}</strong>
+                        <span className="block truncate text-sm text-muted-foreground">{member.email}</span>
+                      </div>
                     </div>
-                  ) : null}
-                </article>
-              ))}
-            </div>
-          )}
+                    {member.role === MEMBER_ROLES.owner ? (
+                      <div className="w-full max-w-[220px]">
+                        <RoleBadge role={member.role} />
+                      </div>
+                    ) : (
+                      <Select
+                        value={member.role}
+                        disabled={busyId === member._id}
+                        onValueChange={(val) =>
+                          void runAction(member._id, async () => {
+                            await apiRequest(`/api/workspace/members/${member._id}/role`, {
+                              method: "PATCH",
+                              body: JSON.stringify({ role: val as MemberRole }),
+                            });
+                          })
+                        }
+                      >
+                        <SelectTrigger className="w-full">
+                          <SelectValue />
+                        </SelectTrigger>
+                         <SelectContent>
+                          {Object.values(MEMBER_ROLES)
+                            .filter((role) => role !== MEMBER_ROLES.owner)
+                            .map((role) => (
+                              <SelectItem key={role} value={role}>
+                                <RoleBadge role={role} className="border-none shadow-none bg-transparent p-0 dark:bg-transparent" />
+                              </SelectItem>
+                            ))}
+                        </SelectContent>
+                      </Select>
+                    )}
+                    <Badge variant="info">{member.status}</Badge>
+                    <Button
+                      variant="destructive"
+                      size="sm"
+                      type="button"
+                      disabled={busyId === member._id || member.role === MEMBER_ROLES.owner}
+                      onClick={() =>
+                        void runAction(member._id, async () => {
+                          await apiRequest(`/api/workspace/members/${member._id}`, { method: "DELETE" });
+                        })
+                      }
+                    >
+                      <UserMinus data-icon="inline-start" /> Xóa
+                    </Button>
+                  </article>
+                ))}
+              </div>
+            </TabsContent>
+            <TabsContent value="invitations">
+              {invitations.length === 0 ? (
+                <Empty>
+                  <EmptyHeader>
+                    <EmptyTitle>Chưa có lời mời</EmptyTitle>
+                    <EmptyDescription>Invitation mới sẽ xuất hiện tại đây.</EmptyDescription>
+                  </EmptyHeader>
+                </Empty>
+              ) : (
+                <div className="grid gap-3">
+                  {invitations.map((invite) => (
+                    <article className="grid gap-3 rounded-lg border p-3 md:grid-cols-[minmax(240px,1fr)_auto_auto] md:items-center" key={invite._id}>
+                      <div className="flex flex-col gap-1">
+                        <strong className="block">{invite.email}</strong>
+                        <div className="flex items-center gap-2 mt-1">
+                          <RoleBadge role={invite.role} />
+                          <span className="text-xs text-muted-foreground">
+                            · hết hạn {new Date(invite.expiresAt).toLocaleString("vi-VN")}
+                          </span>
+                        </div>
+                      </div>
+                      <Badge variant={invite.status === MEMBER_INVITATION_STATUSES.pending ? "warning" : "secondary"}>
+                        {invite.status}
+                      </Badge>
+                      {invite.status === MEMBER_INVITATION_STATUSES.pending ? (
+                        <div className="flex flex-wrap gap-2">
+                          <Button
+                            variant="outline"
+                            size="sm"
+                            type="button"
+                            disabled={busyId === invite._id}
+                            onClick={() =>
+                              void runAction(invite._id, async () => {
+                                await apiRequest(`/api/workspace/invitations/${invite._id}/resend`, { method: "POST" });
+                              })
+                            }
+                          >
+                            <RefreshCw data-icon="inline-start" /> Gửi lại
+                          </Button>
+                          <Button
+                            variant="destructive"
+                            size="sm"
+                            type="button"
+                            disabled={busyId === invite._id}
+                            onClick={() =>
+                              void runAction(invite._id, async () => {
+                                await apiRequest(`/api/workspace/invitations/${invite._id}`, { method: "DELETE" });
+                              })
+                            }
+                          >
+                            <Trash2 data-icon="inline-start" /> Thu hồi
+                          </Button>
+                        </div>
+                      ) : null}
+                    </article>
+                  ))}
+                </div>
+              )}
+            </TabsContent>
+          </Tabs>
         </CardContent>
       </Card>
     </div>

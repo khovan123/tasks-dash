@@ -1,7 +1,11 @@
 import { Body, Controller, Get, Injectable, Param, Put } from "@nestjs/common";
 import { InjectModel } from "@nestjs/mongoose";
 import { Model } from "mongoose";
-import { RequireRoles, WorkspaceId } from "../../common/auth-context";
+import {
+  RequireProjectAccess,
+  RequireRoles,
+  WorkspaceId,
+} from "../../common/auth-context";
 import { MEMBER_ROLES } from "@tasks-dash/contracts";
 import { WorkflowDocument, WorkflowHydratedDocument } from "./workflows.schema";
 
@@ -18,10 +22,11 @@ export class WorkflowsService {
   }
 }
 @Controller("projects/:projectKey/workflow")
+@RequireProjectAccess()
 export class WorkflowsController {
   constructor(private readonly service: WorkflowsService) {}
   @Get() get(@Param("projectKey") key: string, @WorkspaceId() workspaceId: string) { return this.service.get(workspaceId, key); }
   @Put()
-  @RequireRoles(MEMBER_ROLES.owner, MEMBER_ROLES.admin, MEMBER_ROLES.projectLead)
+  @RequireRoles(MEMBER_ROLES.owner)
   update(@Param("projectKey") key: string, @Body() body: Partial<WorkflowDocument>, @WorkspaceId() workspaceId: string) { return this.service.upsert(workspaceId, key, body); }
 }

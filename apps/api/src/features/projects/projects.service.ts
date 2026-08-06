@@ -6,6 +6,7 @@ import {
 import { EventEmitter2 } from "@nestjs/event-emitter";
 import { InjectModel } from "@nestjs/mongoose";
 import { Model } from "mongoose";
+import { MemberRole, MEMBER_ROLES } from "@tasks-dash/contracts";
 import { Project } from "./project.domain";
 import {
   ProjectDocument,
@@ -15,6 +16,12 @@ import { CreateProjectDto } from "./projects.dto";
 
 export const PROJECT_CREATED_EVENT = "projects.created";
 export interface ProjectCreatedEvent {
+  workspaceId: string;
+  projectKey: string;
+}
+
+export const PROJECT_DELETED_EVENT = "projects.deleted";
+export interface ProjectDeletedEvent {
   workspaceId: string;
   projectKey: string;
 }
@@ -41,7 +48,10 @@ export class ProjectsService {
     if (exists) {
       throw new ConflictException(`Project key ${project.key} already exists.`);
     }
-    const created = await this.projects.create(project);
+    const created = await this.projects.create({
+      ...project,
+      memberIds: [actorId],
+    });
     try {
       await this.events.emitAsync(PROJECT_CREATED_EVENT, {
         workspaceId,
@@ -54,8 +64,36 @@ export class ProjectsService {
     return created;
   }
 
-  list(workspaceId: string): Promise<ProjectHydratedDocument[]> {
-    return this.projects.find({ workspaceId }).sort({ name: 1 }).exec();
+  async updateMembers(
+    workspaceId: string,
+    key: string,
+    memberIds: string[],
+  ): Promise<ProjectHydratedDocument> {
+    const project = await this.getByKey(workspaceId, key);
+    project.memberIds = memberIds;
+    await project.save();
+    return project;
+  }
+
+  list(
+    workspaceId: string,
+    memberId?: string,
+    role?: MemberRole,
+  ): Promise<ProjectHydratedDocument[]> {
+    if (
+      memberId === undefined ||
+      role === undefined ||
+      role === MEMBER_ROLES.owner
+    ) {
+      return this.projects.find({ workspaceId }).sort({ name: 1 }).exec();
+    }
+    return this.projects
+      .find({
+        workspaceId,
+        $or: [{ memberIds: memberId }, { leadId: memberId }],
+      })
+      .sort({ name: 1 })
+      .exec();
   }
 
   async getByKey(
@@ -143,5 +181,40 @@ export class ProjectsService {
       .exec();
     if (!project) throw new NotFoundException(`Project ${key} was not found.`);
     return project.sequence;
+  }
+
+  async update(
+    workspaceId: string,
+    key: string,
+    dto: { name?: string; description?: string; color?: string },
+  ): Promise<ProjectHydratedDocument> {
+    const project = await this.getByKey(workspaceId, key);
+    if (dto.name !== undefined) project.name = dto.name.trim();
+    if (dto.description !== undefined) project.description = dto.description.trim();
+    if (dto.color !== undefined) project.color = dto.color;
+    await project.save();
+    return project;
+  }
+
+  async delete(
+    workspaceId: string,
+    key: string,
+  ): Promise<{ ok: boolean }> {
+    const normalizedKey = key.toUpperCase();
+    const result = await this.projects
+      .deleteOne({ workspaceId, key: normalizedKey })
+      .exec();
+    if (result.deletedCount === 0) {
+      throw new NotFoundException(`Project ${normalizedKey} was not found.`);
+    }
+    try {
+      await this.events.emitAsync(PROJECT_DELETED_EVENT, {
+        workspaceId,
+        projectKey: normalizedKey,
+      } satisfies ProjectDeletedEvent);
+    } catch {
+      // ignore event emission failure to keep deletion resilient
+    }
+    return { ok: true };
   }
 }

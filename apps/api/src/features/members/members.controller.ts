@@ -42,7 +42,7 @@ export class MembersController {
   }
 
   @Post("invitations")
-  @RequireRoles(MEMBER_ROLES.owner, MEMBER_ROLES.admin)
+  @RequireRoles(MEMBER_ROLES.owner)
   invite(
     @WorkspaceId() workspaceId: string,
     @CurrentSession() session: AuthSession,
@@ -52,7 +52,7 @@ export class MembersController {
   }
 
   @Post("invitations/:invitationId/resend")
-  @RequireRoles(MEMBER_ROLES.owner, MEMBER_ROLES.admin)
+  @RequireRoles(MEMBER_ROLES.owner)
   resend(
     @WorkspaceId() workspaceId: string,
     @Param("invitationId") invitationId: string,
@@ -61,7 +61,7 @@ export class MembersController {
   }
 
   @Delete("invitations/:invitationId")
-  @RequireRoles(MEMBER_ROLES.owner, MEMBER_ROLES.admin)
+  @RequireRoles(MEMBER_ROLES.owner)
   revoke(
     @WorkspaceId() workspaceId: string,
     @Param("invitationId") invitationId: string,
@@ -70,7 +70,7 @@ export class MembersController {
   }
 
   @Patch("members/:memberId/role")
-  @RequireRoles(MEMBER_ROLES.owner, MEMBER_ROLES.admin)
+  @RequireRoles(MEMBER_ROLES.owner)
   updateRole(
     @WorkspaceId() workspaceId: string,
     @CurrentSession() session: AuthSession,
@@ -86,7 +86,7 @@ export class MembersController {
   }
 
   @Delete("members/:memberId")
-  @RequireRoles(MEMBER_ROLES.owner, MEMBER_ROLES.admin)
+  @RequireRoles(MEMBER_ROLES.owner)
   removeMember(
     @WorkspaceId() workspaceId: string,
     @CurrentSession() session: AuthSession,

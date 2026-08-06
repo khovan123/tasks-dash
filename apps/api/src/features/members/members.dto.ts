@@ -11,7 +11,7 @@ import { MemberRole, MEMBER_ROLES } from "@tasks-dash/contracts";
 
 export class InviteWorkspaceMemberDto {
   @IsEmail() @MaxLength(254) email!: string;
-  @IsIn(Object.values(MEMBER_ROLES)) role: MemberRole = MEMBER_ROLES.member;
+  @IsIn(Object.values(MEMBER_ROLES)) role: MemberRole = MEMBER_ROLES.viewer;
 }
 
 export class UpdateWorkspaceMemberRoleDto {

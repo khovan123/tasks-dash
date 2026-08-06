@@ -11,6 +11,7 @@ import { MEMBER_ROLES } from "@tasks-dash/contracts";
 import {
   AuthSession,
   CurrentSession,
+  RequireProjectAccess,
   RequireRoles,
   WorkspaceId,
 } from "../../common/auth-context";
@@ -21,6 +22,7 @@ import {
 import { DesignCatalogService } from "./design-catalog.service";
 
 @Controller("projects/:projectKey/design-catalog")
+@RequireProjectAccess()
 export class DesignCatalogController {
   constructor(private readonly service: DesignCatalogService) {}
 
@@ -35,9 +37,7 @@ export class DesignCatalogController {
   @Post()
   @RequireRoles(
     MEMBER_ROLES.owner,
-    MEMBER_ROLES.admin,
-    MEMBER_ROLES.projectLead,
-    MEMBER_ROLES.member,
+    MEMBER_ROLES.designer,
   )
   create(
     @WorkspaceId() workspaceId: string,
@@ -56,9 +56,7 @@ export class DesignCatalogController {
   @Patch(":itemId")
   @RequireRoles(
     MEMBER_ROLES.owner,
-    MEMBER_ROLES.admin,
-    MEMBER_ROLES.projectLead,
-    MEMBER_ROLES.member,
+    MEMBER_ROLES.designer,
   )
   update(
     @WorkspaceId() workspaceId: string,
@@ -72,8 +70,7 @@ export class DesignCatalogController {
   @Delete(":itemId")
   @RequireRoles(
     MEMBER_ROLES.owner,
-    MEMBER_ROLES.admin,
-    MEMBER_ROLES.projectLead,
+    MEMBER_ROLES.designer,
   )
   remove(
     @WorkspaceId() workspaceId: string,
