@@ -211,23 +211,46 @@ export class DocumentsService {
     };
   }
 
+  private async sendDocLog(channelId: string, title: string, description: string, color = 0x3b82f6) {
+    try {
+      await this.botRequest(`/channels/${channelId}/messages`, {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({
+          embeds: [
+            {
+              title,
+              description,
+              color,
+              timestamp: new Date().toISOString(),
+            },
+          ],
+          allowed_mentions: { parse: [] },
+        }),
+      });
+    } catch (e) {
+      console.error("Failed to send doc log to Discord:", e);
+    }
+  }
+
   async createFolder(
     workspaceId: string,
     projectKey: string,
     actorId: string,
     dto: CreateDocumentFolderDto,
   ): Promise<Record<string, unknown>> {
-    const project = await this.projects.getByKey(workspaceId, projectKey);
+    const context = await this.projectContext(workspaceId, projectKey);
     const parentFolderId = dto.parentFolderId?.trim() || undefined;
-    if (parentFolderId) await this.folderById(workspaceId, project.key, parentFolderId);
+    if (parentFolderId) await this.folderById(workspaceId, context.project.key, parentFolderId);
     try {
       const folder = await this.folders.create({
         workspaceId,
-        projectKey: project.key,
+        projectKey: context.project.key,
         parentFolderId,
         name: dto.name.trim(),
         createdByMemberId: actorId,
       });
+      await this.sendDocLog(context.channelId, "Folder Created", `📁 Folder **${folder.name}** was created.`);
       return { id: String(folder._id), name: folder.name, parentFolderId: folder.parentFolderId ?? null };
     } catch (error) {
       if ((error as { code?: number }).code === 11000) {
@@ -243,13 +266,16 @@ export class DocumentsService {
     folderId: string,
     dto: RenameDocumentFolderDto,
   ): Promise<Record<string, unknown>> {
+    const context = await this.projectContext(workspaceId, projectKey);
     const folder = await this.folderById(workspaceId, projectKey, folderId);
     folder.name = dto.name.trim();
     await folder.save();
+    await this.sendDocLog(context.channelId, "Folder Renamed", `📁 Folder renamed to **${folder.name}**.`);
     return { id: String(folder._id), name: folder.name };
   }
 
   async deleteFolder(workspaceId: string, projectKey: string, folderId: string): Promise<void> {
+    const context = await this.projectContext(workspaceId, projectKey);
     const folder = await this.folderById(workspaceId, projectKey, folderId);
     const containsItems = await Promise.all([
       this.folders.exists({ workspaceId, projectKey: projectKey.toUpperCase(), parentFolderId: String(folder._id) }),
@@ -259,6 +285,7 @@ export class DocumentsService {
       throw new ConflictException("Only empty document folders can be deleted.");
     }
     await this.folders.deleteOne({ _id: folder._id }).exec();
+    await this.sendDocLog(context.channelId, "Folder Deleted", `❌ Folder **${folder.name}** was deleted.`);
   }
 
   private async uploadMessage(
@@ -325,6 +352,11 @@ export class DocumentsService {
       if (updated.modifiedCount !== 1) {
         throw new ConflictException("Another document version was uploaded at the same time. Retry the upload.");
       }
+      await this.sendDocLog(
+        context.channelId,
+        previousVersion === 0 ? "Document Uploaded" : "New Document Version",
+        `📄 **${document.name}** (v${nextVersion}) was stored successfully.`,
+      );
       return {
         documentId: String(document._id),
         version: version.version,
@@ -386,6 +418,7 @@ export class DocumentsService {
     actorId: string,
     dto: UpdateDocumentDto,
   ): Promise<Record<string, unknown>> {
+    const context = await this.projectContext(workspaceId, projectKey);
     const document = await this.documentById(workspaceId, projectKey, documentId);
     if (dto.folderId !== undefined) {
       const folderId = dto.folderId.trim() || undefined;
@@ -397,10 +430,12 @@ export class DocumentsService {
     if (dto.tags !== undefined) document.tags = dto.tags.map((tag) => tag.trim()).filter(Boolean);
     document.updatedByMemberId = actorId;
     await document.save();
+    await this.sendDocLog(context.channelId, "Document Updated", `📄 Document **${document.name}** details were updated.`);
     return { id: String(document._id), name: document.name, folderId: document.folderId ?? null, tags: document.tags };
   }
 
   async deleteDocument(workspaceId: string, projectKey: string, documentId: string): Promise<void> {
+    const context = await this.projectContext(workspaceId, projectKey);
     const document = await this.documentById(workspaceId, projectKey, documentId);
     const versions = await this.versions.find({ workspaceId, documentId: String(document._id) }).exec();
     for (const version of versions) {
@@ -408,6 +443,7 @@ export class DocumentsService {
     }
     await this.versions.deleteMany({ workspaceId, documentId: String(document._id) }).exec();
     await this.documents.deleteOne({ _id: document._id }).exec();
+    await this.sendDocLog(context.channelId, "Document Deleted", `❌ Document **${document.name}** was deleted.`);
   }
 
   async downloadUrl(workspaceId: string, projectKey: string, documentId: string): Promise<string> {

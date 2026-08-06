@@ -3,6 +3,8 @@ import {
   ForbiddenException,
   Injectable,
   NotFoundException,
+  Inject,
+  forwardRef,
 } from "@nestjs/common";
 import { InjectModel } from "@nestjs/mongoose";
 import { Model } from "mongoose";
@@ -29,6 +31,8 @@ import {
   WorkItemHydratedDocument,
 } from "./work-item.schema";
 import { CreateWorkItemDto, ReorderWorkItemsDto, UpdateWorkItemDto } from "./work-items.dto";
+import { DiscordAdapter } from "../integrations/discord.adapter";
+import { TaskDiscordLogDocument, TaskDiscordLogHydratedDocument } from "../integrations/integration.schemas";
 
 export interface GithubCommitLinkInput {
   sha: string;
@@ -70,6 +74,10 @@ export class WorkItemsService {
     private readonly projects: ProjectsService,
     private readonly workflows: WorkflowsService,
     private readonly events: EventEmitter2,
+    @Inject(forwardRef(() => DiscordAdapter))
+    private readonly discord: DiscordAdapter,
+    @InjectModel(TaskDiscordLogDocument.name)
+    private readonly taskLogs: Model<TaskDiscordLogHydratedDocument>,
   ) {}
 
   private async ensureWorkflow(workspaceId: string, projectKey: string) {
@@ -186,6 +194,25 @@ export class WorkItemsService {
       title: item.summary,
     });
 
+    // Log to Discord #tasks channel
+    try {
+      const integration = await this.discord.getProjectIntegration(workspaceId, key);
+      if (integration?.channelId) {
+        const msgId = await this.discord.sendToChannel(integration.channelId, {
+          title: `Task Created: ${item.key}`,
+          description: `**Summary:** ${item.summary}\n**Type:** ${item.type}\n**Priority:** ${item.priority}`,
+          color: 0x238636,
+        });
+        await this.taskLogs.create({
+          workItemKey: item.key,
+          discordMessageId: msgId,
+          discordChannelId: integration.channelId,
+        });
+      }
+    } catch (e) {
+      console.error("Failed to log task creation to Discord:", e);
+    }
+
     return item;
   }
 
@@ -275,6 +302,20 @@ export class WorkItemsService {
       workItemKey: item.key,
       title: item.summary,
     });
+
+    // Log transition to Discord #tasks channel as reply
+    try {
+      const log = await this.taskLogs.findOne({ workItemKey: item.key }).exec();
+      if (log) {
+        await this.discord.sendThreadReply(log.discordChannelId, log.discordMessageId, {
+          title: `Task Transitioned: ${item.key}`,
+          description: `Status changed to **${target.name}**`,
+          color: 0x8957e5,
+        });
+      }
+    } catch (e) {
+      console.error("Failed to log task transition to Discord:", e);
+    }
 
     return item;
   }
@@ -499,6 +540,27 @@ export class WorkItemsService {
     if (dto.startDate !== undefined)
       item.startedAt = dto.startDate ? new Date(dto.startDate) : undefined;
     await item.save();
+
+    // Log update to Discord #tasks channel as reply
+    try {
+      const log = await this.taskLogs.findOne({ workItemKey: item.key }).exec();
+      if (log) {
+        const description = [
+          `**Summary:** ${item.summary}`,
+          `**Type:** ${item.type}`,
+          `**Priority:** ${item.priority}`,
+          item.description ? `**Description:** ${item.description}` : "",
+        ].filter(Boolean).join("\n");
+        await this.discord.sendThreadReply(log.discordChannelId, log.discordMessageId, {
+          title: `Task Updated: ${item.key}`,
+          description,
+          color: 0x0969da,
+        });
+      }
+    } catch (e) {
+      console.error("Failed to log task update to Discord:", e);
+    }
+
     return item;
   }
 

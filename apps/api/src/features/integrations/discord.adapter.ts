@@ -86,7 +86,7 @@ export function normalizeDiscordChannelName(
     .replace(/-+/g, "-")
     .replace(/^[-_]+|[-_]+$/g, "")
     .slice(0, 100);
-  return normalized || `${projectKey.toLowerCase()}-updates`;
+  return normalized || `${projectKey.toLowerCase()}-tasks`;
 }
 
 @Injectable()
@@ -327,7 +327,7 @@ export class DiscordAdapter {
       categoryId: integration?.categoryId ?? null,
       categoryName: integration?.categoryName ?? null,
       channelNameTemplate:
-        integration?.channelNameTemplate ?? "{{projectKey}}-updates",
+        integration?.channelNameTemplate ?? "{{projectKey}}-tasks",
       docsChannelNameTemplate:
         integration?.docsChannelNameTemplate ?? "{{projectKey}}-docs",
       enabled: integration?.enabled ?? false,
@@ -372,7 +372,7 @@ export class DiscordAdapter {
       );
     }
     const channelNameTemplate =
-      dto.channelNameTemplate?.trim() || "{{projectKey}}-updates";
+      dto.channelNameTemplate?.trim() || "{{projectKey}}-tasks";
     const docsChannelNameTemplate =
       dto.docsChannelNameTemplate?.trim() || "{{projectKey}}-docs";
     this.validateTemplate(channelNameTemplate, "channelNameTemplate");
@@ -476,7 +476,7 @@ export class DiscordAdapter {
         project.key,
         project.name,
       );
-      const designerName = `${project.key.toLowerCase()}-designer`;
+      const designerName = `${project.key.toLowerCase()}-design`;
       const membersName = `${project.key.toLowerCase()}-members`;
       const reportsName = `${project.key.toLowerCase()}-reports`;
       const meetingName = `${project.key.toLowerCase()}-meeting`;
