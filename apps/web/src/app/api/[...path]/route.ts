@@ -1,6 +1,8 @@
 import { NextRequest, NextResponse } from "next/server";
 import { upstreamRequest } from "@/lib/server/upstream-request";
 
+export const dynamic = "force-dynamic";
+
 async function proxy(
   request: NextRequest,
   context: { params: Promise<{ path: string[] }> },
@@ -109,15 +111,33 @@ async function proxy(
     return redirectResponse;
   }
 
+  const isEventStream =
+    response.headers.get("content-type")?.includes("text/event-stream") ||
+    pathStr.endsWith("/sse");
+
   const responseHeaders = new Headers();
   responseHeaders.set(
     "content-type",
     response.headers.get("content-type") ?? "application/json",
   );
+  if (isEventStream) {
+    responseHeaders.set("cache-control", "no-cache");
+    responseHeaders.set("connection", "keep-alive");
+    responseHeaders.set("x-accel-buffering", "no");
+  }
+
   const setCookies = [...newCookiesToSet, ...response.headers.getSetCookie()];
   for (const cookie of setCookies) {
     responseHeaders.append("set-cookie", cookie);
   }
+
+  if (isEventStream && response.body) {
+    return new Response(response.body as any, {
+      status: response.status,
+      headers: responseHeaders,
+    });
+  }
+
   return new Response(await response.arrayBuffer(), {
     status: response.status,
     headers: responseHeaders,

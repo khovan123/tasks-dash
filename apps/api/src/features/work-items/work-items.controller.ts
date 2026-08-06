@@ -8,6 +8,7 @@ import {
   Query,
   Sse,
   MessageEvent,
+  Header,
 } from "@nestjs/common";
 import { CommandBus } from "@nestjs/cqrs";
 import { Observable } from "rxjs";
@@ -44,6 +45,10 @@ export class WorkItemsController {
 
   @Sse("projects/:projectKey/work-items/sse")
   @RequireProjectAccess()
+  @Header("Content-Type", "text/event-stream")
+  @Header("Cache-Control", "no-cache, no-transform")
+  @Header("Connection", "keep-alive")
+  @Header("X-Accel-Buffering", "no")
   sse(
     @Param("projectKey") key: string,
     @WorkspaceId() workspaceId: string,
