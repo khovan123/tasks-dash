@@ -17,6 +17,7 @@ import { MEMBER_ROLES } from "@tasks-dash/contracts";
 import {
   AuthSession,
   CurrentSession,
+  RequireProjectAccess,
   RequireRoles,
   WorkspaceId,
 } from "../../common/auth-context";
@@ -34,12 +35,11 @@ import {
 
 const DOCUMENT_EDITOR_ROLES = [
   MEMBER_ROLES.owner,
-  MEMBER_ROLES.admin,
-  MEMBER_ROLES.projectLead,
-  MEMBER_ROLES.member,
+  MEMBER_ROLES.ba,
 ] as const;
 
 @Controller("projects/:projectKey/documents")
+@RequireProjectAccess()
 export class DocumentsController {
   constructor(private readonly service: DocumentsService) {}
 

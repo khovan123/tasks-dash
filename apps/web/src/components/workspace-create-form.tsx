@@ -5,6 +5,7 @@ import { zodResolver } from "@hookform/resolvers/zod";
 import { FormProvider, useForm } from "react-hook-form";
 import { Plus } from "lucide-react";
 import { apiRequest } from "@/lib/api/api-request";
+import { Spinner } from "@/components/ui/spinner";
 import {
   WorkspaceFormValues,
   workspaceFormSchema,
@@ -70,12 +71,18 @@ export function WorkspaceCreateForm({
                 </Button>
               ) : null}
               <Button disabled={form.formState.isSubmitting}>
-                <Plus />
-                {form.formState.isSubmitting
-                  ? "Đang tạo…"
-                  : firstWorkspace
-                    ? "Tạo workspace và tiếp tục"
-                    : "Tạo và chuyển workspace"}
+                {form.formState.isSubmitting ? (
+                  <>
+                    <Spinner className="mr-2" /> Đang tạo
+                  </>
+                ) : (
+                  <>
+                    <Plus />
+                    {firstWorkspace
+                      ? "Tạo workspace và tiếp tục"
+                      : "Tạo và chuyển workspace"}
+                  </>
+                )}
               </Button>
             </div>
           }

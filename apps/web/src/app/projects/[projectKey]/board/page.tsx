@@ -1,24 +1,39 @@
-import { BacklogBoard } from "@/components/backlog-board";
-import type { GithubWorkItemView } from "@/components/github-work-item-links";
 import { apiData } from "@/lib/server/api-data";
+import { KanbanBoard } from "@/components/kanban-board";
 import { AppPage } from "@/components/layout/app-shell";
 
 export const dynamic = "force-dynamic";
+
+interface Project {
+  key: string;
+  name: string;
+  description: string;
+}
 
 interface WorkItem {
   key: string;
   summary: string;
   type: string;
-  priority: string;
   statusId: string;
-  rank: number;
+  priority: string;
+  storyPoints?: number;
   dueDate?: string;
   startDate?: string;
   startedAt?: string;
-  github?: GithubWorkItemView;
+  labels: string[];
+  assigneeId?: string;
 }
+
+interface WorkflowStatus {
+  id: string;
+  name: string;
+  category: string;
+  color?: string;
+}
+
 interface Workflow {
-  statuses: Array<{ id: string; name: string; color?: string }>;
+  name: string;
+  statuses: WorkflowStatus[];
 }
 
 interface WorkspaceMember {
@@ -28,29 +43,34 @@ interface WorkspaceMember {
   avatarUrl?: string;
 }
 
-export default async function BacklogPage({
+export default async function BoardPage({
   params,
 }: {
   params: Promise<{ projectKey: string }>;
 }) {
   const { projectKey } = await params;
   const key = projectKey.toUpperCase();
-  const [items, workflow, membersData, session] = await Promise.all([
+
+  const [project, items, workflow, membersData, session] = await Promise.all([
+    apiData<Project>(`/projects/${key}`),
     apiData<WorkItem[]>(`/projects/${key}/work-items`),
     apiData<Workflow | null>(`/projects/${key}/workflow`),
     apiData<{ projectMembers: any[]; workspaceMembers: any[] }>(`/projects/${key}/members`),
     apiData<{ email: string }>("/auth/me"),
   ]);
-  const statusNames = Object.fromEntries(
-    (workflow?.statuses ?? []).map((status) => [status.id, status.name]),
-  );
-  const statuses = workflow?.statuses ?? [
-    { id: "TO_DO", name: "ToDo", color: "#9ca3af" },
-    { id: "IN_PROGRESS", name: "In Progress", color: "#2563eb" },
-    { id: "REVIEW", name: "Review", color: "#7c3aed" },
-    { id: "REQUEST_CHANGE", name: "Request Change", color: "#dc2626" },
-    { id: "DONE", name: "Done", color: "#16a34a" },
+
+  const defaultStatuses: WorkflowStatus[] = [
+    { id: "TO_DO", name: "ToDo", category: "TODO" },
+    { id: "IN_PROGRESS", name: "In Progress", category: "IN_PROGRESS" },
+    { id: "REVIEW", name: "Review", category: "IN_PROGRESS" },
+    { id: "REQUEST_CHANGE", name: "Request Change", category: "IN_PROGRESS" },
+    { id: "DONE", name: "Done", category: "DONE" },
   ];
+
+  const statuses = workflow?.statuses && workflow.statuses.length > 0
+    ? workflow.statuses
+    : defaultStatuses;
+
   const members = membersData.projectMembers.map((member) => ({
     id: member._id,
     name: member.name,
@@ -64,17 +84,18 @@ export default async function BacklogPage({
 
   const currentMemberRole =
     membersData.workspaceMembers?.find((member) => member.email === session.email)?.role ?? null;
-  const canCreateWorkItem = currentMemberRole === "OWNER" || currentMemberRole === "DEV";
+  const canManageTasks = currentMemberRole === "OWNER" || currentMemberRole === "DEV";
+  const canCompleteSprint = currentMemberRole === "OWNER";
 
   return (
     <AppPage>
-      <BacklogBoard
+      <KanbanBoard
         projectKey={key}
         initialItems={normalizedItems}
-        statusNames={statusNames}
         statuses={statuses}
         members={members}
-        canManageTasks={canCreateWorkItem}
+        canManageTasks={canManageTasks}
+        canCompleteSprint={canCompleteSprint}
       />
     </AppPage>
   );

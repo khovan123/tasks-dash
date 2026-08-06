@@ -26,16 +26,15 @@ import {
   CreateWorkspaceDto,
   InviteWorkspaceMemberDto,
 } from "./members.dto";
+import { EventEmitter2 } from "@nestjs/event-emitter";
 import { InvitationMailerService } from "./invitation-mailer.service";
 import { MemberDocument, MemberHydratedDocument } from "./member.schema";
 import {
   WorkspaceInvitationDocument,
   WorkspaceInvitationHydratedDocument,
 } from "./workspace-invitation.schema";
-import {
-  WorkspaceDocument,
-  WorkspaceHydratedDocument,
-} from "./workspace.schema";
+import { WorkspaceDocument, WorkspaceHydratedDocument } from "./workspace.schema";
+import { ProjectDocument, ProjectHydratedDocument } from "../projects/project.schema";
 
 interface IdentityProfile {
   name: string;
@@ -56,6 +55,7 @@ export class MembersService {
   constructor(
     private readonly config: ConfigService,
     private readonly mailer: InvitationMailerService,
+    private readonly events: EventEmitter2,
     @InjectConnection() private readonly connection: Connection,
     @InjectModel(MemberDocument.name)
     private readonly members: Model<MemberHydratedDocument>,
@@ -63,6 +63,8 @@ export class MembersService {
     private readonly invitations: Model<WorkspaceInvitationHydratedDocument>,
     @InjectModel(WorkspaceDocument.name)
     private readonly workspaces: Model<WorkspaceHydratedDocument>,
+    @InjectModel(ProjectDocument.name)
+    private readonly projects: Model<ProjectHydratedDocument>,
   ) {}
 
   private normalizeEmail(email: string): string {
@@ -300,6 +302,9 @@ export class MembersService {
     invitedByMemberId: string,
     dto: InviteWorkspaceMemberDto,
   ): Promise<Record<string, unknown>> {
+    if (dto.role === MEMBER_ROLES.owner) {
+      throw new BadRequestException("Cannot assign OWNER role via invitation.");
+    }
     const email = this.normalizeEmail(dto.email);
     if (await this.members.exists({ workspaceId, email })) {
       throw new ConflictException("This email is already a workspace member.");
@@ -309,6 +314,8 @@ export class MembersService {
       email,
       dto.role,
       invitedByMemberId,
+      dto.projectIds,
+      dto.allProjects,
     );
     return this.publicInvitation(invitation);
   }
@@ -318,6 +325,8 @@ export class MembersService {
     email: string,
     role: MemberRole,
     invitedByMemberId: string | undefined,
+    projectIds?: string[],
+    allProjects?: boolean,
   ): Promise<WorkspaceInvitationHydratedDocument> {
     await this.invitations.updateMany(
       {
@@ -336,6 +345,8 @@ export class MembersService {
       status: MEMBER_INVITATION_STATUSES.pending,
       expiresAt: this.inviteExpiry(),
       invitedByMemberId,
+      projectIds: projectIds ?? [],
+      allProjects: allProjects ?? false,
     });
     const inviteUrl = `${this.config
       .getOrThrow<string>("WEB_APP_URL")
@@ -364,6 +375,8 @@ export class MembersService {
       invitation.email,
       invitation.role,
       invitation.invitedByMemberId,
+      invitation.projectIds,
+      invitation.allProjects,
     );
     return this.publicInvitation(replacement);
   }
@@ -381,7 +394,7 @@ export class MembersService {
   async acceptInvitation(
     rawToken: string,
     emailInput: string,
-    profile: IdentityProfile,
+    profile: IdentityProfile & { discordUsername?: string },
     authIdentityId: string,
     githubId: number,
   ): Promise<MemberHydratedDocument> {
@@ -422,6 +435,9 @@ export class MembersService {
         existing.githubId = githubId;
         existing.name = profile.name;
         existing.avatarUrl = profile.avatarUrl;
+        if (profile.discordUsername) {
+          existing.discordUsername = profile.discordUsername;
+        }
         existing.status = MEMBER_PRESENCE.online;
         existing.lastLoginAt = new Date();
         await existing.save({ session });
@@ -438,6 +454,7 @@ export class MembersService {
               status: MEMBER_PRESENCE.online,
               authIdentityId,
               githubId,
+              discordUsername: profile.discordUsername,
               lastLoginAt: new Date(),
             },
           ],
@@ -445,6 +462,45 @@ export class MembersService {
         );
         acceptedMember = created[0];
       }
+
+      const memberIdStr = String(acceptedMember._id);
+      if (invitation.allProjects) {
+        const allProjects = await this.projects
+          .find({ workspaceId: invitation.workspaceId })
+          .session(session)
+          .exec();
+        for (const project of allProjects) {
+          if (!project.memberIds.includes(memberIdStr)) {
+            project.memberIds.push(memberIdStr);
+          }
+          if (!project.memberRoles) {
+            project.memberRoles = new Map();
+          }
+          project.memberRoles.set(memberIdStr, invitation.role);
+          project.markModified("memberRoles");
+          await project.save({ session });
+        }
+      } else if (invitation.projectIds && invitation.projectIds.length > 0) {
+        const matchedProjects = await this.projects
+          .find({
+            workspaceId: invitation.workspaceId,
+            _id: { $in: invitation.projectIds },
+          })
+          .session(session)
+          .exec();
+        for (const project of matchedProjects) {
+          if (!project.memberIds.includes(memberIdStr)) {
+            project.memberIds.push(memberIdStr);
+          }
+          if (!project.memberRoles) {
+            project.memberRoles = new Map();
+          }
+          project.memberRoles.set(memberIdStr, invitation.role);
+          project.markModified("memberRoles");
+          await project.save({ session });
+        }
+      }
+
       invitation.status = MEMBER_INVITATION_STATUSES.accepted;
       invitation.acceptedByMemberId = String(acceptedMember._id);
       invitation.acceptedAt = new Date();
@@ -454,6 +510,9 @@ export class MembersService {
     if (!acceptedMember) {
       throw new UnauthorizedException("Workspace invitation acceptance failed.");
     }
+    void this.events.emitAsync("workspace.members.changed", {
+      workspaceId: (acceptedMember as MemberHydratedDocument).workspaceId,
+    }).catch(() => { /* non-critical */ });
     return acceptedMember;
   }
 
@@ -482,21 +541,19 @@ export class MembersService {
     memberId: string,
     role: MemberRole,
   ): Promise<MemberHydratedDocument> {
+    if (role === MEMBER_ROLES.owner) {
+      throw new BadRequestException("Cannot assign OWNER role.");
+    }
     const member = await this.memberById(workspaceId, memberId);
-    if (member.role === MEMBER_ROLES.owner && role !== MEMBER_ROLES.owner) {
-      const owners = await this.members.countDocuments({
-        workspaceId,
-        role: MEMBER_ROLES.owner,
-      });
-      if (owners <= 1) {
-        throw new ConflictException("The workspace must keep at least one owner.");
-      }
+    if (member.role === MEMBER_ROLES.owner) {
+      throw new ForbiddenException("Cannot modify or change role of workspace OWNER.");
     }
     if (memberId === actorMemberId && role === MEMBER_ROLES.viewer) {
       throw new ConflictException("You cannot change yourself to viewer.");
     }
     member.role = role;
     await member.save();
+    void this.events.emitAsync("workspace.members.changed", { workspaceId }).catch(() => { /* non-critical */ });
     return member;
   }
 
@@ -510,15 +567,10 @@ export class MembersService {
     }
     const member = await this.memberById(workspaceId, memberId);
     if (member.role === MEMBER_ROLES.owner) {
-      const owners = await this.members.countDocuments({
-        workspaceId,
-        role: MEMBER_ROLES.owner,
-      });
-      if (owners <= 1) {
-        throw new ConflictException("The workspace must keep at least one owner.");
-      }
+      throw new ForbiddenException("Cannot remove workspace OWNER.");
     }
     await this.members.deleteOne({ _id: member._id, workspaceId }).exec();
+    void this.events.emitAsync("workspace.members.changed", { workspaceId }).catch(() => { /* non-critical */ });
   }
 
   private async memberById(

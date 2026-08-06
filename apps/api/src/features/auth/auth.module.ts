@@ -8,24 +8,38 @@ import {
   AuthIdentitySchema,
 } from "./auth.schemas";
 import {
+  ProjectDocument,
+  ProjectSchema,
+} from "../projects/project.schema";
+import {
   IntegrationOauthStateDocument,
   IntegrationOauthStateSchema,
 } from "../integrations/integration.schemas";
+import {
+  WorkItemDocument,
+  WorkItemSchema,
+} from "../work-items/work-item.schema";
 import { GithubUserTokenService } from "./github-user-token.service";
 import { SessionAuthGuard } from "./session-auth.guard";
 import { SessionService } from "./session.service";
 import { WorkspacesController } from "./workspaces.controller";
 
+import { forwardRef } from "@nestjs/common";
+import { IntegrationsModule } from "../integrations/integrations.module";
+
 @Global()
 @Module({
   imports: [
     MembersModule,
+    forwardRef(() => IntegrationsModule),
     MongooseModule.forFeature([
       { name: AuthIdentityDocument.name, schema: AuthIdentitySchema },
       {
         name: IntegrationOauthStateDocument.name,
         schema: IntegrationOauthStateSchema,
       },
+      { name: ProjectDocument.name, schema: ProjectSchema },
+      { name: WorkItemDocument.name, schema: WorkItemSchema },
     ]),
   ],
   controllers: [AuthController, WorkspacesController],

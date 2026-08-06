@@ -14,6 +14,8 @@ export class WorkspaceInvitationDocument extends BaseMongoDocument {
   @Prop({ required: true, unique: true, index: true }) tokenHash!: string;
   @Prop({ required: true, default: MEMBER_INVITATION_STATUSES.pending }) status!: MemberInvitationStatus;
   @Prop({ required: true, index: true }) expiresAt!: Date;
+  @Prop({ type: [String], default: [] }) projectIds?: string[];
+  @Prop({ default: false }) allProjects?: boolean;
   @Prop() invitedByMemberId?: string;
   @Prop() acceptedByMemberId?: string;
   @Prop() acceptedAt?: Date;

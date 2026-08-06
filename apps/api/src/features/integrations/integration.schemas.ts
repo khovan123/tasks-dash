@@ -50,7 +50,7 @@ export const DiscordWorkspaceSchema = SchemaFactory.createForClass(
   DiscordWorkspaceDocument,
 );
 DiscordWorkspaceSchema.index({ workspaceId: 1 }, { unique: true });
-DiscordWorkspaceSchema.index({ guildId: 1 });
+DiscordWorkspaceSchema.index({ guildId: 1 }, { unique: true });
 
 @Schema({ collection: "discord_integrations", timestamps: true })
 export class DiscordIntegrationDocument extends BaseMongoDocument {
@@ -62,6 +62,18 @@ export class DiscordIntegrationDocument extends BaseMongoDocument {
   @Prop({ trim: true }) channelName?: string;
   @Prop({ trim: true }) docsChannelId?: string;
   @Prop({ trim: true }) docsChannelName?: string;
+  @Prop({ trim: true }) generalChannelId?: string;
+  @Prop({ trim: true }) generalChannelName?: string;
+  @Prop({ trim: true }) deploymentChannelId?: string;
+  @Prop({ trim: true }) deploymentChannelName?: string;
+  @Prop({ trim: true }) designerChannelId?: string;
+  @Prop({ trim: true }) designerChannelName?: string;
+  @Prop({ trim: true }) membersChannelId?: string;
+  @Prop({ trim: true }) membersChannelName?: string;
+  @Prop({ trim: true }) reportsChannelId?: string;
+  @Prop({ trim: true }) reportsChannelName?: string;
+  @Prop({ trim: true }) meetingChannelId?: string;
+  @Prop({ trim: true }) meetingChannelName?: string;
   @Prop({ trim: true }) guildId?: string;
   @Prop({ enum: ["BOT", "MANUAL"], default: "MANUAL" })
   provisionedBy!: "BOT" | "MANUAL";
@@ -85,6 +97,43 @@ DiscordIntegrationSchema.index(
     partialFilterExpression: { docsChannelId: { $type: "string" } },
   },
 );
+
+@Schema({ collection: "github_pull_request_logs", timestamps: true })
+export class GithubPullRequestLogDocument extends BaseMongoDocument {
+  @Prop({ required: true, index: true }) repositoryFullName!: string;
+  @Prop({ required: true, index: true }) pullRequestNumber!: number;
+  @Prop({ required: true }) discordMessageId!: string;
+  @Prop({ required: true }) discordChannelId!: string;
+}
+export const GithubPullRequestLogSchema = SchemaFactory.createForClass(
+  GithubPullRequestLogDocument,
+);
+GithubPullRequestLogSchema.index(
+  { repositoryFullName: 1, pullRequestNumber: 1 },
+  { unique: true },
+);
+
+@Schema({ collection: "design_catalog_item_logs", timestamps: true })
+export class DesignCatalogItemLogDocument extends BaseMongoDocument {
+  @Prop({ required: true }) designId!: string;
+  @Prop({ required: true }) discordMessageId!: string;
+  @Prop({ required: true }) discordChannelId!: string;
+}
+export const DesignCatalogItemLogSchema = SchemaFactory.createForClass(
+  DesignCatalogItemLogDocument,
+);
+DesignCatalogItemLogSchema.index({ designId: 1 }, { unique: true });
+
+@Schema({ collection: "task_discord_logs", timestamps: true })
+export class TaskDiscordLogDocument extends BaseMongoDocument {
+  @Prop({ required: true, index: true }) workItemKey!: string;
+  @Prop({ required: true }) discordMessageId!: string;
+  @Prop({ required: true }) discordChannelId!: string;
+}
+export const TaskDiscordLogSchema = SchemaFactory.createForClass(
+  TaskDiscordLogDocument,
+);
+TaskDiscordLogSchema.index({ workItemKey: 1 }, { unique: true });
 
 @Schema({ collection: "integration_oauth_states", timestamps: true })
 export class IntegrationOauthStateDocument {
@@ -189,6 +238,12 @@ export type DiscordWorkspaceHydratedDocument =
   HydratedDocument<DiscordWorkspaceDocument>;
 export type DiscordIntegrationHydratedDocument =
   HydratedDocument<DiscordIntegrationDocument>;
+export type GithubPullRequestLogHydratedDocument =
+  HydratedDocument<GithubPullRequestLogDocument>;
+export type DesignCatalogItemLogHydratedDocument =
+  HydratedDocument<DesignCatalogItemLogDocument>;
+export type TaskDiscordLogHydratedDocument =
+  HydratedDocument<TaskDiscordLogDocument>;
 export type IntegrationOauthStateHydratedDocument =
   HydratedDocument<IntegrationOauthStateDocument>;
 export type GithubWebhookDeliveryHydratedDocument =

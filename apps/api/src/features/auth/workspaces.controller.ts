@@ -266,10 +266,10 @@ export class WorkspacesController {
   @Post(":workspaceId/switch")
   @RequireRoles(
     MEMBER_ROLES.owner,
-    MEMBER_ROLES.admin,
-    MEMBER_ROLES.projectLead,
-    MEMBER_ROLES.member,
     MEMBER_ROLES.viewer,
+    MEMBER_ROLES.designer,
+    MEMBER_ROLES.ba,
+    MEMBER_ROLES.dev,
   )
   async switchWorkspace(
     @Param("workspaceId") workspaceId: string,

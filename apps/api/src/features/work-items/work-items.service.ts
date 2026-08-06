@@ -1,11 +1,16 @@
 import {
   BadRequestException,
+  ForbiddenException,
   Injectable,
   NotFoundException,
+  Inject,
+  forwardRef,
 } from "@nestjs/common";
 import { InjectModel } from "@nestjs/mongoose";
 import { Model } from "mongoose";
+import { EventEmitter2 } from "@nestjs/event-emitter";
 import {
+  AUTOMATION_TRIGGERS,
   DEFAULT_WORKFLOW_STATUS_IDS,
   GithubLinkSource,
   GithubPullRequestState,
@@ -13,6 +18,8 @@ import {
   GithubReviewState,
   GITHUB_PR_STATUSES,
   WORKFLOW_CATEGORIES,
+  MEMBER_ROLES,
+  MemberRole,
 } from "@tasks-dash/contracts";
 import { ProjectsService } from "../projects/projects.service";
 import { WorkflowsService } from "../workflows/workflows.controller";
@@ -23,10 +30,9 @@ import {
   WorkItemDocument,
   WorkItemHydratedDocument,
 } from "./work-item.schema";
-import {
-  CreateWorkItemDto,
-  ReorderWorkItemsDto,
-} from "./work-items.dto";
+import { CreateWorkItemDto, ReorderWorkItemsDto, UpdateWorkItemDto } from "./work-items.dto";
+import { DiscordAdapter } from "../integrations/discord.adapter";
+import { TaskDiscordLogDocument, TaskDiscordLogHydratedDocument } from "../integrations/integration.schemas";
 
 export interface GithubCommitLinkInput {
   sha: string;
@@ -67,6 +73,11 @@ export class WorkItemsService {
     private readonly items: Model<WorkItemHydratedDocument>,
     private readonly projects: ProjectsService,
     private readonly workflows: WorkflowsService,
+    private readonly events: EventEmitter2,
+    @Inject(forwardRef(() => DiscordAdapter))
+    private readonly discord: DiscordAdapter,
+    @InjectModel(TaskDiscordLogDocument.name)
+    private readonly taskLogs: Model<TaskDiscordLogHydratedDocument>,
   ) {}
 
   private async ensureWorkflow(workspaceId: string, projectKey: string) {
@@ -154,7 +165,7 @@ export class WorkItemsService {
         .exec(),
     ]);
     const rank = (lastItem?.rank ?? 0) + 1000;
-    return this.items.create({
+    const item = await this.items.create({
       ...dto,
       workspaceId,
       projectKey: key,
@@ -164,15 +175,45 @@ export class WorkItemsService {
       statusId,
       reporterId,
       dueDate: dto.dueDate ? new Date(dto.dueDate) : undefined,
-      figmaLinks: dto.figmaLinks.map((link) => ({
-        label: link.label.trim(),
-        url: link.url.trim(),
+      figmaLinks: (dto.figmaLinks || []).map((link) => ({
+        label: (link.label || "").trim(),
+        url: (link.url || "").trim(),
       })),
-      documentLinks: dto.documentLinks.map((link) => ({
-        label: link.label.trim(),
-        url: link.url.trim(),
+      documentLinks: (dto.documentLinks || []).map((link) => ({
+        label: (link.label || "").trim(),
+        url: (link.url || "").trim(),
       })),
     });
+
+    void this.events.emitAsync("automation.work-item-created", {
+      sourceEventId: `work-item-created:${item.key}`,
+      workspaceId,
+      projectKey: key,
+      trigger: AUTOMATION_TRIGGERS.workItemCreated,
+      workItemKey: item.key,
+      title: item.summary,
+    });
+
+    // Log to Discord #tasks channel
+    try {
+      const integration = await this.discord.getProjectIntegration(workspaceId, key);
+      if (integration?.channelId) {
+        const msgId = await this.discord.sendToChannel(integration.channelId, {
+          title: `Task Created: ${item.key}`,
+          description: `**Summary:** ${item.summary}\n**Type:** ${item.type}\n**Priority:** ${item.priority}`,
+          color: 0x238636,
+        });
+        await this.taskLogs.create({
+          workItemKey: item.key,
+          discordMessageId: msgId,
+          discordChannelId: integration.channelId,
+        });
+      }
+    } catch (e) {
+      console.error("Failed to log task creation to Discord:", e);
+    }
+
+    return item;
   }
 
   list(workspaceId: string, projectKey: string, sprintId?: string) {
@@ -213,8 +254,13 @@ export class WorkItemsService {
     return { updated: result.modifiedCount };
   }
 
-  async transition(workspaceId: string, key: string, statusId: string) {
+  async transition(workspaceId: string, key: string, statusId: string, actorMemberId?: string, actorRole?: MemberRole) {
     const item = await this.find(workspaceId, key);
+    if (actorRole === MEMBER_ROLES.dev) {
+      if (item.assigneeId !== actorMemberId) {
+        throw new ForbiddenException("Dev can only transition tasks assigned to themselves.");
+      }
+    }
     const workflow = await this.workflows.get(workspaceId, item.projectKey);
     if (!workflow) {
       throw new NotFoundException(
@@ -225,22 +271,20 @@ export class WorkItemsService {
     if (!target) {
       throw new NotFoundException(`Workflow status ${statusId} was not found.`);
     }
-    const allowed =
-      workflow.transitions.some(
-        (transition) =>
-          transition.fromStatusId === item.statusId &&
-          transition.toStatusId === statusId,
-      ) || item.statusId === statusId;
-    if (!allowed) {
-      throw new NotFoundException(
-        `No workflow transition from ${item.statusId} to ${statusId}.`,
+
+    // If transitions rules are setup in this project workflow, enforce them
+    if (workflow.transitions && workflow.transitions.length > 0) {
+      const allowed = workflow.transitions.some(
+        (tr) => tr.fromStatusId === item.statusId && tr.toStatusId === statusId,
       );
+      if (!allowed) {
+        throw new BadRequestException(
+          `Không thể chuyển trạng thái từ "${item.statusId}" sang "${statusId}" do quy tắc Workflow.`,
+        );
+      }
     }
     item.statusId = statusId;
-    if (
-      target.category === WORKFLOW_CATEGORIES.inProgress &&
-      !item.startedAt
-    ) {
+    if (target.category === WORKFLOW_CATEGORIES.inProgress && !item.startedAt) {
       item.startedAt = new Date();
     }
     if (target.category === WORKFLOW_CATEGORIES.done) {
@@ -249,6 +293,30 @@ export class WorkItemsService {
       item.completedAt = undefined;
     }
     await item.save();
+
+    void this.events.emitAsync("automation.work-item-transitioned", {
+      sourceEventId: `work-item-transitioned:${item.key}:${statusId}`,
+      workspaceId,
+      projectKey: item.projectKey,
+      trigger: AUTOMATION_TRIGGERS.workItemTransitioned,
+      workItemKey: item.key,
+      title: item.summary,
+    });
+
+    // Log transition to Discord #tasks channel as reply
+    try {
+      const log = await this.taskLogs.findOne({ workItemKey: item.key }).exec();
+      if (log) {
+        await this.discord.sendThreadReply(log.discordChannelId, log.discordMessageId, {
+          title: `Task Transitioned: ${item.key}`,
+          description: `Status changed to **${target.name}**`,
+          color: 0x8957e5,
+        });
+      }
+    } catch (e) {
+      console.error("Failed to log task transition to Discord:", e);
+    }
+
     return item;
   }
 
@@ -281,7 +349,9 @@ export class WorkItemsService {
     ]);
 
     for (const commit of commits) {
-      const index = github.commits.findIndex((entry) => entry.sha === commit.sha);
+      const index = github.commits.findIndex(
+        (entry) => entry.sha === commit.sha,
+      );
       const existing = index >= 0 ? github.commits[index] : undefined;
       const next: GithubCommitLinkDocument = {
         sha: commit.sha,
@@ -351,10 +421,7 @@ export class WorkItemsService {
       updatedAt: input.updatedAt ?? existing?.updatedAt,
       closedAt: input.closedAt ?? existing?.closedAt,
       mergedAt: input.mergedAt ?? existing?.mergedAt,
-      sources: uniqueValues([
-        ...(existing?.sources ?? []),
-        ...input.sources,
-      ]),
+      sources: uniqueValues([...(existing?.sources ?? []), ...input.sources]),
     };
     if (index >= 0) github.pullRequests[index] = next;
     else github.pullRequests.push(next);
@@ -448,13 +515,60 @@ export class WorkItemsService {
     };
   }
 
+  async update(
+    workspaceId: string,
+    key: string,
+    dto: UpdateWorkItemDto,
+    actorMemberId?: string,
+    actorRole?: MemberRole,
+  ) {
+    const item = await this.find(workspaceId, key);
+    if (actorRole === MEMBER_ROLES.dev) {
+      if (item.assigneeId !== actorMemberId) {
+        throw new ForbiddenException("Dev can only edit tasks assigned to themselves.");
+      }
+    }
+    if (dto.type !== undefined) item.type = dto.type;
+    if (dto.summary !== undefined) item.summary = dto.summary;
+    if (dto.description !== undefined) item.description = dto.description;
+    if (dto.priority !== undefined) item.priority = dto.priority;
+    if (dto.labels !== undefined) item.labels = dto.labels;
+    if (dto.storyPoints !== undefined)
+      item.storyPoints = dto.storyPoints ?? undefined;
+    if (dto.dueDate !== undefined)
+      item.dueDate = dto.dueDate ? new Date(dto.dueDate) : undefined;
+    if (dto.startDate !== undefined)
+      item.startedAt = dto.startDate ? new Date(dto.startDate) : undefined;
+    await item.save();
+
+    // Log update to Discord #tasks channel as reply
+    try {
+      const log = await this.taskLogs.findOne({ workItemKey: item.key }).exec();
+      if (log) {
+        const description = [
+          `**Summary:** ${item.summary}`,
+          `**Type:** ${item.type}`,
+          `**Priority:** ${item.priority}`,
+          item.description ? `**Description:** ${item.description}` : "",
+        ].filter(Boolean).join("\n");
+        await this.discord.sendThreadReply(log.discordChannelId, log.discordMessageId, {
+          title: `Task Updated: ${item.key}`,
+          description,
+          color: 0x0969da,
+        });
+      }
+    } catch (e) {
+      console.error("Failed to log task update to Discord:", e);
+    }
+
+    return item;
+  }
+
   private findOptional(
     workspaceId: string,
     key: string,
   ): Promise<WorkItemHydratedDocument | null> {
-    return this.items
-      .findOne({ workspaceId, key: key.toUpperCase() })
-      .exec();
+    return this.items.findOne({ workspaceId, key: key.toUpperCase() }).exec();
   }
 
   private async find(

@@ -10,11 +10,14 @@ import {
 import { CommandBus } from "@nestjs/cqrs";
 import {
   AuthSession,
+  CurrentMemberRole,
   CurrentSession,
+  RequireProjectAccess,
   RequireRoles,
+  RequireWorkItemAccess,
   WorkspaceId,
 } from "../../common/auth-context";
-import { MEMBER_ROLES } from "@tasks-dash/contracts";
+import { MEMBER_ROLES, MemberRole } from "@tasks-dash/contracts";
 import {
   CreateWorkItemCommand,
   TransitionWorkItemCommand,
@@ -23,6 +26,7 @@ import {
   CreateWorkItemDto,
   ReorderWorkItemsDto,
   TransitionWorkItemDto,
+  UpdateWorkItemDto,
 } from "./work-items.dto";
 import { WorkItemsService } from "./work-items.service";
 
@@ -34,6 +38,7 @@ export class WorkItemsController {
   ) {}
 
   @Get("projects/:projectKey/work-items")
+  @RequireProjectAccess()
   list(
     @Param("projectKey") key: string,
     @Query("sprintId") sprintId: string | undefined,
@@ -43,11 +48,10 @@ export class WorkItemsController {
   }
 
   @Post("projects/:projectKey/work-items")
+  @RequireProjectAccess()
   @RequireRoles(
     MEMBER_ROLES.owner,
-    MEMBER_ROLES.admin,
-    MEMBER_ROLES.projectLead,
-    MEMBER_ROLES.member,
+    MEMBER_ROLES.dev,
   )
   create(
     @Param("projectKey") key: string,
@@ -61,11 +65,9 @@ export class WorkItemsController {
   }
 
   @Patch("projects/:projectKey/work-items/reorder")
+  @RequireProjectAccess()
   @RequireRoles(
     MEMBER_ROLES.owner,
-    MEMBER_ROLES.admin,
-    MEMBER_ROLES.projectLead,
-    MEMBER_ROLES.member,
   )
   reorder(
     @Param("projectKey") key: string,
@@ -76,19 +78,36 @@ export class WorkItemsController {
   }
 
   @Patch("work-items/:key/status")
+  @RequireWorkItemAccess()
   @RequireRoles(
     MEMBER_ROLES.owner,
-    MEMBER_ROLES.admin,
-    MEMBER_ROLES.projectLead,
-    MEMBER_ROLES.member,
+    MEMBER_ROLES.dev,
   )
   transition(
     @Param("key") key: string,
     @Body() dto: TransitionWorkItemDto,
     @WorkspaceId() workspaceId: string,
+    @CurrentSession() session: AuthSession,
+    @CurrentMemberRole() role: MemberRole,
   ) {
     return this.commands.execute(
-      new TransitionWorkItemCommand(workspaceId, key, dto.statusId),
+      new TransitionWorkItemCommand(workspaceId, key, dto.statusId, session.memberId, role),
     );
+  }
+
+  @Patch("work-items/:key")
+  @RequireWorkItemAccess()
+  @RequireRoles(
+    MEMBER_ROLES.owner,
+    MEMBER_ROLES.dev,
+  )
+  update(
+    @Param("key") key: string,
+    @Body() dto: UpdateWorkItemDto,
+    @WorkspaceId() workspaceId: string,
+    @CurrentSession() session: AuthSession,
+    @CurrentMemberRole() role: MemberRole,
+  ) {
+    return this.service.update(workspaceId, key, dto, session.memberId, role);
   }
 }
