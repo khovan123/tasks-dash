@@ -266,4 +266,35 @@ export class IntegrationsController {
     );
     return { delivered: true };
   }
+
+  @PublicRoute()
+  @Post("discord/interactions")
+  async discordInteractions(
+    @Req() request: RawBodyRequest<Request>,
+    @Res() response: Response,
+  ): Promise<any> {
+    const signature = String(request.headers["x-signature-ed25519"] ?? "");
+    const timestamp = String(request.headers["x-signature-timestamp"] ?? "");
+
+    if (!signature || !timestamp) {
+      throw new UnauthorizedException("Signature and timestamp are required.");
+    }
+
+    if (!request.rawBody) {
+      throw new UnauthorizedException("Raw request body is required.");
+    }
+
+    const verified = this.discord.verifyInteractionSignature(
+      request.rawBody,
+      signature,
+      timestamp,
+    );
+
+    if (!verified) {
+      throw new UnauthorizedException("Invalid interaction signature.");
+    }
+
+    const result = await this.discord.handleInteraction(request.body);
+    return response.status(200).json(result);
+  }
 }

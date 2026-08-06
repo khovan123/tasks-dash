@@ -60,14 +60,31 @@ export class GithubAppService {
   }
 
   private privateKey(): string {
-    const base64 = this.config
-      .get<string>("GITHUB_APP_PRIVATE_KEY_BASE64")
-      ?.trim();
-    return base64
-      ? Buffer.from(base64, "base64").toString("utf8")
-      : this.config
-          .getOrThrow<string>("GITHUB_APP_PRIVATE_KEY")
-          .replace(/\\n/g, "\n");
+    const raw =
+      this.config.get<string>("GITHUB_APP_PRIVATE_KEY_BASE64")?.trim() ||
+      this.config.get<string>("GITHUB_APP_PRIVATE_KEY")?.trim() ||
+      "";
+    if (!raw) {
+      throw new Error(
+        "Neither GITHUB_APP_PRIVATE_KEY_BASE64 nor GITHUB_APP_PRIVATE_KEY is set in environment.",
+      );
+    }
+    let key = raw;
+    if (!key.includes("BEGIN RSA PRIVATE KEY") && !key.includes("BEGIN PRIVATE KEY")) {
+      key = Buffer.from(key, "base64").toString("utf8");
+    }
+    if (key.includes("BEGIN RSA PRIVATE KEY")) {
+      const header = "-----BEGIN RSA PRIVATE KEY-----";
+      const footer = "-----END RSA PRIVATE KEY-----";
+      if (key.includes(header) && key.includes(footer)) {
+        const body = key
+          .substring(key.indexOf(header) + header.length, key.indexOf(footer))
+          .trim()
+          .replace(/\s+/g, "\n");
+        return `${header}\n${body}\n${footer}`;
+      }
+    }
+    return key.replace(/\\n/g, "\n");
   }
 
   private jwt(): string {
@@ -362,6 +379,120 @@ export class GithubAppService {
       suspended: item.suspended,
       synchronizedAt: item.synchronizedAt ?? null,
     };
+  }
+
+  async listOpenPullRequests(workspaceId: string, projectKey?: string): Promise<any[]> {
+    const installation = await this.installations.findOne({ workspaceId }).exec();
+    if (!installation) return [];
+
+    const token = await this.token(installation.installationId);
+    let repositories = installation.repositoryFullNames;
+
+    if (projectKey) {
+      const project = await this.projects.getByKey(workspaceId, projectKey);
+      if (project && project.repositoryFullName) {
+        repositories = [project.repositoryFullName];
+      }
+    }
+
+    const prs: any[] = [];
+    for (const repo of repositories) {
+      try {
+        const response = await fetch(
+          `${GITHUB_API}/repos/${repo}/pulls?state=open&per_page=50`,
+          { headers: this.headers(token) },
+        );
+        if (response.ok) {
+          const list = (await response.json()) as any[];
+          for (const pr of list) {
+            prs.push({
+              number: pr.number,
+              title: pr.title,
+              html_url: pr.html_url,
+              repositoryFullName: repo,
+              branch: pr.head?.ref ?? "?",
+              author: pr.user?.login ?? "unknown",
+            });
+          }
+        }
+      } catch (e) {
+        console.error(`Failed to fetch PRs for repository ${repo}:`, e);
+      }
+    }
+    return prs;
+  }
+
+  async mergePullRequest(workspaceId: string, repositoryFullName: string, prNumber: number): Promise<void> {
+    const installation = await this.installations.findOne({ workspaceId }).exec();
+    if (!installation) throw new Error("No GitHub installation found for workspace");
+
+    const token = await this.token(installation.installationId);
+    const response = await fetch(
+      `${GITHUB_API}/repos/${repositoryFullName}/pulls/${prNumber}/merge`,
+      {
+        method: "PUT",
+        headers: this.headers(token),
+        body: JSON.stringify({
+          merge_method: "merge",
+        }),
+      },
+    );
+    if (!response.ok) {
+      const errorData = await response.json().catch(() => ({}));
+      throw new Error(errorData.message || `Failed to merge PR #${prNumber} on GitHub`);
+    }
+  }
+
+  async commentOnPullRequest(
+    workspaceId: string,
+    repositoryFullName: string,
+    prNumber: number,
+    commentBody: string,
+  ): Promise<void> {
+    const installation = await this.installations.findOne({ workspaceId }).exec();
+    if (!installation) throw new Error("No GitHub installation found for workspace");
+
+    const token = await this.token(installation.installationId);
+    const response = await fetch(
+      `${GITHUB_API}/repos/${repositoryFullName}/issues/${prNumber}/comments`,
+      {
+        method: "POST",
+        headers: this.headers(token),
+        body: JSON.stringify({
+          body: commentBody,
+        }),
+      },
+    );
+    if (!response.ok) {
+      const errorData = await response.json().catch(() => ({}));
+      throw new Error(errorData.message || `Failed to comment on PR #${prNumber} on GitHub`);
+    }
+  }
+
+  async assignPullRequest(
+    workspaceId: string,
+    repositoryFullName: string,
+    prNumber: number,
+    assignee: string,
+  ): Promise<void> {
+    const installation = await this.installations.findOne({ workspaceId }).exec();
+    if (!installation) throw new Error("No GitHub installation found for workspace");
+
+    const token = await this.token(installation.installationId);
+    const response = await fetch(
+      `${GITHUB_API}/repos/${repositoryFullName}/issues/${prNumber}/assignees`,
+      {
+        method: "POST",
+        headers: this.headers(token),
+        body: JSON.stringify({
+          assignees: [assignee],
+        }),
+      },
+    );
+    if (!response.ok) {
+      const errorData = await response.json().catch(() => ({}));
+      throw new Error(errorData.message || `Failed to assign user to PR #${prNumber} on GitHub`);
+    }
   }
 }
 

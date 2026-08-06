@@ -29,6 +29,8 @@ import {
 } from "./integration.schemas";
 import { MemberDocument, MemberHydratedDocument } from "../members/member.schema";
 import { MEMBER_ROLES } from "@tasks-dash/contracts";
+import { GithubAppService } from "./github-app.service";
+import { Inject, forwardRef } from "@nestjs/common";
 
 const DISCORD_API_BASE = "https://discord.com/api/v10";
 const DISCORD_BOT_PERMISSIONS = 536980496;
@@ -114,6 +116,8 @@ export class DiscordAdapter {
     private readonly projects: ProjectsService,
     private readonly config: ConfigService,
     private readonly events: EventEmitter2,
+    @Inject(forwardRef(() => GithubAppService))
+    private readonly githubApp: GithubAppService,
   ) {}
 
   installUrl(state?: string): string {
@@ -416,6 +420,13 @@ export class DiscordAdapter {
         { upsert: true, new: true, setDefaultsOnInsert: true },
       )
       .exec();
+
+    try {
+      await this.registerSlashCommands(guild.id);
+    } catch (e) {
+      console.error(`Failed to register Discord slash commands for guild ${guild.id}:`, e);
+    }
+
     const provisioned = await this.provisionAll(workspaceId);
     return {
       ...(await this.workspaceStatus(workspaceId)),
@@ -882,6 +893,328 @@ export class DiscordAdapter {
     } catch {
       return false;
     }
+  }
+
+  verifyInteractionSignature(
+    rawBody: Buffer,
+    signature: string,
+    timestamp: string,
+  ): boolean {
+    const publicKeyHex = this.config.get<string>("DISCORD_PUBLIC_KEY")?.trim();
+    if (!publicKeyHex) {
+      console.warn("DISCORD_PUBLIC_KEY is not configured. Interaction signature verification is bypassed!");
+      return true;
+    }
+
+    try {
+      const data = Buffer.concat([
+        Buffer.from(timestamp, "utf8"),
+        rawBody,
+      ]);
+      const key = {
+        key: Buffer.concat([
+          Buffer.from("302a300506032b6570032100", "hex"),
+          Buffer.from(publicKeyHex, "hex"),
+        ]),
+        format: "der" as const,
+        type: "public" as const,
+      };
+      const { verify } = require("node:crypto");
+      return verify(undefined, data, key, Buffer.from(signature, "hex"));
+    } catch (e) {
+      console.error("Signature verification failed:", e);
+      return false;
+    }
+  }
+
+  async registerSlashCommands(guildId: string): Promise<void> {
+    const applicationId = this.config.get<string>("DISCORD_APPLICATION_ID");
+    if (!applicationId) return;
+
+    const commands = [
+      {
+        name: "prs",
+        description: "Quản lý Pull Requests trên GitHub",
+        options: [
+          {
+            name: "list",
+            description: "Hiển thị danh sách Pull Requests đang mở",
+            type: 1, // SUB_COMMAND
+            options: [
+              {
+                name: "project_key",
+                description: "Mã dự án (ví dụ: TD)",
+                type: 3, // STRING
+                required: false,
+              },
+            ],
+          },
+          {
+            name: "merge",
+            description: "Merge Pull Request",
+            type: 1, // SUB_COMMAND
+            options: [
+              {
+                name: "pr",
+                description: "Nhập số PR hoặc gõ tìm kiếm PR đang mở",
+                type: 3,
+                required: true,
+                autocomplete: true,
+              },
+              {
+                name: "project_key",
+                description: "Mã dự án (ví dụ: TD)",
+                type: 3,
+                required: false,
+              },
+            ],
+          },
+          {
+            name: "comment",
+            description: "Viết bình luận lên Pull Request",
+            type: 1, // SUB_COMMAND
+            options: [
+              {
+                name: "pr",
+                description: "Nhập số PR hoặc gõ tìm kiếm PR đang mở",
+                type: 3,
+                required: true,
+                autocomplete: true,
+              },
+              {
+                name: "text",
+                description: "Nội dung bình luận",
+                type: 3,
+                required: true,
+              },
+              {
+                name: "project_key",
+                description: "Mã dự án (ví dụ: TD)",
+                type: 3,
+                required: false,
+              },
+            ],
+          },
+          {
+            name: "assign",
+            description: "Assign thành viên cho Pull Request",
+            type: 1, // SUB_COMMAND
+            options: [
+              {
+                name: "pr",
+                description: "Nhập số PR hoặc gõ tìm kiếm PR đang mở",
+                type: 3,
+                required: true,
+                autocomplete: true,
+              },
+              {
+                name: "github_username",
+                description: "Username GitHub của thành viên",
+                type: 3,
+                required: true,
+              },
+              {
+                name: "project_key",
+                description: "Mã dự án (ví dụ: TD)",
+                type: 3,
+                required: false,
+              },
+            ],
+          },
+        ],
+      },
+    ];
+
+    await this.botRequest(
+      `/applications/${applicationId}/guilds/${guildId}/commands`,
+      {
+        method: "PUT",
+        body: JSON.stringify(commands),
+      },
+    );
+  }
+
+  async handleInteraction(body: any): Promise<any> {
+    const type = body.type;
+
+    if (type === 1) {
+      return { type: 1 };
+    }
+
+    const guildId = body.guild_id;
+    if (!guildId) {
+      return {
+        type: 4,
+        data: { content: "Lệnh chỉ được thực hiện trong Discord Server." },
+      };
+    }
+
+    const workspace = await this.workspaces.findOne({ guildId, enabled: true }).exec();
+    if (!workspace) {
+      return {
+        type: 4,
+        data: { content: "Server Discord này chưa được liên kết với Workspace nào." },
+      };
+    }
+
+    if (type === 4) {
+      return this.handleAutocompleteInteraction(workspace.workspaceId, body);
+    }
+
+    if (type === 2) {
+      return this.handleCommandInteraction(workspace.workspaceId, body);
+    }
+
+    return { type: 4, data: { content: "Loại tương tác không được hỗ trợ." } };
+  }
+
+  private async handleAutocompleteInteraction(workspaceId: string, body: any): Promise<any> {
+    const options = body.data?.options?.[0]?.options ?? [];
+    const focusedOption = options.find((opt: any) => opt.focused === true);
+    if (!focusedOption || focusedOption.name !== "pr") {
+      return { type: 8, data: { choices: [] } };
+    }
+
+    const projectKeyOpt = options.find((opt: any) => opt.name === "project_key")?.value;
+    const typedVal = String(focusedOption.value ?? "").toLowerCase();
+
+    const prs = await this.githubApp.listOpenPullRequests(workspaceId, projectKeyOpt).catch(() => []);
+    const choices = prs
+      .map((pr) => {
+        const repoName = pr.repositoryFullName.split("/")[1] || pr.repositoryFullName;
+        const name = `[${repoName}] #${pr.number} - ${pr.title}`.slice(0, 100);
+        return {
+          name,
+          value: `${pr.repositoryFullName}:${pr.number}`,
+        };
+      })
+      .filter((choice) => choice.name.toLowerCase().includes(typedVal))
+      .slice(0, 25);
+
+    return {
+      type: 8,
+      data: { choices },
+    };
+  }
+
+  private async handleCommandInteraction(workspaceId: string, body: any): Promise<any> {
+    const subcommandData = body.data?.options?.[0];
+    if (!subcommandData) {
+      return { type: 4, data: { content: "Không tìm thấy lệnh con." } };
+    }
+
+    const subcommand = subcommandData.name;
+    const options = subcommandData.options ?? [];
+
+    const projectKeyOpt = options.find((opt: any) => opt.name === "project_key")?.value;
+    const prRaw = options.find((opt: any) => opt.name === "pr")?.value;
+
+    let repoFullName = "";
+    let prNumber = 0;
+
+    if (prRaw) {
+      if (prRaw.includes(":")) {
+        const [repo, num] = prRaw.split(":");
+        repoFullName = repo;
+        prNumber = Number(num);
+      } else {
+        prNumber = Number(prRaw);
+        if (isNaN(prNumber)) {
+          return { type: 4, data: { content: "Số PR không hợp lệ." } };
+        }
+        if (projectKeyOpt) {
+          const project = await this.projects.getByKey(workspaceId, projectKeyOpt).catch(() => null);
+          if (project?.repositoryFullName) {
+            repoFullName = project.repositoryFullName;
+          }
+        }
+        if (!repoFullName) {
+          const repos = await this.githubApp.listOpenPullRequests(workspaceId).catch(() => []);
+          if (repos.length > 0) {
+            repoFullName = repos[0].repositoryFullName;
+          }
+        }
+        if (!repoFullName) {
+          return {
+            type: 4,
+            data: { content: "Không xác định được Repository. Vui lòng chọn PR từ danh sách gợi ý hoặc nhập thêm tham số project_key." },
+          };
+        }
+      }
+    }
+
+    try {
+      if (subcommand === "list") {
+        const prs = await this.githubApp.listOpenPullRequests(workspaceId, projectKeyOpt);
+        if (prs.length === 0) {
+          return { type: 4, data: { content: "Hiện tại không có Pull Request nào đang mở." } };
+        }
+        const lines = prs.map(
+          (pr) =>
+            `- **#${pr.number}** ${pr.title} (nhánh \`${pr.branch}\` bởi @${pr.author}) - [Xem PR](${pr.html_url})`,
+        );
+        return {
+          type: 4,
+          data: {
+            embeds: [
+              {
+                title: `Pull Requests đang mở`,
+                description: lines.join("\n").slice(0, 4000),
+                color: 0x5865f2,
+              },
+            ],
+          },
+        };
+      }
+
+      if (subcommand === "merge") {
+        await this.githubApp.mergePullRequest(workspaceId, repoFullName, prNumber);
+        return {
+          type: 4,
+          data: {
+            content: `✅ Đã merge thành công PR **#${prNumber}** trong repository **${repoFullName}**!`,
+          },
+        };
+      }
+
+      if (subcommand === "comment") {
+        const text = options.find((opt: any) => opt.name === "text")?.value;
+        if (!text) {
+          return { type: 4, data: { content: "Nội dung bình luận không được để trống." } };
+        }
+        await this.githubApp.commentOnPullRequest(workspaceId, repoFullName, prNumber, text);
+        return {
+          type: 4,
+          data: {
+            content: `💬 Đã gửi bình luận lên PR **#${prNumber}** của **${repoFullName}** thành công!`,
+          },
+        };
+      }
+
+      if (subcommand === "assign") {
+        const assignee = options.find((opt: any) => opt.name === "github_username")?.value;
+        if (!assignee) {
+          return { type: 4, data: { content: "Username GitHub người được assign không được để trống." } };
+        }
+        await this.githubApp.assignPullRequest(workspaceId, repoFullName, prNumber, assignee);
+        return {
+          type: 4,
+          data: {
+            content: `👤 Đã assign **@${assignee}** cho PR **#${prNumber}** của **${repoFullName}** thành công!`,
+          },
+        };
+      }
+    } catch (e: any) {
+      console.error(e);
+      return {
+        type: 4,
+        data: {
+          content: `❌ Thao tác thất bại: ${e.message || "Lỗi không xác định từ GitHub API."}`,
+        },
+      };
+    }
+
+    return { type: 4, data: { content: "Lệnh không hợp lệ." } };
   }
 
   async connect(
