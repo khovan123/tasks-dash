@@ -927,6 +927,36 @@ export class GithubWebhookService {
             color: COLOR_PR_OPEN,
           },
         );
+      } else {
+        const prChannelId = await this.discord.getOrCreatePrChannel(
+          context.workspaceId,
+          context.projectKey,
+        );
+        if (prChannelId) {
+          const mention = await this.resolveDiscordMention(
+            context.workspaceId,
+            context.projectKey,
+            author,
+          );
+          const description = [
+            `${mention ? `${mention} ` : ""}**@${author}** commented on PR #${prNumber}:`,
+            `>>> ${commentBody}`,
+          ].join("\n");
+
+          const msgId = await this.discord.sendToChannel(prChannelId, {
+            title: `New Comment on PR #${prNumber}`,
+            description,
+            url: payload.comment.html_url || prUrl,
+            color: COLOR_PR_OPEN,
+          });
+
+          await this.prLogs.create({
+            repositoryFullName: context.repositoryFullName,
+            pullRequestNumber: prNumber,
+            discordMessageId: msgId,
+            discordChannelId: prChannelId,
+          });
+        }
       }
     } catch (e) {
       console.error("Failed to process PR comment Discord notification:", e);
