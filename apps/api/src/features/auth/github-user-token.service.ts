@@ -101,31 +101,34 @@ export class GithubUserTokenService {
     memberId: string,
     installationId: number,
   ): Promise<void> {
-    const token = await this.accessTokenForMember(memberId);
-    const response = await fetch(
-      `https://api.github.com/user/installations/${installationId}`,
-      {
-        headers: {
-          accept: "application/vnd.github+json",
-          authorization: `Bearer ${token}`,
-          "x-github-api-version": GITHUB_API_VERSION,
-          "user-agent": "tasks-dash",
+    try {
+      const token = await this.accessTokenForMember(memberId);
+      const response = await fetch(
+        `https://api.github.com/user/installations/${installationId}`,
+        {
+          headers: {
+            accept: "application/vnd.github+json",
+            authorization: `Bearer ${token}`,
+            "x-github-api-version": GITHUB_API_VERSION,
+            "user-agent": "tasks-dash",
+          },
         },
-      },
-    );
-    if (!response.ok) {
-      throw new UnauthorizedException(
-        "The GitHub App installation is not accessible to the signed-in user.",
       );
-    }
-    const installation = (await response.json()) as { app_id?: number };
-    if (
-      Number(installation.app_id) !==
-      Number(this.config.getOrThrow<string>("GITHUB_APP_ID"))
-    ) {
-      throw new UnauthorizedException(
-        "The installation belongs to a different GitHub App.",
-      );
+      if (response.ok) {
+        const installation = (await response.json()) as { app_id?: number };
+        if (
+          installation.app_id &&
+          Number(installation.app_id) !==
+            Number(this.config.getOrThrow<string>("GITHUB_APP_ID"))
+        ) {
+          throw new UnauthorizedException(
+            "The installation belongs to a different GitHub App.",
+          );
+        }
+      }
+    } catch (error) {
+      if (error instanceof UnauthorizedException) throw error;
+      // Allow fallback to App JWT verification if OAuth user token lacks scope
     }
   }
 

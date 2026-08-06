@@ -12,6 +12,8 @@ export class MemberDocument extends BaseMongoDocument {
   @Prop({ default: MEMBER_PRESENCE.offline }) status!: string;
   @Prop({ index: true }) authIdentityId?: string;
   @Prop({ index: true }) githubId?: number;
+  @Prop() githubLogin?: string;
+  @Prop() discordUsername?: string;
   @Prop() lastLoginAt?: Date;
 }
 

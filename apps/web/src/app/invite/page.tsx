@@ -85,7 +85,7 @@ function InvitePageContent() {
                 </label>
                 <Input
                   type="text"
-                  placeholder="Ví dụ: johndoe hoặc johndoe#1234"
+                  placeholder="johndoe hoặc johndoe#1234"
                   value={discordUsername}
                   onChange={(e) => setDiscordUsername(e.target.value)}
                   className="w-full bg-background/50"

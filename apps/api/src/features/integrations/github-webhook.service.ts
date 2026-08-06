@@ -6,6 +6,7 @@ import { Model } from "mongoose";
 import { createHmac, randomUUID, timingSafeEqual } from "node:crypto";
 import {
   AUTOMATION_TRIGGERS,
+  DEFAULT_WORKFLOW_STATUS_IDS,
   GithubLinkSource,
   GithubPullRequestStatus,
   GithubReviewState,
@@ -467,6 +468,30 @@ export class GithubWebhookService {
       if (linked) linkedKeys.push(workItemKey);
     }
 
+    let autoStatusId: string | null = null;
+    if (pullRequest.merged || action === GITHUB_PULL_REQUEST_ACTIONS.closed) {
+      autoStatusId = DEFAULT_WORKFLOW_STATUS_IDS.done;
+    } else if (
+      action === GITHUB_PULL_REQUEST_ACTIONS.reviewRequested ||
+      action === GITHUB_PULL_REQUEST_ACTIONS.readyForReview
+    ) {
+      autoStatusId = DEFAULT_WORKFLOW_STATUS_IDS.review;
+    } else if (
+      action === GITHUB_PULL_REQUEST_ACTIONS.opened ||
+      action === GITHUB_PULL_REQUEST_ACTIONS.reopened
+    ) {
+      autoStatusId = DEFAULT_WORKFLOW_STATUS_IDS.inProgress;
+    }
+    if (autoStatusId) {
+      for (const workItemKey of linkedKeys) {
+        await this.workItems.transitionBySystemRule(
+          context.workspaceId,
+          workItemKey,
+          autoStatusId,
+        );
+      }
+    }
+
     const trigger = pullRequest.merged
       ? AUTOMATION_TRIGGERS.pullRequestMerged
       : action === GITHUB_PULL_REQUEST_ACTIONS.opened ||
@@ -622,6 +647,16 @@ export class GithubWebhookService {
       if (linked) linkedKeys.push(workItemKey);
     }
 
+    if (details.reviewState === GITHUB_REVIEW_STATES.changesRequested) {
+      for (const workItemKey of linkedKeys) {
+        await this.workItems.transitionBySystemRule(
+          context.workspaceId,
+          workItemKey,
+          DEFAULT_WORKFLOW_STATUS_IDS.requestChange,
+        );
+      }
+    }
+
     const reviewState = details.reviewState;
     const trigger =
       reviewState === GITHUB_REVIEW_STATES.approved
@@ -711,6 +746,13 @@ export class GithubWebhookService {
         linkedCommits,
       );
       if (linked) linkedKeys.push(workItemKey);
+    }
+    for (const workItemKey of linkedKeys) {
+      await this.workItems.transitionBySystemRule(
+        context.workspaceId,
+        workItemKey,
+        DEFAULT_WORKFLOW_STATUS_IDS.inProgress,
+      );
     }
 
     return {
@@ -965,4 +1007,3 @@ export class GithubWebhookService {
     return { accepted: true, prNumber };
   }
 }
-

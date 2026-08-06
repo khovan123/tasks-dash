@@ -23,6 +23,7 @@ import {
   TransitionWorkItemCommand,
 } from "./work-items.cqrs";
 import {
+  AssignWorkItemDto,
   CreateWorkItemDto,
   ReorderWorkItemsDto,
   TransitionWorkItemDto,
@@ -58,9 +59,10 @@ export class WorkItemsController {
     @Body() dto: CreateWorkItemDto,
     @WorkspaceId() workspaceId: string,
     @CurrentSession() session: AuthSession,
+    @CurrentMemberRole() role: MemberRole,
   ) {
     return this.commands.execute(
-      new CreateWorkItemCommand(workspaceId, key, session.userId, dto),
+      new CreateWorkItemCommand(workspaceId, key, session.memberId, role, dto),
     );
   }
 
@@ -109,5 +111,16 @@ export class WorkItemsController {
     @CurrentMemberRole() role: MemberRole,
   ) {
     return this.service.update(workspaceId, key, dto, session.memberId, role);
+  }
+
+  @Patch("projects/:projectKey/work-items/:key/assign")
+  @RequireProjectAccess()
+  @RequireRoles(MEMBER_ROLES.owner)
+  assign(
+    @Param("key") key: string,
+    @Body() dto: AssignWorkItemDto,
+    @WorkspaceId() workspaceId: string,
+  ) {
+    return this.service.assign(workspaceId, key, dto.assigneeId ?? null);
   }
 }

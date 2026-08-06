@@ -180,7 +180,10 @@ export function WorkflowEditorForm({
     return SYSTEM_STATUS_IDS.has(statusId);
   }
 
-  function isSystemTransition(fromStatusId: string, toStatusId: string): boolean {
+  function isSystemTransition(
+    fromStatusId: string,
+    toStatusId: string,
+  ): boolean {
     return SYSTEM_TRANSITION_PAIRS.has(`${fromStatusId}:${toStatusId}`);
   }
 
@@ -240,7 +243,9 @@ export function WorkflowEditorForm({
   function handleUpdateStatusColor(statusId: string, color: string) {
     if (isSystemStatus(statusId)) return;
     setStatuses((prev) =>
-      prev.map((status) => (status.id === statusId ? { ...status, color } : status)),
+      prev.map((status) =>
+        status.id === statusId ? { ...status, color } : status,
+      ),
     );
   }
 
@@ -283,7 +288,10 @@ export function WorkflowEditorForm({
     e.preventDefault();
     if (!canManage) return;
     if (draggedIndex === null || draggedIndex === targetIndex) return;
-    if (isSystemStatus(statuses[draggedIndex]?.id) || isSystemStatus(statuses[targetIndex]?.id)) {
+    if (
+      isSystemStatus(statuses[draggedIndex]?.id) ||
+      isSystemStatus(statuses[targetIndex]?.id)
+    ) {
       return;
     }
 
@@ -291,7 +299,10 @@ export function WorkflowEditorForm({
     const [moved] = nextStatuses.splice(draggedIndex, 1);
     nextStatuses.splice(targetIndex, 0, moved);
 
-    const ordered = nextStatuses.map((status, index) => ({ ...status, order: index }));
+    const ordered = nextStatuses.map((status, index) => ({
+      ...status,
+      order: index,
+    }));
     setStatuses(ordered);
     setDraggedIndex(null);
   }
@@ -315,7 +326,9 @@ export function WorkflowEditorForm({
           statuses,
           transitions: transitions.filter(
             (transition) =>
-              statuses.some((status) => status.id === transition.fromStatusId) &&
+              statuses.some(
+                (status) => status.id === transition.fromStatusId,
+              ) &&
               statuses.some((status) => status.id === transition.toStatusId),
           ),
         }),
@@ -386,7 +399,9 @@ export function WorkflowEditorForm({
                     key={item.label}
                     className="rounded-md border border-border/60 bg-background/80 px-3 py-2"
                   >
-                    <div className="font-medium text-foreground">{item.label}</div>
+                    <div className="font-medium text-foreground">
+                      {item.label}
+                    </div>
                     <div>{item.result}</div>
                   </div>
                 ))}
@@ -442,7 +457,9 @@ export function WorkflowEditorForm({
                   onDrop={(e) => canManage && handleStatusDrop(e, index)}
                   className={cn(
                     "flex flex-col gap-3 rounded-md border bg-card p-3 text-sm transition-opacity",
-                    !canManage || isSystemStatus(status.id) ? "cursor-default" : "cursor-grab",
+                    !canManage || isSystemStatus(status.id)
+                      ? "cursor-default"
+                      : "cursor-grab",
                     draggedIndex === index && "opacity-40",
                   )}
                   style={{
@@ -532,11 +549,12 @@ export function WorkflowEditorForm({
                       {statuses
                         .filter((otherStatus) => otherStatus.id !== status.id)
                         .map((otherStatus) => {
-                          const checked = transitions.some(
-                            (transition) =>
-                              transition.fromStatusId === status.id &&
-                              transition.toStatusId === otherStatus.id,
-                          );
+                          const checked =
+                            transitions.some(
+                              (transition) =>
+                                transition.fromStatusId === status.id &&
+                                transition.toStatusId === otherStatus.id,
+                            ) || isSystemTransition(status.id, otherStatus.id);
                           const locked = isSystemTransition(
                             status.id,
                             otherStatus.id,
@@ -594,13 +612,16 @@ export function WorkflowEditorForm({
           </div>
 
           {canManage && (
-            <form onSubmit={handleAddStatus} className="flex flex-col gap-3 border-t pt-4">
+            <form
+              onSubmit={handleAddStatus}
+              className="flex flex-col gap-3 border-t pt-4"
+            >
               <h4 className="text-xs font-bold uppercase tracking-wider text-muted-foreground">
                 Thêm trạng thái mới
               </h4>
               <div className="grid items-end gap-3 sm:grid-cols-[1fr_140px]">
                 <Input
-                  placeholder="Tên trạng thái (Ví dụ: Ready for Dev, Blocked...)"
+                  placeholder="Tên trạng thái"
                   value={newStatusName}
                   onChange={(e) => setNewStatusName(e.target.value)}
                 />
@@ -692,7 +713,11 @@ export function WorkflowEditorForm({
 
           {canManage && (
             <div className="flex justify-end border-t pt-4">
-              <Button onClick={handleSave} disabled={saving} className="gap-2 px-6">
+              <Button
+                onClick={handleSave}
+                disabled={saving}
+                className="gap-2 px-6"
+              >
                 <Save className="size-4" />
                 {saving ? "Đang lưu..." : "Lưu thay đổi"}
               </Button>

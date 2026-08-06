@@ -21,7 +21,7 @@ export default async function WorkspacesPage() {
   return (
     <main className="relative min-h-screen overflow-hidden bg-[#fcfbff] text-[#1f2a44]">
       <div className="pointer-events-none absolute inset-0">
-        <div className="absolute inset-x-0 top-0 h-[45vh] bg-[#57245f]" />
+        <div className="absolute inset-x-0 top-0 h-[45vh] bg-primary" />
         <div className="absolute inset-x-[-10%] top-[34vh] h-64 rounded-[100%] bg-[#fcfbff]" />
       </div>
 
@@ -83,12 +83,6 @@ export default async function WorkspacesPage() {
                 </div>
 
                 <div className="border-t border-slate-200 px-8 py-5">
-                  <Link
-                    href="/workspaces/new"
-                    className="text-lg font-medium text-[#2563eb] transition hover:text-[#1d4ed8]"
-                  >
-                    Create a new workspace
-                  </Link>
                   <p className="mt-3 text-lg text-slate-700">
                     Not seeing your workspace?{" "}
                     <Link
@@ -114,22 +108,6 @@ export default async function WorkspacesPage() {
               </div>
             )}
           </div>
-
-          <aside className="space-y-5">
-            {featuredWorkspace ? (
-              <>
-                <div className="flex items-center gap-3 text-3xl font-bold text-white">
-                  <WorkspaceLogo
-                    workspaceId={featuredWorkspace.workspaceId}
-                    workspaceName={featuredWorkspace.name}
-                    size={36}
-                    className="size-9 rounded-xl shadow-sm"
-                  />
-                  <span>{featuredWorkspace.name}</span>
-                </div>
-              </>
-            ) : null}
-          </aside>
         </section>
       </div>
     </main>

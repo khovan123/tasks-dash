@@ -19,7 +19,7 @@ export function LogoutButton({
 
   return (
     <Button
-      variant="ghost"
+      variant="destructive"
       size={iconOnly ? "icon-sm" : "sm"}
       className={cn(className)}
       onClick={() => void logout()}

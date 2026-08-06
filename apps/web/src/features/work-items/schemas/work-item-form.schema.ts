@@ -29,6 +29,7 @@ export const workItemFormSchema = z.object({
     z.number().int().min(0).max(100).optional(),
   ),
   dueDate: z.string().trim(),
+  startDate: z.string().trim(),
   labels: z.string().trim(),
   figmaLinks: z.array(externalLinkSchema).max(30),
   documentLinks: z.array(externalLinkSchema).max(30),

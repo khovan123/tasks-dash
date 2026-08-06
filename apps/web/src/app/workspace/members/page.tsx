@@ -1,14 +1,8 @@
 import type { MemberRole } from "@tasks-dash/contracts";
-import Link from "next/link";
-import { WorkspaceMembersManager } from "@/components/workspace-members-manager";
+import { WorkspaceMembersView } from "@/components/workspace-members-view";
+import type { JiraShellSession } from "@/components/layout/jira-app-shell";
 import { apiData } from "@/lib/server/api-data";
-import {
-  AppNav,
-  AppPage,
-  AppTopbar,
-  PageHero,
-} from "@/components/layout/app-shell";
-import { Button } from "@/components/ui/button";
+import { AppPage } from "@/components/layout/app-shell";
 
 export const dynamic = "force-dynamic";
 
@@ -35,29 +29,29 @@ interface WorkspaceMembersResponse {
   invitations: WorkspaceInvitation[];
 }
 
+interface Project {
+  _id: string;
+  key: string;
+  name: string;
+  memberIds: string[];
+}
+
 export default async function WorkspaceMembersPage() {
-  const data = await apiData<WorkspaceMembersResponse>("/workspace/members");
+  const [data, projects, session] = await Promise.all([
+    apiData<WorkspaceMembersResponse>("/workspace/members"),
+    apiData<Project[]>("/projects"),
+    apiData<JiraShellSession>("/auth/me"),
+  ]);
+  const currentMemberRole =
+    data.members.find((member) => member.email === session.email)?.role ?? null;
+
   return (
     <AppPage>
-      <AppTopbar>
-        <Button asChild variant="ghost">
-          <Link href="/">← Tổng quan</Link>
-        </Button>
-        <AppNav>
-          <Button asChild variant="outline" size="sm">
-            <Link href="/workspaces">Switch workspace</Link>
-          </Button>
-          <strong>Workspace members</strong>
-        </AppNav>
-      </AppTopbar>
-      <PageHero
-        eyebrow="Workspace level"
-        title={data.workspace.name}
-        description="Thành viên thuộc workspace active. Một GitHub account có thể có role khác nhau ở từng workspace."
-      />
-      <WorkspaceMembersManager
-        members={data.members}
-        invitations={data.invitations}
+      <WorkspaceMembersView
+        initialMembers={data.members}
+        initialInvitations={data.invitations}
+        projects={projects}
+        currentMemberRole={currentMemberRole}
       />
     </AppPage>
   );

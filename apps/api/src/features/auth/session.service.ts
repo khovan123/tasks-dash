@@ -95,6 +95,46 @@ export class SessionService {
     return this.verify(parseCookies(request.headers.cookie)[SESSION_COOKIE]);
   }
 
+  refresh(token: string): string {
+    const [header, payload, signature] = token.split(".");
+    if (!header || !payload || !signature) {
+      throw new UnauthorizedException("Invalid session token.");
+    }
+    const unsigned = `${header}.${payload}`;
+    const expected = Buffer.from(this.signature(unsigned));
+    const actual = Buffer.from(signature);
+    if (
+      expected.length !== actual.length ||
+      !timingSafeEqual(expected, actual)
+    ) {
+      throw new UnauthorizedException("Invalid session signature.");
+    }
+    let session: AuthSession;
+    try {
+      session = JSON.parse(
+        Buffer.from(payload, "base64url").toString("utf8"),
+      ) as AuthSession;
+    } catch {
+      throw new UnauthorizedException("Invalid session payload.");
+    }
+    // Allow refresh if session expired less than 30 days ago
+    const now = Math.floor(Date.now() / 1000);
+    if (session.expiresAt + 60 * 60 * 24 * 30 < now) {
+      throw new UnauthorizedException("Session has expired for too long. Re-authentication required.");
+    }
+    return this.sign({
+      identityId: session.identityId,
+      memberId: session.memberId,
+      userId: session.userId,
+      githubId: session.githubId,
+      login: session.login,
+      name: session.name,
+      email: session.email,
+      avatarUrl: session.avatarUrl,
+      workspaceId: session.workspaceId,
+    });
+  }
+
   cookieOptions(): {
     httpOnly: boolean;
     secure: boolean;

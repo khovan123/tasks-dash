@@ -72,6 +72,8 @@ export class DiscordIntegrationDocument extends BaseMongoDocument {
   @Prop({ trim: true }) membersChannelName?: string;
   @Prop({ trim: true }) reportsChannelId?: string;
   @Prop({ trim: true }) reportsChannelName?: string;
+  @Prop({ trim: true }) prChannelId?: string;
+  @Prop({ trim: true }) prChannelName?: string;
   @Prop({ trim: true }) meetingChannelId?: string;
   @Prop({ trim: true }) meetingChannelName?: string;
   @Prop({ trim: true }) guildId?: string;

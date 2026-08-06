@@ -20,6 +20,26 @@ import {
 
 const GITHUB_API = "https://api.github.com";
 const GITHUB_API_VERSION = "2026-03-10";
+const GITHUB_MUTATION_STATES = {
+  open: "open",
+  closed: "closed",
+} as const;
+type GithubMutationState =
+  (typeof GITHUB_MUTATION_STATES)[keyof typeof GITHUB_MUTATION_STATES];
+
+const GITHUB_REVIEW_EVENTS = {
+  approve: "APPROVE",
+  requestChanges: "REQUEST_CHANGES",
+} as const;
+type GithubReviewEvent =
+  (typeof GITHUB_REVIEW_EVENTS)[keyof typeof GITHUB_REVIEW_EVENTS];
+
+const GITHUB_ALERT_STATES = {
+  dismissed: "dismissed",
+  open: "open",
+} as const;
+type GithubAlertState =
+  (typeof GITHUB_ALERT_STATES)[keyof typeof GITHUB_ALERT_STATES];
 
 export interface GithubInstallationResponse {
   id: number;
@@ -37,6 +57,87 @@ export interface GithubRepositoryResponse {
   html_url: string;
   owner?: { login?: string };
   linkedProjectKey?: string;
+}
+
+export interface GithubPullRequestSummary {
+  number: number;
+  title: string;
+  html_url: string;
+  repositoryFullName: string;
+  branch: string;
+  author: string;
+  state: string;
+  draft: boolean;
+}
+
+export interface GithubIssueSummary {
+  number: number;
+  title: string;
+  html_url: string;
+  repositoryFullName: string;
+  author: string;
+  state: string;
+}
+
+export interface GithubWorkflowRunSummary {
+  id: number;
+  name: string;
+  html_url: string;
+  repositoryFullName: string;
+  status: string;
+  conclusion: string | null;
+  branch: string;
+  event: string;
+  workflowName: string;
+  createdAt: string | null;
+}
+
+export interface GithubCheckSuiteSummary {
+  id: number;
+  repositoryFullName: string;
+  branch: string;
+  headSha: string;
+  status: string;
+  conclusion: string | null;
+  appName: string;
+  createdAt: string | null;
+  updatedAt: string | null;
+}
+
+export interface GithubDeploymentSummary {
+  id: number;
+  repositoryFullName: string;
+  environment: string;
+  ref: string;
+  creator: string;
+  state: string;
+  description: string | null;
+  createdAt: string | null;
+  updatedAt: string | null;
+  originalEnvironment: string | null;
+}
+
+export interface GithubDependabotAlertSummary {
+  number: number;
+  repositoryFullName: string;
+  state: string;
+  severity: string;
+  packageName: string;
+  ecosystem: string;
+  summary: string;
+  html_url: string;
+  createdAt: string | null;
+}
+
+export interface GithubCodeScanningAlertSummary {
+  number: number;
+  repositoryFullName: string;
+  state: string;
+  severity: string;
+  rule: string;
+  tool: string;
+  html_url: string;
+  createdAt: string | null;
 }
 
 @Injectable()
@@ -320,33 +421,12 @@ export class GithubAppService {
         `Project ${projectKey} has no GitHub repository.`,
       );
     }
-    const installation = await this.installations
-      .findOne({
-        workspaceId,
-        suspended: false,
-        repositoryFullNames: project.repositoryFullName,
-      })
-      .exec();
-    if (!installation) {
-      throw new ServiceUnavailableException(
-        "No GitHub App installation can access this repository.",
-      );
-    }
-    const [owner, repo] = project.repositoryFullName.split("/");
-    const response = await fetch(`${GITHUB_API}/repos/${owner}/${repo}/issues`, {
-      method: "POST",
-      headers: {
-        ...this.headers(await this.token(installation.installationId)),
-        "content-type": "application/json",
-      },
-      body: JSON.stringify({ title, body }),
-    });
-    if (!response.ok) {
-      throw new ServiceUnavailableException(
-        `GitHub issue creation failed with HTTP ${response.status}.`,
-      );
-    }
-    return (await response.json()) as Record<string, unknown>;
+    return this.createIssueInRepository(
+      workspaceId,
+      project.repositoryFullName,
+      title,
+      body,
+    );
   }
 
   findByInstallationId(
@@ -381,66 +461,150 @@ export class GithubAppService {
     };
   }
 
-  async listOpenPullRequests(workspaceId: string, projectKey?: string): Promise<any[]> {
-    const installation = await this.installations.findOne({ workspaceId }).exec();
-    if (!installation) return [];
-
-    const token = await this.token(installation.installationId);
-    let repositories = installation.repositoryFullNames;
-
-    if (projectKey) {
-      const project = await this.projects.getByKey(workspaceId, projectKey);
-      if (project && project.repositoryFullName) {
-        repositories = [project.repositoryFullName];
-      }
+  private async installationForRepository(
+    workspaceId: string,
+    repositoryFullName: string,
+  ): Promise<GithubInstallationHydratedDocument> {
+    const installation = await this.installations
+      .findOne({
+        workspaceId,
+        suspended: false,
+        repositoryFullNames: repositoryFullName,
+      })
+      .exec();
+    if (!installation) {
+      throw new ServiceUnavailableException(
+        `No GitHub App installation can access repository ${repositoryFullName}.`,
+      );
     }
-
-    const prs: any[] = [];
-    for (const repo of repositories) {
-      try {
-        const response = await fetch(
-          `${GITHUB_API}/repos/${repo}/pulls?state=open&per_page=50`,
-          { headers: this.headers(token) },
-        );
-        if (response.ok) {
-          const list = (await response.json()) as any[];
-          for (const pr of list) {
-            prs.push({
-              number: pr.number,
-              title: pr.title,
-              html_url: pr.html_url,
-              repositoryFullName: repo,
-              branch: pr.head?.ref ?? "?",
-              author: pr.user?.login ?? "unknown",
-            });
-          }
-        }
-      } catch (e) {
-        console.error(`Failed to fetch PRs for repository ${repo}:`, e);
-      }
-    }
-    return prs;
+    return installation;
   }
 
-  async mergePullRequest(workspaceId: string, repositoryFullName: string, prNumber: number): Promise<void> {
-    const installation = await this.installations.findOne({ workspaceId }).exec();
-    if (!installation) throw new Error("No GitHub installation found for workspace");
+  private async repositoryToken(
+    workspaceId: string,
+    repositoryFullName: string,
+  ): Promise<string> {
+    const installation = await this.installationForRepository(
+      workspaceId,
+      repositoryFullName,
+    );
+    return this.token(installation.installationId);
+  }
 
-    const token = await this.token(installation.installationId);
-    const response = await fetch(
-      `${GITHUB_API}/repos/${repositoryFullName}/pulls/${prNumber}/merge`,
+  private async requestRepository<T>(
+    workspaceId: string,
+    repositoryFullName: string,
+    path: string,
+    init: RequestInit = {},
+  ): Promise<T> {
+    const token = await this.repositoryToken(workspaceId, repositoryFullName);
+    const headers = new Headers(init.headers);
+    for (const [key, value] of Object.entries(this.headers(token))) {
+      headers.set(key, value);
+    }
+    if (init.body && !headers.has("content-type")) {
+      headers.set("content-type", "application/json");
+    }
+    const response = await fetch(`${GITHUB_API}${path}`, { ...init, headers });
+    if (!response.ok) {
+      const errorData = (await response.json().catch(() => ({}))) as {
+        message?: string;
+      };
+      throw new ServiceUnavailableException(
+        errorData.message ?? `GitHub API request failed with HTTP ${response.status}.`,
+      );
+    }
+    if (response.status === 204) {
+      return undefined as T;
+    }
+    return (await response.json()) as T;
+  }
+
+  private async resolveRepositories(
+    workspaceId: string,
+    projectKey?: string,
+  ): Promise<string[]> {
+    if (projectKey) {
+      const project = await this.projects.getByKey(workspaceId, projectKey);
+      if (!project?.repositoryFullName) {
+        throw new NotFoundException(
+          `Project ${projectKey} has no GitHub repository.`,
+        );
+      }
+      return [project.repositoryFullName];
+    }
+    const installations = await this.installations
+      .find({ workspaceId, suspended: false })
+      .exec();
+    return [...new Set(installations.flatMap((item) => item.repositoryFullNames))];
+  }
+
+  async createIssueInRepository(
+    workspaceId: string,
+    repositoryFullName: string,
+    title: string,
+    body: string,
+  ): Promise<Record<string, unknown>> {
+    return this.requestRepository<Record<string, unknown>>(
+      workspaceId,
+      repositoryFullName,
+      `/repos/${repositoryFullName}/issues`,
       {
-        method: "PUT",
-        headers: this.headers(token),
-        body: JSON.stringify({
-          merge_method: "merge",
-        }),
+        method: "POST",
+        body: JSON.stringify({ title, body }),
       },
     );
-    if (!response.ok) {
-      const errorData = await response.json().catch(() => ({}));
-      throw new Error(errorData.message || `Failed to merge PR #${prNumber} on GitHub`);
+  }
+
+  async listOpenPullRequests(
+    workspaceId: string,
+    projectKey?: string,
+  ): Promise<GithubPullRequestSummary[]> {
+    const repositories = await this.resolveRepositories(workspaceId, projectKey);
+    const prs: GithubPullRequestSummary[] = [];
+    for (const repositoryFullName of repositories) {
+      try {
+        const list = await this.requestRepository<any[]>(
+          workspaceId,
+          repositoryFullName,
+          `/repos/${repositoryFullName}/pulls?state=open&per_page=50`,
+        );
+        for (const pr of list) {
+          prs.push({
+            number: pr.number,
+            title: pr.title,
+            html_url: pr.html_url,
+            repositoryFullName,
+            branch: pr.head?.ref ?? "?",
+            author: pr.user?.login ?? "unknown",
+            state: pr.state ?? "open",
+            draft: Boolean(pr.draft),
+          });
+        }
+      } catch (error) {
+        console.error(
+          `Failed to fetch PRs for repository ${repositoryFullName}:`,
+          error,
+        );
+      }
     }
+    return prs.sort((a, b) => a.repositoryFullName.localeCompare(b.repositoryFullName) || a.number - b.number);
+  }
+
+  async mergePullRequest(
+    workspaceId: string,
+    repositoryFullName: string,
+    prNumber: number,
+  ): Promise<void> {
+    await this.requestRepository<void>(
+      workspaceId,
+      repositoryFullName,
+      `/repos/${repositoryFullName}/pulls/${prNumber}/merge`,
+      {
+        method: "PUT",
+        body: JSON.stringify({ merge_method: "merge" }),
+      },
+    );
   }
 
   async commentOnPullRequest(
@@ -449,24 +613,15 @@ export class GithubAppService {
     prNumber: number,
     commentBody: string,
   ): Promise<void> {
-    const installation = await this.installations.findOne({ workspaceId }).exec();
-    if (!installation) throw new Error("No GitHub installation found for workspace");
-
-    const token = await this.token(installation.installationId);
-    const response = await fetch(
-      `${GITHUB_API}/repos/${repositoryFullName}/issues/${prNumber}/comments`,
+    await this.requestRepository<void>(
+      workspaceId,
+      repositoryFullName,
+      `/repos/${repositoryFullName}/issues/${prNumber}/comments`,
       {
         method: "POST",
-        headers: this.headers(token),
-        body: JSON.stringify({
-          body: commentBody,
-        }),
+        body: JSON.stringify({ body: commentBody }),
       },
     );
-    if (!response.ok) {
-      const errorData = await response.json().catch(() => ({}));
-      throw new Error(errorData.message || `Failed to comment on PR #${prNumber} on GitHub`);
-    }
   }
 
   async assignPullRequest(
@@ -475,24 +630,514 @@ export class GithubAppService {
     prNumber: number,
     assignee: string,
   ): Promise<void> {
-    const installation = await this.installations.findOne({ workspaceId }).exec();
-    if (!installation) throw new Error("No GitHub installation found for workspace");
-
-    const token = await this.token(installation.installationId);
-    const response = await fetch(
-      `${GITHUB_API}/repos/${repositoryFullName}/issues/${prNumber}/assignees`,
+    await this.requestRepository<void>(
+      workspaceId,
+      repositoryFullName,
+      `/repos/${repositoryFullName}/issues/${prNumber}/assignees`,
       {
         method: "POST",
-        headers: this.headers(token),
+        body: JSON.stringify({ assignees: [assignee] }),
+      },
+    );
+  }
+
+  async requestReviewOnPullRequest(
+    workspaceId: string,
+    repositoryFullName: string,
+    prNumber: number,
+    reviewer: string,
+  ): Promise<void> {
+    await this.requestRepository<void>(
+      workspaceId,
+      repositoryFullName,
+      `/repos/${repositoryFullName}/pulls/${prNumber}/requested_reviewers`,
+      {
+        method: "POST",
+        body: JSON.stringify({ reviewers: [reviewer] }),
+      },
+    );
+  }
+
+  async submitPullRequestReview(
+    workspaceId: string,
+    repositoryFullName: string,
+    prNumber: number,
+    event: GithubReviewEvent,
+    body?: string,
+  ): Promise<void> {
+    await this.requestRepository<void>(
+      workspaceId,
+      repositoryFullName,
+      `/repos/${repositoryFullName}/pulls/${prNumber}/reviews`,
+      {
+        method: "POST",
         body: JSON.stringify({
-          assignees: [assignee],
+          event,
+          body: body?.trim() || undefined,
         }),
       },
     );
-    if (!response.ok) {
-      const errorData = await response.json().catch(() => ({}));
-      throw new Error(errorData.message || `Failed to assign user to PR #${prNumber} on GitHub`);
+  }
+
+  async updatePullRequestState(
+    workspaceId: string,
+    repositoryFullName: string,
+    prNumber: number,
+    state: GithubMutationState,
+  ): Promise<void> {
+    await this.requestRepository<void>(
+      workspaceId,
+      repositoryFullName,
+      `/repos/${repositoryFullName}/pulls/${prNumber}`,
+      {
+        method: "PATCH",
+        body: JSON.stringify({ state }),
+      },
+    );
+  }
+
+  async listOpenIssues(
+    workspaceId: string,
+    projectKey?: string,
+  ): Promise<GithubIssueSummary[]> {
+    const repositories = await this.resolveRepositories(workspaceId, projectKey);
+    const issues: GithubIssueSummary[] = [];
+    for (const repositoryFullName of repositories) {
+      try {
+        const list = await this.requestRepository<any[]>(
+          workspaceId,
+          repositoryFullName,
+          `/repos/${repositoryFullName}/issues?state=open&per_page=50`,
+        );
+        for (const issue of list) {
+          if (issue.pull_request) continue;
+          issues.push({
+            number: issue.number,
+            title: issue.title,
+            html_url: issue.html_url,
+            repositoryFullName,
+            author: issue.user?.login ?? "unknown",
+            state: issue.state ?? "open",
+          });
+        }
+      } catch (error) {
+        console.error(
+          `Failed to fetch issues for repository ${repositoryFullName}:`,
+          error,
+        );
+      }
     }
+    return issues.sort(
+      (a, b) =>
+        a.repositoryFullName.localeCompare(b.repositoryFullName) ||
+        a.number - b.number,
+    );
+  }
+
+  async commentOnIssue(
+    workspaceId: string,
+    repositoryFullName: string,
+    issueNumber: number,
+    commentBody: string,
+  ): Promise<void> {
+    await this.requestRepository<void>(
+      workspaceId,
+      repositoryFullName,
+      `/repos/${repositoryFullName}/issues/${issueNumber}/comments`,
+      {
+        method: "POST",
+        body: JSON.stringify({ body: commentBody }),
+      },
+    );
+  }
+
+  async assignIssue(
+    workspaceId: string,
+    repositoryFullName: string,
+    issueNumber: number,
+    assignee: string,
+  ): Promise<void> {
+    await this.requestRepository<void>(
+      workspaceId,
+      repositoryFullName,
+      `/repos/${repositoryFullName}/issues/${issueNumber}/assignees`,
+      {
+        method: "POST",
+        body: JSON.stringify({ assignees: [assignee] }),
+      },
+    );
+  }
+
+  async updateIssueState(
+    workspaceId: string,
+    repositoryFullName: string,
+    issueNumber: number,
+    state: GithubMutationState,
+  ): Promise<void> {
+    await this.requestRepository<void>(
+      workspaceId,
+      repositoryFullName,
+      `/repos/${repositoryFullName}/issues/${issueNumber}`,
+      {
+        method: "PATCH",
+        body: JSON.stringify({ state }),
+      },
+    );
+  }
+
+  async listWorkflowRuns(
+    workspaceId: string,
+    projectKey?: string,
+  ): Promise<GithubWorkflowRunSummary[]> {
+    const repositories = await this.resolveRepositories(workspaceId, projectKey);
+    const runs: GithubWorkflowRunSummary[] = [];
+    for (const repositoryFullName of repositories) {
+      try {
+        const payload = await this.requestRepository<{
+          workflow_runs?: any[];
+        }>(
+          workspaceId,
+          repositoryFullName,
+          `/repos/${repositoryFullName}/actions/runs?per_page=25`,
+        );
+        for (const run of payload.workflow_runs ?? []) {
+          runs.push({
+            id: run.id,
+            name: run.display_title ?? run.name ?? `Run #${run.id}`,
+            html_url: run.html_url,
+            repositoryFullName,
+            status: run.status ?? "unknown",
+            conclusion: run.conclusion ?? null,
+            branch: run.head_branch ?? "?",
+            event: run.event ?? "unknown",
+            workflowName: run.name ?? "Workflow",
+            createdAt: run.created_at ?? null,
+          });
+        }
+      } catch (error) {
+        console.error(
+          `Failed to fetch workflow runs for repository ${repositoryFullName}:`,
+          error,
+        );
+      }
+    }
+    return runs.sort((a, b) => {
+      const left = a.createdAt ? Date.parse(a.createdAt) : 0;
+      const right = b.createdAt ? Date.parse(b.createdAt) : 0;
+      return right - left;
+    });
+  }
+
+  async rerunWorkflowRun(
+    workspaceId: string,
+    repositoryFullName: string,
+    runId: number,
+  ): Promise<void> {
+    await this.requestRepository<void>(
+      workspaceId,
+      repositoryFullName,
+      `/repos/${repositoryFullName}/actions/runs/${runId}/rerun`,
+      { method: "POST" },
+    );
+  }
+
+  async cancelWorkflowRun(
+    workspaceId: string,
+    repositoryFullName: string,
+    runId: number,
+  ): Promise<void> {
+    await this.requestRepository<void>(
+      workspaceId,
+      repositoryFullName,
+      `/repos/${repositoryFullName}/actions/runs/${runId}/cancel`,
+      { method: "POST" },
+    );
+  }
+
+  async rerunFailedWorkflowJobs(
+    workspaceId: string,
+    repositoryFullName: string,
+    runId: number,
+  ): Promise<void> {
+    await this.requestRepository<void>(
+      workspaceId,
+      repositoryFullName,
+      `/repos/${repositoryFullName}/actions/runs/${runId}/rerun-failed-jobs`,
+      { method: "POST" },
+    );
+  }
+
+  async listCheckSuites(
+    workspaceId: string,
+    projectKey?: string,
+  ): Promise<GithubCheckSuiteSummary[]> {
+    const repositorySet = new Set(
+      await this.resolveRepositories(workspaceId, projectKey),
+    );
+    const catalogs = (await this.repositories(workspaceId)).filter((repository) =>
+      repositorySet.has(repository.full_name),
+    );
+    const suites: GithubCheckSuiteSummary[] = [];
+    for (const repository of catalogs) {
+      try {
+        const payload = await this.requestRepository<{
+          check_suites?: any[];
+        }>(
+          workspaceId,
+          repository.full_name,
+          `/repos/${repository.full_name}/commits/${encodeURIComponent(
+            repository.default_branch,
+          )}/check-suites?per_page=25`,
+        );
+        for (const suite of payload.check_suites ?? []) {
+          suites.push({
+            id: suite.id,
+            repositoryFullName: repository.full_name,
+            branch: suite.head_branch ?? repository.default_branch,
+            headSha: suite.head_sha ?? "",
+            status: suite.status ?? "unknown",
+            conclusion: suite.conclusion ?? null,
+            appName: suite.app?.name ?? "GitHub",
+            createdAt: suite.created_at ?? null,
+            updatedAt: suite.updated_at ?? null,
+          });
+        }
+      } catch (error) {
+        console.error(
+          `Failed to fetch check suites for repository ${repository.full_name}:`,
+          error,
+        );
+      }
+    }
+    return suites.sort((a, b) => {
+      const left = a.updatedAt ? Date.parse(a.updatedAt) : 0;
+      const right = b.updatedAt ? Date.parse(b.updatedAt) : 0;
+      return right - left;
+    });
+  }
+
+  async rerequestCheckSuite(
+    workspaceId: string,
+    repositoryFullName: string,
+    checkSuiteId: number,
+  ): Promise<void> {
+    await this.requestRepository<void>(
+      workspaceId,
+      repositoryFullName,
+      `/repos/${repositoryFullName}/check-suites/${checkSuiteId}/rerequest`,
+      { method: "POST" },
+    );
+  }
+
+  async listDeployments(
+    workspaceId: string,
+    projectKey?: string,
+  ): Promise<GithubDeploymentSummary[]> {
+    const repositories = await this.resolveRepositories(workspaceId, projectKey);
+    const deployments: GithubDeploymentSummary[] = [];
+    for (const repositoryFullName of repositories) {
+      try {
+        const list = await this.requestRepository<any[]>(
+          workspaceId,
+          repositoryFullName,
+          `/repos/${repositoryFullName}/deployments?per_page=25`,
+        );
+        for (const deployment of list) {
+          let latestStatus: any = null;
+          try {
+            const statuses = await this.requestRepository<any[]>(
+              workspaceId,
+              repositoryFullName,
+              `/repos/${repositoryFullName}/deployments/${deployment.id}/statuses?per_page=1`,
+            );
+            latestStatus = statuses[0] ?? null;
+          } catch (statusError) {
+            console.error(
+              `Failed to fetch deployment status for repository ${repositoryFullName} deployment ${deployment.id}:`,
+              statusError,
+            );
+          }
+          deployments.push({
+            id: deployment.id,
+            repositoryFullName,
+            environment: latestStatus?.environment ?? deployment.environment ?? "unknown",
+            ref: deployment.ref ?? "?",
+            creator: deployment.creator?.login ?? "unknown",
+            state: latestStatus?.state ?? "pending",
+            description: latestStatus?.description ?? null,
+            createdAt: deployment.created_at ?? null,
+            updatedAt: latestStatus?.updated_at ?? deployment.updated_at ?? null,
+            originalEnvironment: deployment.original_environment ?? null,
+          });
+        }
+      } catch (error) {
+        console.error(
+          `Failed to fetch deployments for repository ${repositoryFullName}:`,
+          error,
+        );
+      }
+    }
+    return deployments.sort((a, b) => {
+      const left = a.updatedAt ? Date.parse(a.updatedAt) : 0;
+      const right = b.updatedAt ? Date.parse(b.updatedAt) : 0;
+      return right - left;
+    });
+  }
+
+  async createDeploymentStatus(
+    workspaceId: string,
+    repositoryFullName: string,
+    deploymentId: number,
+    state: string,
+    description?: string,
+    environmentUrl?: string,
+  ): Promise<void> {
+    await this.requestRepository<void>(
+      workspaceId,
+      repositoryFullName,
+      `/repos/${repositoryFullName}/deployments/${deploymentId}/statuses`,
+      {
+        method: "POST",
+        body: JSON.stringify({
+          state,
+          description: description?.trim() || undefined,
+          environment_url: environmentUrl?.trim() || undefined,
+        }),
+      },
+    );
+  }
+
+  async listDependabotAlerts(
+    workspaceId: string,
+    projectKey?: string,
+  ): Promise<GithubDependabotAlertSummary[]> {
+    const repositories = await this.resolveRepositories(workspaceId, projectKey);
+    const alerts: GithubDependabotAlertSummary[] = [];
+    for (const repositoryFullName of repositories) {
+      try {
+        const list = await this.requestRepository<any[]>(
+          workspaceId,
+          repositoryFullName,
+          `/repos/${repositoryFullName}/dependabot/alerts?state=open&per_page=25`,
+        );
+        for (const alert of list) {
+          alerts.push({
+            number: alert.number,
+            repositoryFullName,
+            state: alert.state ?? "open",
+            severity:
+              alert.security_advisory?.severity ??
+              alert.security_vulnerability?.severity ??
+              "unknown",
+            packageName: alert.dependency?.package?.name ?? "unknown",
+            ecosystem: alert.dependency?.package?.ecosystem ?? "unknown",
+            summary: alert.security_advisory?.summary ?? "Dependabot alert",
+            html_url: alert.html_url,
+            createdAt: alert.created_at ?? null,
+          });
+        }
+      } catch (error) {
+        console.error(
+          `Failed to fetch Dependabot alerts for repository ${repositoryFullName}:`,
+          error,
+        );
+      }
+    }
+    return alerts.sort((a, b) => {
+      const left = a.createdAt ? Date.parse(a.createdAt) : 0;
+      const right = b.createdAt ? Date.parse(b.createdAt) : 0;
+      return right - left;
+    });
+  }
+
+  async updateDependabotAlert(
+    workspaceId: string,
+    repositoryFullName: string,
+    alertNumber: number,
+    state: GithubAlertState,
+    dismissedReason?: string,
+    dismissedComment?: string,
+  ): Promise<void> {
+    await this.requestRepository<void>(
+      workspaceId,
+      repositoryFullName,
+      `/repos/${repositoryFullName}/dependabot/alerts/${alertNumber}`,
+      {
+        method: "PATCH",
+        body: JSON.stringify({
+          state,
+          dismissed_reason: state === "dismissed" ? dismissedReason : undefined,
+          dismissed_comment:
+            state === "dismissed" ? dismissedComment?.trim() || undefined : undefined,
+        }),
+      },
+    );
+  }
+
+  async listCodeScanningAlerts(
+    workspaceId: string,
+    projectKey?: string,
+  ): Promise<GithubCodeScanningAlertSummary[]> {
+    const repositories = await this.resolveRepositories(workspaceId, projectKey);
+    const alerts: GithubCodeScanningAlertSummary[] = [];
+    for (const repositoryFullName of repositories) {
+      try {
+        const list = await this.requestRepository<any[]>(
+          workspaceId,
+          repositoryFullName,
+          `/repos/${repositoryFullName}/code-scanning/alerts?state=open&per_page=25`,
+        );
+        for (const alert of list) {
+          alerts.push({
+            number: alert.number,
+            repositoryFullName,
+            state: alert.state ?? "open",
+            severity:
+              alert.rule?.security_severity_level ??
+              alert.rule?.severity ??
+              "unknown",
+            rule: alert.rule?.id ?? alert.rule?.name ?? "unknown",
+            tool: alert.tool?.name ?? "unknown",
+            html_url: alert.html_url,
+            createdAt: alert.created_at ?? null,
+          });
+        }
+      } catch (error) {
+        console.error(
+          `Failed to fetch code scanning alerts for repository ${repositoryFullName}:`,
+          error,
+        );
+      }
+    }
+    return alerts.sort((a, b) => {
+      const left = a.createdAt ? Date.parse(a.createdAt) : 0;
+      const right = b.createdAt ? Date.parse(b.createdAt) : 0;
+      return right - left;
+    });
+  }
+
+  async updateCodeScanningAlert(
+    workspaceId: string,
+    repositoryFullName: string,
+    alertNumber: number,
+    state: GithubAlertState,
+    dismissedReason?: string,
+    dismissedComment?: string,
+  ): Promise<void> {
+    await this.requestRepository<void>(
+      workspaceId,
+      repositoryFullName,
+      `/repos/${repositoryFullName}/code-scanning/alerts/${alertNumber}`,
+      {
+        method: "PATCH",
+        body: JSON.stringify({
+          state,
+          dismissed_reason: state === "dismissed" ? dismissedReason : undefined,
+          dismissed_comment:
+            state === "dismissed" ? dismissedComment?.trim() || undefined : undefined,
+        }),
+      },
+    );
   }
 }
 

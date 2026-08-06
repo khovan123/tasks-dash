@@ -1,14 +1,8 @@
-import Link from "next/link";
-import { Figma } from "lucide-react";
+import { MEMBER_ROLES, type MemberRole } from "@tasks-dash/contracts";
 import { DesignerCatalogManager } from "@/components/designer-catalog-manager";
+import type { JiraShellSession } from "@/components/layout/jira-app-shell";
 import { apiData } from "@/lib/server/api-data";
-import {
-  AppNav,
-  AppPage,
-  AppTopbar,
-  PageHero,
-} from "@/components/layout/app-shell";
-import { Button } from "@/components/ui/button";
+import { AppPage } from "@/components/layout/app-shell";
 
 export const dynamic = "force-dynamic";
 
@@ -21,6 +15,31 @@ interface DesignCatalogItem {
   tags: string[];
 }
 
+interface WorkspaceMember {
+  _id: string;
+  name: string;
+  email: string;
+  avatarUrl: string;
+  role: MemberRole;
+  status: string;
+  lastLoginAt?: string;
+}
+
+interface WorkspaceInvitation {
+  _id: string;
+  email: string;
+  role: MemberRole;
+  status: string;
+  expiresAt: string;
+  lastSentAt?: string;
+}
+
+interface WorkspaceMembersResponse {
+  workspace: { workspaceId: string; name: string; slug?: string };
+  members: WorkspaceMember[];
+  invitations: WorkspaceInvitation[];
+}
+
 export default async function DesignerPage({
   params,
 }: {
@@ -28,25 +47,24 @@ export default async function DesignerPage({
 }) {
   const { projectKey } = await params;
   const key = projectKey.toUpperCase();
-  const items = await apiData<DesignCatalogItem[]>(
-    `/projects/${key}/design-catalog`,
-  );
+  const [items, workspaceMembers, session] = await Promise.all([
+    apiData<DesignCatalogItem[]>(`/projects/${key}/design-catalog`),
+    apiData<WorkspaceMembersResponse>("/workspace/members"),
+    apiData<JiraShellSession>("/auth/me"),
+  ]);
+  const currentRole =
+    workspaceMembers.members.find((member) => member.email === session.email)
+      ?.role ?? null;
+  const canManageCatalog =
+    currentRole === MEMBER_ROLES.owner ||
+    currentRole === MEMBER_ROLES.designer;
   return (
     <AppPage>
-      <AppTopbar>
-        <Button asChild variant="ghost"><Link href={`/projects/${key}`}>← {key}</Link></Button>
-        <AppNav>
-          <Button asChild variant="ghost" size="sm"><Link href={`/projects/${key}/backlog`}>Backlog</Link></Button>
-          <Button asChild variant="ghost" size="sm"><Link href={`/projects/${key}/automations`}>Automation</Link></Button>
-        </AppNav>
-      </AppTopbar>
-      <PageHero
-        eyebrow="Project design system"
-        title="Designer Catalog"
-        description={`Catalog này thuộc riêng project ${key}; thành viên vẫn được quản lý ở cấp workspace.`}
-        aside={<Figma className="size-14 text-primary" />}
+      <DesignerCatalogManager
+        projectKey={key}
+        items={items}
+        canManageCatalog={canManageCatalog}
       />
-      <DesignerCatalogManager projectKey={key} items={items} />
     </AppPage>
   );
 }
