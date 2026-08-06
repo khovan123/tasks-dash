@@ -1,6 +1,7 @@
 import {
   BadRequestException,
   Body,
+  ConflictException,
   Controller,
   Delete,
   Get,
@@ -52,6 +53,7 @@ export class AutomationActionDocument {
 export class AutomationRuleDocument extends BaseMongoDocument {
   @Prop({ required: true, uppercase: true }) projectKey!: string;
   @Prop({ required: true }) name!: string;
+  @Prop({ default: false }) isSystem!: boolean;
   @Prop({ default: true }) enabled!: boolean;
   @Prop({ required: true }) trigger!: AutomationTrigger;
   @Prop({ required: true }) executionMode!: AutomationExecutionMode;
@@ -184,6 +186,32 @@ export class AutomationService {
     private readonly workItems: WorkItemsService,
   ) {}
 
+  private async getRule(
+    workspaceId: string,
+    projectKey: string,
+    ruleId: string,
+  ): Promise<AutomationRuleHydratedDocument> {
+    if (!isValidObjectId(ruleId))
+      throw new BadRequestException("Invalid automation rule id.");
+    const rule = await this.rules
+      .findOne({
+        _id: new Types.ObjectId(ruleId),
+        workspaceId,
+        projectKey: projectKey.toUpperCase(),
+      })
+      .exec();
+    if (!rule) throw new NotFoundException("Automation rule was not found.");
+    return rule;
+  }
+
+  private assertMutableRule(rule: AutomationRuleDocument): void {
+    if (rule.isSystem) {
+      throw new ConflictException(
+        "System automation rules cannot be edited, disabled, or deleted.",
+      );
+    }
+  }
+
   async list(
     workspaceId: string,
     projectKey: string,
@@ -201,16 +229,8 @@ export class AutomationService {
     ruleId: string,
     enabled?: boolean,
   ): Promise<AutomationRuleHydratedDocument> {
-    if (!isValidObjectId(ruleId))
-      throw new BadRequestException("Invalid automation rule id.");
-    const rule = await this.rules
-      .findOne({
-        _id: new Types.ObjectId(ruleId),
-        workspaceId,
-        projectKey: projectKey.toUpperCase(),
-      })
-      .exec();
-    if (!rule) throw new NotFoundException("Automation rule was not found.");
+    const rule = await this.getRule(workspaceId, projectKey, ruleId);
+    this.assertMutableRule(rule);
     rule.enabled = typeof enabled === "boolean" ? enabled : !rule.enabled;
     return rule.save();
   }
@@ -220,11 +240,11 @@ export class AutomationService {
     projectKey: string,
     ruleId: string,
   ): Promise<{ ok: boolean }> {
-    if (!isValidObjectId(ruleId))
-      throw new BadRequestException("Invalid automation rule id.");
+    const rule = await this.getRule(workspaceId, projectKey, ruleId);
+    this.assertMutableRule(rule);
     const res = await this.rules
       .deleteOne({
-        _id: new Types.ObjectId(ruleId),
+        _id: rule._id,
         workspaceId,
         projectKey: projectKey.toUpperCase(),
       })
@@ -385,6 +405,7 @@ export class AutomationService {
       await this.rules.updateOne(
         { workspaceId, projectKey, name: rule.name },
         {
+          $set: { isSystem: true },
           $setOnInsert: {
             workspaceId,
             projectKey,
@@ -651,7 +672,6 @@ export class AutomationService {
 
 @Controller("projects/:projectKey/automations")
 @RequireProjectAccess()
-@RequireRoles(MEMBER_ROLES.owner)
 export class AutomationsController {
   constructor(private readonly service: AutomationService) {}
   @Get() list(
@@ -660,14 +680,18 @@ export class AutomationsController {
   ) {
     return this.service.list(workspaceId, key);
   }
-  @Post() create(
+  @Post()
+  @RequireRoles(MEMBER_ROLES.owner)
+  create(
     @Param("projectKey") key: string,
     @Body() body: Partial<AutomationRuleDocument>,
     @WorkspaceId() workspaceId: string,
   ) {
     return this.service.create(workspaceId, key, body);
   }
-  @Patch(":ruleId") toggle(
+  @Patch(":ruleId")
+  @RequireRoles(MEMBER_ROLES.owner)
+  toggle(
     @Param("projectKey") key: string,
     @Param("ruleId") ruleId: string,
     @Body("enabled") enabled: boolean,
@@ -675,14 +699,18 @@ export class AutomationsController {
   ) {
     return this.service.toggle(workspaceId, key, ruleId, enabled);
   }
-  @Post(":ruleId/run") run(
+  @Post(":ruleId/run")
+  @RequireRoles(MEMBER_ROLES.owner)
+  run(
     @Param("projectKey") key: string,
     @Param("ruleId") ruleId: string,
     @WorkspaceId() workspaceId: string,
   ) {
     return this.service.executeById(workspaceId, key, ruleId);
   }
-  @Delete(":ruleId") delete(
+  @Delete(":ruleId")
+  @RequireRoles(MEMBER_ROLES.owner)
+  delete(
     @Param("projectKey") key: string,
     @Param("ruleId") ruleId: string,
     @WorkspaceId() workspaceId: string,
