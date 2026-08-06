@@ -1,4 +1,4 @@
-import { Injectable, UnauthorizedException } from "@nestjs/common";
+import { Injectable, UnauthorizedException, Logger } from "@nestjs/common";
 import { ConfigService } from "@nestjs/config";
 import { EventEmitter2 } from "@nestjs/event-emitter";
 import { InjectModel } from "@nestjs/mongoose";
@@ -23,6 +23,7 @@ import {
   GithubPullRequestLinkInput,
   WorkItemsService,
 } from "../work-items/work-items.service";
+import { WorkItemDocument, WorkItemHydratedDocument } from "../work-items/work-item.schema";
 import { DiscordAdapter } from "./discord.adapter";
 import { GithubAppService } from "./github-app.service";
 import {
@@ -226,6 +227,8 @@ function reviewDetails(
 
 @Injectable()
 export class GithubWebhookService {
+  private readonly logger = new Logger(GithubWebhookService.name);
+
   constructor(
     private readonly config: ConfigService,
     private readonly github: GithubAppService,
@@ -239,6 +242,8 @@ export class GithubWebhookService {
     private readonly prLogs: Model<GithubPullRequestLogHydratedDocument>,
     @InjectModel(MemberDocument.name)
     private readonly members: Model<MemberHydratedDocument>,
+    @InjectModel(WorkItemDocument.name)
+    private readonly workItemsModel: Model<WorkItemHydratedDocument>,
   ) {}
 
   verify(rawBody: Buffer | undefined, signature: string | undefined): void {
@@ -781,8 +786,42 @@ export class GithubWebhookService {
         action: run.conclusion ?? "completed",
         authorLogin: run.actor?.login,
       });
-    } catch {
-      /* non-critical */
+      // Post CI/CD build status on PR in td-pr channel
+      const prs = (payload as any).workflow_run?.pull_requests || [];
+      const prLogCandidates: any[] = [];
+      for (const pr of prs) {
+        if (pr.number) {
+          const prLog = await this.prLogs.findOne({
+            repositoryFullName: context.repositoryFullName,
+            pullRequestNumber: pr.number,
+          }).exec();
+          if (prLog) prLogCandidates.push(prLog);
+        }
+      }
+      if (prLogCandidates.length === 0 && run.head_branch) {
+        const workItem = await this.workItemsModel.findOne({
+          workspaceId: context.workspaceId,
+          projectKey: context.projectKey,
+          "github.branches": run.head_branch,
+        }).exec();
+        if (workItem?.github?.pullRequestNumber) {
+          const prLog = await this.prLogs.findOne({
+            repositoryFullName: context.repositoryFullName,
+            pullRequestNumber: workItem.github.pullRequestNumber,
+          }).exec();
+          if (prLog) prLogCandidates.push(prLog);
+        }
+      }
+
+      for (const prLog of prLogCandidates) {
+        await this.discord.sendThreadReply(prLog.discordChannelId, prLog.discordMessageId, {
+          title: `[CI/CD] Build Status`,
+          description: `${statusIcon} Workflow **${run.name ?? "Workflow"}** #${run.run_number ?? "?"} conclusion: **${run.conclusion ?? run.status}**\n${run.html_url ? `[View Workflow Run](${run.html_url})` : ""}`,
+          color: success ? COLOR_DEPLOY_SUCCESS : COLOR_DEPLOY_FAILED,
+        });
+      }
+    } catch (err) {
+      this.logger.error(`Failed to post CI/CD status on PR Discord thread: ${String(err)}`);
     }
 
     return { accepted: true };

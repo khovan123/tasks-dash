@@ -53,6 +53,10 @@ function createService(options: {
     findOne: jest.fn().mockReturnValue({ exec: jest.fn().mockResolvedValue(null) }),
   } as unknown as import("mongoose").Model<import("../members/member.schema").MemberHydratedDocument>;
 
+  const workItemsModel = {
+    findOne: jest.fn().mockReturnValue({ exec: jest.fn().mockResolvedValue(null) }),
+  } as unknown as import("mongoose").Model<import("../work-items/work-item.schema").WorkItemHydratedDocument>;
+
   return new GithubWebhookService(
     {} as ConfigService,
     github,
@@ -63,6 +67,7 @@ function createService(options: {
     {} as never,
     prLogs,
     members,
+    workItemsModel,
   ) as unknown as TestableGithubWebhookService;
 }
 
