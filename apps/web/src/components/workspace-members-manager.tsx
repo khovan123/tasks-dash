@@ -221,7 +221,7 @@ export function WorkspaceMembersManager({
                         htmlFor="invite-all-projects"
                         className="text-sm font-medium leading-none cursor-pointer"
                       >
-                        Tất cả dự án (tự động thêm vào toàn bộ dự án hiện tại và tương lai)
+                        Tất cả dự án hiện tại đang có
                       </label>
                     </div>
 
