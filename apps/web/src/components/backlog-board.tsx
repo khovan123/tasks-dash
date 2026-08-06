@@ -2,13 +2,19 @@
 
 import type { DragEvent } from "react";
 import { useState } from "react";
-import { ArrowDown, ArrowUp, GripVertical } from "lucide-react";
+import { Clock, Calendar, AlertCircle, Plus } from "lucide-react";
+import {
+  WorkItemTypeIcon,
+  WORK_ITEM_TYPE_LABELS,
+} from "@/components/work-item-type-icon";
 import {
   GithubWorkItemLinks,
   type GithubWorkItemView,
 } from "@/components/github-work-item-links";
 import { apiRequest } from "@/lib/api/api-request";
+import { PriorityIcon } from "@/components/priority-icon";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
+import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader } from "@/components/ui/card";
@@ -21,6 +27,13 @@ import {
 import { SectionHeading } from "@/components/layout/app-shell";
 import { cn } from "@/lib/utils";
 
+import { NewWorkItemModal } from "@/components/new-work-item-modal";
+
+import {
+  WorkItemDetailDrawer,
+  type DetailWorkItem,
+} from "@/components/work-item-detail-drawer";
+
 interface BacklogItem {
   key: string;
   summary: string;
@@ -28,22 +41,63 @@ interface BacklogItem {
   priority: string;
   statusId: string;
   rank: number;
+  dueDate?: string;
+  startDate?: string;
+  description?: string;
+  storyPoints?: number;
+  assigneeId?: string;
+  labels?: string[];
+  figmaLinks?: { label: string; url: string }[];
+  documentLinks?: { label: string; url: string }[];
   github?: GithubWorkItemView;
+}
+
+interface BacklogMember {
+  id: string;
+  name: string;
+  email: string;
+  avatarUrl?: string;
+}
+
+function getInitials(name: string): string {
+  return name
+    .trim()
+    .split(/\s+/)
+    .slice(0, 2)
+    .map((part) => part[0]?.toUpperCase() ?? "")
+    .join("");
 }
 
 export function BacklogBoard({
   projectKey,
   initialItems,
   statusNames,
+  statuses,
+  members,
+  canCreateWorkItem = false,
 }: {
   projectKey: string;
   initialItems: BacklogItem[];
   statusNames: Record<string, string>;
+  statuses: any[];
+  members: BacklogMember[];
+  canCreateWorkItem?: boolean;
 }) {
+  const membersMap = new Map(members.map((member) => [member.id, member]));
+
   const [items, setItems] = useState(initialItems);
   const [draggedKey, setDraggedKey] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [saving, setSaving] = useState(false);
+  const [detailItem, setDetailItem] = useState<DetailWorkItem | null>(null);
+  const [drawerOpen, setDrawerOpen] = useState(false);
+
+  function handleItemUpdate(updated: DetailWorkItem) {
+    setItems((prev) =>
+      prev.map((i) => (i.key === updated.key ? { ...i, ...updated } : i)),
+    );
+    setDetailItem(updated);
+  }
 
   async function persist(nextItems: BacklogItem[], previous: BacklogItem[]) {
     setItems(nextItems);
@@ -52,7 +106,9 @@ export function BacklogBoard({
     try {
       await apiRequest(`/api/projects/${projectKey}/work-items/reorder`, {
         method: "PATCH",
-        body: JSON.stringify({ orderedKeys: nextItems.map((item) => item.key) }),
+        body: JSON.stringify({
+          orderedKeys: nextItems.map((item) => item.key),
+        }),
       });
     } catch (requestError) {
       setItems(previous);
@@ -84,84 +140,204 @@ export function BacklogBoard({
   }
 
   return (
-    <Card>
-      <CardHeader>
-        <SectionHeading
-          eyebrow="Drag to rerank"
-          title="Backlog"
-          meta={saving ? "Đang lưu…" : `${items.length} items`}
-        />
-      </CardHeader>
-      <CardContent className="space-y-4">
-        {error ? (
-          <Alert variant="destructive">
-            <AlertTitle>Không thể lưu thứ tự</AlertTitle>
-            <AlertDescription>{error}</AlertDescription>
-          </Alert>
-        ) : null}
-        {items.length === 0 ? (
-          <Empty>
-            <EmptyHeader>
-              <EmptyTitle>Backlog đang trống</EmptyTitle>
-              <EmptyDescription>Tạo work item trong project overview trước.</EmptyDescription>
-            </EmptyHeader>
-          </Empty>
-        ) : (
-          <div className="grid gap-2">
-            {items.map((item, index) => (
-              <article
-                className={cn(
-                  "grid cursor-grab grid-cols-[auto_minmax(0,1fr)_auto] items-center gap-3 rounded-lg border bg-card p-3 transition hover:border-primary/30 hover:bg-muted/20 active:cursor-grabbing",
-                  draggedKey === item.key && "opacity-50",
+    <>
+      <Card>
+        <CardHeader>
+          <SectionHeading
+            title="Backlog"
+            meta={
+              <div className="flex items-center gap-3">
+                <span className="text-xs text-muted-foreground">
+                  {saving ? "Đang lưu…" : `${items.length} items`}
+                </span>
+                {canCreateWorkItem && (
+                  <NewWorkItemModal
+                    projectKey={projectKey}
+                    statuses={statuses}
+                    members={members}
+                  />
                 )}
-                draggable
-                key={item.key}
-                onDragStart={(event) => {
-                  setDraggedKey(item.key);
-                  event.dataTransfer.effectAllowed = "move";
-                  event.dataTransfer.setData("text/plain", item.key);
-                }}
-                onDragEnd={() => setDraggedKey(null)}
-                onDragOver={(event) => event.preventDefault()}
-                onDrop={(event) => drop(event, index)}
-              >
-                <GripVertical className="size-5 text-muted-foreground" aria-hidden="true" />
-                <div className="min-w-0 space-y-2">
-                  <div className="flex flex-wrap items-center gap-2">
-                    <strong className="truncate">{item.key} · {item.summary}</strong>
-                    <Badge variant="secondary">{item.type}</Badge>
-                    <Badge variant="outline">{item.priority}</Badge>
-                    <Badge variant="info">{statusNames[item.statusId] ?? item.statusId}</Badge>
-                  </div>
-                  <GithubWorkItemLinks github={item.github} compact />
-                </div>
-                <div className="flex gap-1">
-                  <Button
-                    variant="ghost"
-                    size="icon-sm"
-                    type="button"
-                    aria-label={`Đưa ${item.key} lên`}
-                    disabled={index === 0 || saving}
-                    onClick={() => move(item.key, index - 1)}
+              </div>
+            }
+          />
+        </CardHeader>
+        <CardContent className="flex flex-col gap-4">
+          {error ? (
+            <Alert variant="destructive">
+              <AlertTitle>Không thể lưu thứ tự</AlertTitle>
+              <AlertDescription>{error}</AlertDescription>
+            </Alert>
+          ) : null}
+          {items.length === 0 ? (
+            <Empty>
+              <EmptyHeader>
+                <EmptyTitle>Backlog đang trống</EmptyTitle>
+                <EmptyDescription>
+                  Tạo work item trong project overview trước.
+                </EmptyDescription>
+              </EmptyHeader>
+            </Empty>
+          ) : (
+            <div className="grid gap-2">
+              {items.map((item, index) => {
+                const assignee = item.assigneeId
+                  ? membersMap.get(item.assigneeId)
+                  : null;
+                const dueDate = item.dueDate ? new Date(item.dueDate) : null;
+                const now = new Date();
+                const isOverdue = dueDate !== null && dueDate < now;
+                const isDueSoon =
+                  !isOverdue &&
+                  dueDate !== null &&
+                  dueDate.getTime() - now.getTime() <= 2 * 24 * 60 * 60 * 1000;
+
+                return (
+                  <article
+                    className={cn(
+                      "grid cursor-pointer grid-cols-[auto_minmax(0,1fr)_auto] items-center gap-3 rounded-lg border bg-card p-3 transition hover:bg-muted/20 active:cursor-grabbing",
+                      isOverdue
+                        ? "border-destructive/70 hover:border-destructive"
+                        : isDueSoon
+                          ? "border-warning/70 hover:border-warning"
+                          : "hover:border-primary/30",
+                      draggedKey === item.key && "opacity-50",
+                    )}
+                    onClick={() => {
+                      setDetailItem(item);
+                      setDrawerOpen(true);
+                    }}
+                    draggable
+                    key={item.key}
+                    onDragStart={(event) => {
+                      setDraggedKey(item.key);
+                      event.dataTransfer.effectAllowed = "move";
+                      event.dataTransfer.setData("text/plain", item.key);
+                    }}
+                    onDragEnd={() => setDraggedKey(null)}
+                    onDragOver={(event) => event.preventDefault()}
+                    onDrop={(event) => drop(event, index)}
                   >
-                    <ArrowUp />
-                  </Button>
-                  <Button
-                    variant="ghost"
-                    size="icon-sm"
-                    type="button"
-                    aria-label={`Đưa ${item.key} xuống`}
-                    disabled={index === items.length - 1 || saving}
-                    onClick={() => move(item.key, index + 1)}
-                  >
-                    <ArrowDown />
-                  </Button>
+                    <div
+                      className="cursor-grab active:cursor-grabbing p-1 hover:bg-muted rounded transition"
+                      onClick={(e) => e.stopPropagation()}
+                    >
+                      <WorkItemTypeIcon type={item.type} size={18} />
+                    </div>
+                    <div className="flex min-w-0 flex-col gap-2">
+                      <div className="flex flex-wrap items-center gap-2">
+                        <strong className="truncate">
+                          {item.key} · {item.summary}
+                        </strong>
+
+                        <Badge variant="outline" className="gap-1.5 capitalize">
+                          <PriorityIcon
+                            priority={item.priority}
+                            className="size-3 shrink-0"
+                          />
+                          {item.priority}
+                        </Badge>
+                        <Badge variant="info">
+                          {statusNames[item.statusId] ?? item.statusId}
+                        </Badge>
+                        {dueDate && (
+                          <Badge
+                            variant="outline"
+                            className={cn(
+                              "gap-1 text-[10px]",
+                              isOverdue
+                                ? "border-destructive text-destructive"
+                                : isDueSoon
+                                  ? "border-warning text-warning"
+                                  : "text-muted-foreground",
+                            )}
+                            title={
+                              isOverdue
+                                ? "Overdue!"
+                                : isDueSoon
+                                  ? "Due soon"
+                                  : "Due date"
+                            }
+                          >
+                            {isOverdue ? (
+                              <>
+                                <AlertCircle className="size-3" />
+                                <span>Overdue</span>
+                              </>
+                            ) : isDueSoon ? (
+                              <>
+                                <Clock className="size-3" />
+                                <span>Due soon</span>
+                              </>
+                            ) : (
+                              <>
+                                <Calendar className="size-3" />
+                                <span>
+                                  {dueDate.toLocaleDateString("vi-VN", {
+                                    day: "2-digit",
+                                    month: "2-digit",
+                                  })}
+                                </span>
+                              </>
+                            )}
+                          </Badge>
+                        )}
+                      </div>
+                      <div onClick={(e) => e.stopPropagation()}>
+                        <GithubWorkItemLinks github={item.github} compact />
+                      </div>
+                    </div>
+                    <div className="flex items-center justify-end">
+                      {assignee ? (
+                        <Avatar
+                          className="size-7"
+                          title={`Assigned to ${assignee.name}`}
+                        >
+                          <AvatarImage
+                            src={assignee.avatarUrl}
+                            alt={assignee.name}
+                          />
+                          <AvatarFallback className="text-[10px] font-black">
+                            {getInitials(assignee.name)}
+                          </AvatarFallback>
+                        </Avatar>
+                      ) : null}
+                    </div>
+                  </article>
+                );
+              })}
+              {canCreateWorkItem && (
+                <div className="mt-3 flex justify-center border-t pt-3">
+                  <NewWorkItemModal
+                    projectKey={projectKey}
+                    statuses={statuses}
+                    members={members}
+                    trigger={
+                      <Button
+                        variant="outline"
+                        size="sm"
+                        className="w-full max-w-xs gap-2"
+                      >
+                        <Plus className="size-4" />
+                        Tạo công việc mới
+                      </Button>
+                    }
+                  />
                 </div>
-              </article>
-            ))}
-          </div>
-        )}
-      </CardContent>
-    </Card>
+              )}
+            </div>
+          )}
+        </CardContent>
+      </Card>
+
+      <WorkItemDetailDrawer
+        item={detailItem}
+        open={drawerOpen}
+        onOpenChange={setDrawerOpen}
+        statuses={statuses}
+        members={members}
+        projectKey={projectKey}
+        onUpdate={handleItemUpdate}
+      />
+    </>
   );
 }

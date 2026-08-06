@@ -112,6 +112,7 @@ export default async function ProjectPage({
   const currentMemberRole =
     membersData.workspaceMembers.find((member) => member.email === session.email)?.role ?? null;
   const canManageRepository = currentMemberRole === "OWNER";
+  const canCreateWorkItem = currentMemberRole === "OWNER" || currentMemberRole === "DEV";
 
   return (
     <AppPage>
@@ -127,15 +128,17 @@ export default async function ProjectPage({
           <SectionHeading
             title="Work items"
             meta={
-              <NewWorkItemModal
-                projectKey={key}
-                statuses={workflow?.statuses ?? []}
-                members={membersData.projectMembers.map((member) => ({
-                  id: member._id,
-                  name: member.name,
-                  email: member.email,
-                }))}
-              />
+              canCreateWorkItem ? (
+                <NewWorkItemModal
+                  projectKey={key}
+                  statuses={workflow?.statuses ?? []}
+                  members={membersData.projectMembers.map((member) => ({
+                    id: member._id,
+                    name: member.name,
+                    email: member.email,
+                  }))}
+                />
+              ) : null
             }
           />
         </CardHeader>

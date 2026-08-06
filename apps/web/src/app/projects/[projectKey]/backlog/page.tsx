@@ -1,15 +1,7 @@
-import Link from "next/link";
-import { ListOrdered } from "lucide-react";
 import { BacklogBoard } from "@/components/backlog-board";
 import type { GithubWorkItemView } from "@/components/github-work-item-links";
 import { apiData } from "@/lib/server/api-data";
-import {
-  AppNav,
-  AppPage,
-  AppTopbar,
-  PageHero,
-} from "@/components/layout/app-shell";
-import { Button } from "@/components/ui/button";
+import { AppPage } from "@/components/layout/app-shell";
 
 export const dynamic = "force-dynamic";
 
@@ -20,10 +12,20 @@ interface WorkItem {
   priority: string;
   statusId: string;
   rank: number;
+  dueDate?: string;
+  startDate?: string;
+  startedAt?: string;
   github?: GithubWorkItemView;
 }
 interface Workflow {
-  statuses: Array<{ id: string; name: string }>;
+  statuses: Array<{ id: string; name: string; color?: string }>;
+}
+
+interface WorkspaceMember {
+  _id: string;
+  name: string;
+  email: string;
+  avatarUrl?: string;
 }
 
 export default async function BacklogPage({
@@ -33,29 +35,47 @@ export default async function BacklogPage({
 }) {
   const { projectKey } = await params;
   const key = projectKey.toUpperCase();
-  const [items, workflow] = await Promise.all([
+  const [items, workflow, membersData, session] = await Promise.all([
     apiData<WorkItem[]>(`/projects/${key}/work-items`),
     apiData<Workflow | null>(`/projects/${key}/workflow`),
+    apiData<{ projectMembers: any[]; workspaceMembers: any[] }>(`/projects/${key}/members`),
+    apiData<{ email: string }>("/auth/me"),
   ]);
   const statusNames = Object.fromEntries(
     (workflow?.statuses ?? []).map((status) => [status.id, status.name]),
   );
+  const statuses = workflow?.statuses ?? [
+    { id: "TO_DO", name: "ToDo", color: "#9ca3af" },
+    { id: "IN_PROGRESS", name: "In Progress", color: "#2563eb" },
+    { id: "REVIEW", name: "Review", color: "#7c3aed" },
+    { id: "REQUEST_CHANGE", name: "Request Change", color: "#dc2626" },
+    { id: "DONE", name: "Done", color: "#16a34a" },
+  ];
+  const members = membersData.projectMembers.map((member) => ({
+    id: member._id,
+    name: member.name,
+    email: member.email,
+    avatarUrl: member.avatarUrl,
+  }));
+  const normalizedItems = items.map((item) => ({
+    ...item,
+    startDate: item.startDate ?? item.startedAt,
+  }));
+
+  const currentMemberRole =
+    membersData.workspaceMembers?.find((member) => member.email === session.email)?.role ?? null;
+  const canCreateWorkItem = currentMemberRole === "OWNER" || currentMemberRole === "DEV";
+
   return (
     <AppPage>
-      <AppTopbar>
-        <Button asChild variant="ghost"><Link href={`/projects/${key}`}>← {key}</Link></Button>
-        <AppNav>
-          <Button asChild variant="ghost" size="sm"><Link href={`/projects/${key}/designer`}>Designer</Link></Button>
-          <Button asChild variant="ghost" size="sm"><Link href={`/projects/${key}/automations`}>Automation</Link></Button>
-        </AppNav>
-      </AppTopbar>
-      <PageHero
-        eyebrow="Ordered backlog"
-        title={`${key} Backlog`}
-        description="Kéo thả hoặc dùng nút lên/xuống để thay đổi thứ tự ưu tiên. Thứ tự được lưu vào MongoDB bằng field rank."
-        aside={<ListOrdered className="size-14 text-primary" />}
+      <BacklogBoard
+        projectKey={key}
+        initialItems={normalizedItems}
+        statusNames={statusNames}
+        statuses={statuses}
+        members={members}
+        canCreateWorkItem={canCreateWorkItem}
       />
-      <BacklogBoard projectKey={key} initialItems={items} statusNames={statusNames} />
     </AppPage>
   );
 }
