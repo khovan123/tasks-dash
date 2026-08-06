@@ -74,6 +74,7 @@ export class AuthController {
   @Get("github/login")
   async login(
     @Query("invite") inviteToken: string | undefined,
+    @Query("discordUsername") discordUsername: string | undefined,
     @Res() response: Response,
   ): Promise<void> {
     const state = randomBytes(32).toString("base64url");
@@ -91,6 +92,15 @@ export class AuthController {
       });
     } else {
       response.clearCookie(INVITATION_COOKIE, this.sessions.cookieOptions());
+    }
+
+    if (discordUsername) {
+      response.cookie("discord_username", discordUsername, {
+        ...this.sessions.cookieOptions(),
+        maxAge: 15 * 60 * 1000,
+      });
+    } else {
+      response.clearCookie("discord_username", this.sessions.cookieOptions());
     }
 
     await this.oauthStates.create({
@@ -220,11 +230,12 @@ export class AuthController {
     );
 
     const invitationToken = cookies[INVITATION_COOKIE];
+    const discordUsername = cookies["discord_username"];
     const member = invitationToken
       ? await this.members.acceptInvitation(
           invitationToken,
           normalizedEmail,
-          profile,
+          { ...profile, discordUsername },
           identityId,
           githubUser.id,
         )
@@ -234,6 +245,7 @@ export class AuthController {
         );
 
     response.clearCookie(INVITATION_COOKIE, this.sessions.cookieOptions());
+    response.clearCookie("discord_username", this.sessions.cookieOptions());
 
     if (!member) {
       const setupToken = randomBytes(32).toString("base64url");
@@ -299,6 +311,19 @@ export class AuthController {
   @Get("me")
   me(@CurrentSession() session: AuthSession): AuthSession {
     return session;
+  }
+
+  @PublicRoute()
+  @Post("refresh")
+  refresh(@Req() request: Request, @Res() response: Response): void {
+    const cookies = parseCookies(request.headers.cookie);
+    const token = cookies[SESSION_COOKIE];
+    if (!token) {
+      throw new UnauthorizedException("Session cookie is missing.");
+    }
+    const nextToken = this.sessions.refresh(token);
+    response.cookie(SESSION_COOKIE, nextToken, this.sessions.cookieOptions());
+    response.status(200).json({ ok: true });
   }
 
   @Post("logout")

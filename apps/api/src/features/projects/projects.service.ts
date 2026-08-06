@@ -72,6 +72,10 @@ export class ProjectsService {
     const project = await this.getByKey(workspaceId, key);
     project.memberIds = memberIds;
     await project.save();
+    await this.events.emitAsync("project.members.updated", {
+      workspaceId,
+      projectKey: project.key,
+    });
     return project;
   }
 

@@ -27,6 +27,8 @@ import {
   DiscordWorkspaceHydratedDocument,
   ProvisionDiscordProjectDto,
 } from "./integration.schemas";
+import { MemberDocument, MemberHydratedDocument } from "../members/member.schema";
+import { MEMBER_ROLES } from "@tasks-dash/contracts";
 
 const DISCORD_API_BASE = "https://discord.com/api/v10";
 const DISCORD_BOT_PERMISSIONS = 536980496;
@@ -54,6 +56,16 @@ interface DiscordWebhookMetadata {
 interface DiscordGuild {
   id: string;
   name: string;
+}
+interface DiscordRole {
+  id: string;
+  name: string;
+  permissions: string;
+  position: number;
+  color: number;
+  hoist: boolean;
+  managed: boolean;
+  mentionable: boolean;
 }
 interface DiscordChannel {
   id: string;
@@ -96,6 +108,8 @@ export class DiscordAdapter {
     private readonly workspaces: Model<DiscordWorkspaceHydratedDocument>,
     @InjectModel(DiscordIntegrationDocument.name)
     private readonly integrations: Model<DiscordIntegrationHydratedDocument>,
+    @InjectModel(MemberDocument.name)
+    private readonly members: Model<MemberHydratedDocument>,
     private readonly encryption: CredentialEncryptionService,
     private readonly projects: ProjectsService,
     private readonly config: ConfigService,
@@ -700,6 +714,156 @@ export class DiscordAdapter {
   @OnEvent(PROJECT_DELETED_EVENT, { async: true })
   async onProjectDeleted(event: ProjectDeletedEvent): Promise<void> {
     await this.deleteProjectChannels(event.workspaceId, event.projectKey);
+  }
+
+  async ensureWorkspaceRoles(guildId: string): Promise<Record<string, string>> {
+    const roles = await this.botRequest<DiscordRole[]>(`/guilds/${guildId}/roles`);
+    const mappedRoles: Record<string, string> = {};
+    const expectedRoles = {
+      [MEMBER_ROLES.owner]: "Tasks Dash Owner",
+      [MEMBER_ROLES.viewer]: "Tasks Dash Viewer",
+      [MEMBER_ROLES.designer]: "Tasks Dash Designer",
+      [MEMBER_ROLES.dev]: "Tasks Dash Dev",
+      [MEMBER_ROLES.ba]: "Tasks Dash BA",
+    };
+
+    for (const [roleKey, roleName] of Object.entries(expectedRoles)) {
+      const existing = roles.find((r) => r.name === roleName);
+      if (existing) {
+        mappedRoles[roleKey] = existing.id;
+      } else {
+        const created = await this.botRequest<DiscordRole>(`/guilds/${guildId}/roles`, {
+          method: "POST",
+          body: JSON.stringify({ name: roleName }),
+        });
+        mappedRoles[roleKey] = created.id;
+      }
+    }
+    return mappedRoles;
+  }
+
+  async syncMemberWorkspaceRole(
+    guildId: string,
+    discordUserId: string,
+    workspaceRole: string,
+    roleMap: Record<string, string>,
+  ): Promise<void> {
+    const member = await this.botRequest<{ roles: string[] }>(
+      `/guilds/${guildId}/members/${discordUserId}`,
+    );
+
+    const targetRoleId = roleMap[workspaceRole];
+    const allWorkspaceRoleIds = Object.values(roleMap);
+
+    if (targetRoleId && !member.roles.includes(targetRoleId)) {
+      await this.botRequest(
+        `/guilds/${guildId}/members/${discordUserId}/roles/${targetRoleId}`,
+        { method: "PUT" },
+      );
+    }
+
+    for (const roleId of allWorkspaceRoleIds) {
+      if (roleId !== targetRoleId && member.roles.includes(roleId)) {
+        await this.botRequest(
+          `/guilds/${guildId}/members/${discordUserId}/roles/${roleId}`,
+          { method: "DELETE" },
+        );
+      }
+    }
+  }
+
+  async syncMemberRolesAndPermissions(workspaceId: string): Promise<void> {
+    const workspace = await this.workspaces.findOne({ workspaceId, enabled: true }).exec();
+    if (!workspace) return;
+
+    try {
+      const members = await this.members.find({ workspaceId }).exec();
+      const roleMap = await this.ensureWorkspaceRoles(workspace.guildId);
+
+      for (const member of members) {
+        if (member.discordUsername) {
+          const discordUserId = await this.findGuildMemberId(workspace.guildId, member.discordUsername);
+          if (discordUserId) {
+            await this.syncMemberWorkspaceRole(workspace.guildId, discordUserId, member.role, roleMap);
+          }
+        }
+      }
+
+      const integrations = await this.integrations.find({ workspaceId, enabled: true }).exec();
+      for (const integration of integrations) {
+        await this.syncProjectPermissionsInternal(workspace, integration, members);
+      }
+    } catch (e) {
+      console.error("Failed to sync Discord roles and permissions:", e);
+    }
+  }
+
+  async syncProjectPermissions(workspaceId: string, projectKey: string): Promise<void> {
+    const workspace = await this.workspaces.findOne({ workspaceId, enabled: true }).exec();
+    if (!workspace) return;
+    const integration = await this.integrations.findOne({ workspaceId, projectKey: projectKey.toUpperCase() }).exec();
+    if (!integration) return;
+
+    try {
+      const members = await this.members.find({ workspaceId }).exec();
+      await this.syncProjectPermissionsInternal(workspace, integration, members);
+    } catch (e) {
+      console.error("Failed to sync project permissions:", e);
+    }
+  }
+
+  private async syncProjectPermissionsInternal(
+    workspace: DiscordWorkspaceDocument,
+    integration: DiscordIntegrationDocument,
+    members: any[],
+  ): Promise<void> {
+    try {
+      const project = await this.projects.getByKey(workspace.workspaceId, integration.projectKey);
+      if (!project) return;
+
+      const channels = await this.botRequest<DiscordChannel[]>(`/guilds/${workspace.guildId}/channels`);
+      const category = channels.find(
+        (c) =>
+          c.type === DISCORD_CATEGORY_CHANNEL &&
+          c.name === `TASKS DASH - ${project.key.toUpperCase()}`,
+      );
+      if (!category) return;
+
+      const overwrites: any[] = [
+        {
+          id: workspace.guildId,
+          type: 0, // role
+          allow: "0",
+          deny: "1024", // deny VIEW_CHANNEL for @everyone
+        },
+      ];
+
+      for (const member of members) {
+        const isParticipant = project.memberIds?.includes(String(member._id));
+        const isOwner = member.role === MEMBER_ROLES.owner;
+
+        if ((isParticipant || isOwner) && member.discordUsername) {
+          const discordUserId = await this.findGuildMemberId(workspace.guildId, member.discordUsername);
+          if (discordUserId) {
+            overwrites.push({
+              id: discordUserId,
+              type: 1, // member
+              allow: "1024", // allow VIEW_CHANNEL
+              deny: "0",
+            });
+          }
+        }
+      }
+
+      await this.botRequest(`/channels/${category.id}`, {
+        method: "PATCH",
+        body: JSON.stringify({
+          permission_overwrites: overwrites,
+        }),
+      });
+    } catch (e) {
+      console.error(`Failed to sync project permissions for ${integration.projectKey}:`, e);
+    }
   }
 
   async connect(

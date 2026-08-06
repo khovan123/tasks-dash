@@ -27,6 +27,12 @@ export class DiscordProjectLogService {
 
   @OnEvent("workspace.members.changed", { async: true })
   async syncMembersDirectory({ workspaceId }: { workspaceId: string }): Promise<void> {
+    try {
+      await this.discord.syncMemberRolesAndPermissions(workspaceId);
+    } catch (e) {
+      this.logger.warn(`Failed to sync Discord roles/permissions: ${String(e)}`);
+    }
+
     const projectIntegrations = await this.integrations
       .find({ workspaceId, enabled: true })
       .exec();
@@ -61,6 +67,21 @@ export class DiscordProjectLogService {
           `Could not sync members directory for project ${integration.projectKey}: ${String(err)}`,
         );
       }
+    }
+  }
+
+  @OnEvent("project.members.updated", { async: true })
+  async handleProjectMembersUpdated({
+    workspaceId,
+    projectKey,
+  }: {
+    workspaceId: string;
+    projectKey: string;
+  }): Promise<void> {
+    try {
+      await this.discord.syncProjectPermissions(workspaceId, projectKey);
+    } catch (e) {
+      this.logger.warn(`Failed to sync Discord project permissions: ${String(e)}`);
     }
   }
 

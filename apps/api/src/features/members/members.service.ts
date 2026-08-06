@@ -26,6 +26,7 @@ import {
   CreateWorkspaceDto,
   InviteWorkspaceMemberDto,
 } from "./members.dto";
+import { EventEmitter2 } from "@nestjs/event-emitter";
 import { InvitationMailerService } from "./invitation-mailer.service";
 import { MemberDocument, MemberHydratedDocument } from "./member.schema";
 import {
@@ -56,6 +57,7 @@ export class MembersService {
   constructor(
     private readonly config: ConfigService,
     private readonly mailer: InvitationMailerService,
+    private readonly events: EventEmitter2,
     @InjectConnection() private readonly connection: Connection,
     @InjectModel(MemberDocument.name)
     private readonly members: Model<MemberHydratedDocument>,
@@ -300,6 +302,9 @@ export class MembersService {
     invitedByMemberId: string,
     dto: InviteWorkspaceMemberDto,
   ): Promise<Record<string, unknown>> {
+    if (dto.role === MEMBER_ROLES.owner) {
+      throw new BadRequestException("Cannot assign OWNER role via invitation.");
+    }
     const email = this.normalizeEmail(dto.email);
     if (await this.members.exists({ workspaceId, email })) {
       throw new ConflictException("This email is already a workspace member.");
@@ -381,7 +386,7 @@ export class MembersService {
   async acceptInvitation(
     rawToken: string,
     emailInput: string,
-    profile: IdentityProfile,
+    profile: IdentityProfile & { discordUsername?: string },
     authIdentityId: string,
     githubId: number,
   ): Promise<MemberHydratedDocument> {
@@ -422,6 +427,9 @@ export class MembersService {
         existing.githubId = githubId;
         existing.name = profile.name;
         existing.avatarUrl = profile.avatarUrl;
+        if (profile.discordUsername) {
+          existing.discordUsername = profile.discordUsername;
+        }
         existing.status = MEMBER_PRESENCE.online;
         existing.lastLoginAt = new Date();
         await existing.save({ session });
@@ -438,6 +446,7 @@ export class MembersService {
               status: MEMBER_PRESENCE.online,
               authIdentityId,
               githubId,
+              discordUsername: profile.discordUsername,
               lastLoginAt: new Date(),
             },
           ],
@@ -454,6 +463,9 @@ export class MembersService {
     if (!acceptedMember) {
       throw new UnauthorizedException("Workspace invitation acceptance failed.");
     }
+    void this.events.emitAsync("workspace.members.changed", {
+      workspaceId: (acceptedMember as MemberHydratedDocument).workspaceId,
+    }).catch(() => { /* non-critical */ });
     return acceptedMember;
   }
 
@@ -482,21 +494,19 @@ export class MembersService {
     memberId: string,
     role: MemberRole,
   ): Promise<MemberHydratedDocument> {
+    if (role === MEMBER_ROLES.owner) {
+      throw new BadRequestException("Cannot assign OWNER role.");
+    }
     const member = await this.memberById(workspaceId, memberId);
-    if (member.role === MEMBER_ROLES.owner && role !== MEMBER_ROLES.owner) {
-      const owners = await this.members.countDocuments({
-        workspaceId,
-        role: MEMBER_ROLES.owner,
-      });
-      if (owners <= 1) {
-        throw new ConflictException("The workspace must keep at least one owner.");
-      }
+    if (member.role === MEMBER_ROLES.owner) {
+      throw new ForbiddenException("Cannot modify or change role of workspace OWNER.");
     }
     if (memberId === actorMemberId && role === MEMBER_ROLES.viewer) {
       throw new ConflictException("You cannot change yourself to viewer.");
     }
     member.role = role;
     await member.save();
+    void this.events.emitAsync("workspace.members.changed", { workspaceId }).catch(() => { /* non-critical */ });
     return member;
   }
 
@@ -510,15 +520,10 @@ export class MembersService {
     }
     const member = await this.memberById(workspaceId, memberId);
     if (member.role === MEMBER_ROLES.owner) {
-      const owners = await this.members.countDocuments({
-        workspaceId,
-        role: MEMBER_ROLES.owner,
-      });
-      if (owners <= 1) {
-        throw new ConflictException("The workspace must keep at least one owner.");
-      }
+      throw new ForbiddenException("Cannot remove workspace OWNER.");
     }
     await this.members.deleteOne({ _id: member._id, workspaceId }).exec();
+    void this.events.emitAsync("workspace.members.changed", { workspaceId }).catch(() => { /* non-critical */ });
   }
 
   private async memberById(
