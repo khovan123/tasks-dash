@@ -759,6 +759,19 @@ export class DiscordAdapter {
     await this.deleteProjectChannels(event.workspaceId, event.projectKey);
   }
 
+  @OnEvent("project.members.updated", { async: true })
+  async onProjectMembersUpdated(event: {
+    workspaceId: string;
+    projectKey: string;
+  }): Promise<void> {
+    await this.syncProjectPermissions(event.workspaceId, event.projectKey);
+  }
+
+  @OnEvent("workspace.members.changed", { async: true })
+  async onWorkspaceMembersChanged(event: { workspaceId: string }): Promise<void> {
+    await this.syncMemberRolesAndPermissions(event.workspaceId);
+  }
+
   async ensureWorkspaceRoles(guildId: string): Promise<Record<string, string>> {
     const roles = await this.botRequest<DiscordRole[]>(`/guilds/${guildId}/roles`);
     const mappedRoles: Record<string, string> = {};
