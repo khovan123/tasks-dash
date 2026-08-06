@@ -1,7 +1,8 @@
 "use client";
 
+import { useRouter } from "next/navigation";
 import type { DragEvent } from "react";
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { Clock, Calendar, AlertCircle, Plus } from "lucide-react";
 import {
   WorkItemTypeIcon,
@@ -91,6 +92,47 @@ export function BacklogBoard({
   const [saving, setSaving] = useState(false);
   const [detailItem, setDetailItem] = useState<DetailWorkItem | null>(null);
   const [drawerOpen, setDrawerOpen] = useState(false);
+  const router = useRouter();
+
+  useEffect(() => {
+    setItems(initialItems);
+  }, [initialItems]);
+
+  useEffect(() => {
+    const sseUrl = `/api/projects/${projectKey}/work-items/sse`;
+    const eventSource = new EventSource(sseUrl);
+
+    eventSource.onmessage = (event) => {
+      try {
+        const payload = JSON.parse(event.data);
+        const { type, data } = payload;
+
+        if (type === "created") {
+          setItems((prev) => {
+            if (prev.some((item) => item.key === data.key)) return prev;
+            return [...prev, data];
+          });
+        } else if (type === "updated") {
+          setItems((prev) =>
+            prev.map((item) => (item.key === data.key ? { ...item, ...data } : item))
+          );
+        } else if (type === "reordered") {
+          router.refresh();
+        }
+      } catch (err) {
+        console.error("Failed to parse SSE payload", err);
+      }
+    };
+
+    eventSource.onerror = (err) => {
+      console.error("SSE Connection error", err);
+      eventSource.close();
+    };
+
+    return () => {
+      eventSource.close();
+    };
+  }, [projectKey, router]);
 
   function handleItemUpdate(updated: DetailWorkItem) {
     setItems((prev) =>

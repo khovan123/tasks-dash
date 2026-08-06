@@ -6,8 +6,12 @@ import {
   Patch,
   Post,
   Query,
+  Sse,
+  MessageEvent,
 } from "@nestjs/common";
 import { CommandBus } from "@nestjs/cqrs";
+import { Observable } from "rxjs";
+import { filter, map } from "rxjs/operators";
 import {
   AuthSession,
   CurrentMemberRole,
@@ -37,6 +41,25 @@ export class WorkItemsController {
     private readonly commands: CommandBus,
     private readonly service: WorkItemsService,
   ) {}
+
+  @Sse("projects/:projectKey/work-items/sse")
+  @RequireProjectAccess()
+  sse(
+    @Param("projectKey") key: string,
+    @WorkspaceId() workspaceId: string,
+  ): Observable<MessageEvent> {
+    const projectKey = key.toUpperCase();
+    return this.service.events$.pipe(
+      filter(
+        (event) =>
+          event.workspaceId === workspaceId &&
+          event.projectKey.toUpperCase() === projectKey,
+      ),
+      map((event) => ({
+        data: { type: event.type, data: event.data },
+      } as MessageEvent)),
+    );
+  }
 
   @Get("projects/:projectKey/work-items")
   @RequireProjectAccess()
