@@ -1,6 +1,7 @@
 "use client";
 
 import { useState, useEffect } from "react";
+import { MEMBER_ROLES, type MemberRole } from "@tasks-dash/contracts";
 import { Users, FolderKanban } from "lucide-react";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import {
@@ -45,13 +46,16 @@ interface WorkspaceMembersViewProps {
   initialMembers: WorkspaceMember[];
   initialInvitations: WorkspaceInvitation[];
   projects: Project[];
+  currentMemberRole: MemberRole | null;
 }
 
 export function WorkspaceMembersView({
   initialMembers,
   initialInvitations,
   projects,
+  currentMemberRole,
 }: WorkspaceMembersViewProps) {
+  const canManageMembers = currentMemberRole === MEMBER_ROLES.owner;
   const [selectedProjectKey, setSelectedProjectKey] = useState<string>(
     projects.length > 0 ? projects[0].key : "",
   );
@@ -100,13 +104,16 @@ export function WorkspaceMembersView({
           <WorkspaceMembersManager
             members={initialMembers}
             invitations={initialInvitations}
+            canManage={canManageMembers}
           />
         </TabsContent>
 
         <TabsContent value="projects" className="space-y-4">
           <div className="flex flex-col gap-2 max-w-md">
             <label className="text-sm font-semibold text-foreground">
-              Chọn dự án muốn quản lý thành viên
+              {canManageMembers
+                ? "Chọn dự án muốn quản lý thành viên"
+                : "Chọn dự án muốn xem danh sách thành viên"}
             </label>
             <Select
               value={selectedProjectKey}
@@ -129,11 +136,13 @@ export function WorkspaceMembersView({
             loading ? (
               <Loading message="Đang tải danh sách thành viên dự án..." />
             ) : (
-              <div className="max-w-3xl">
+              <div className="w-full">
                 <ProjectMembersManager
                   projectKey={selectedProjectKey}
                   initialProjectMembers={projectMembers}
                   workspaceMembers={initialMembers as any}
+                  invitations={initialInvitations}
+                  canManage={canManageMembers}
                 />
               </div>
             )
