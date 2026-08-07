@@ -44,7 +44,7 @@ import {
   WorkItemTypeIcon,
   WORK_ITEM_TYPE_LABELS,
 } from "@/components/work-item-type-icon";
-import { MemberIdentity } from "@/components/member-identity";
+import { MemberInfoBadge } from "@/components/member-info-badge";
 import { PriorityIcon, PRIORITY_LABELS } from "@/components/priority-icon";
 import { apiRequest } from "@/lib/api/api-request";
 import { cn } from "@/lib/utils";
@@ -586,7 +586,7 @@ export function WorkItemDetailDrawer({
                 >
                   <SelectTrigger className="h-8 w-auto border-none bg-transparent px-2 text-sm font-semibold shadow-none focus:ring-0">
                     {activeAssignee ? (
-                      <MemberIdentity
+                      <MemberInfoBadge
                         memberId={activeAssignee.id}
                         name={activeAssignee.name}
                         avatarUrl={activeAssignee.avatarUrl}
@@ -606,7 +606,7 @@ export function WorkItemDetailDrawer({
                     </SelectItem>
                     {members.map((m) => (
                       <SelectItem key={m.id} value={m.id}>
-                        <MemberIdentity
+                        <MemberInfoBadge
                           memberId={m.id}
                           name={m.name}
                           avatarUrl={m.avatarUrl}

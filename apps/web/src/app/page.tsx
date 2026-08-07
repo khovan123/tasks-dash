@@ -11,7 +11,7 @@ import {
 } from "lucide-react";
 import { apiData, apiResponse } from "@/lib/server/api-data";
 import { MemberAvatar } from "@/components/member-avatar";
-import { MemberIdentity } from "@/components/member-identity";
+import { MemberInfoBadge } from "@/components/member-info-badge";
 import { NewProjectModal } from "@/components/new-project-modal";
 import { ProjectLogo } from "@/components/project-logo";
 import { UnauthenticatedHome } from "@/components/unauthenticated-home";
@@ -311,7 +311,7 @@ export default async function HomePage() {
             <CardContent className="flex flex-col gap-4">
               {dashboard.members.slice(0, 8).map((member) => (
                 <div key={member.email} className="flex items-center gap-3">
-                  <MemberIdentity
+                  <MemberInfoBadge
                     memberId={member._id}
                     name={member.name}
                     avatarUrl={member.avatarUrl}

@@ -48,7 +48,7 @@ import {
   EmptyTitle,
 } from "@/components/ui/empty";
 import { Badge } from "@/components/ui/badge";
-import { MemberIdentity } from "@/components/member-identity";
+import { MemberInfoBadge } from "@/components/member-info-badge";
 import { Card, CardContent, CardHeader } from "@/components/ui/card";
 
 interface Member {
@@ -236,30 +236,29 @@ export function ProjectMembersManager({
           </div>
           <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
             {initialProjectMembers.map((member) => (
-                <Card
-                  key={member._id}
-                  className="overflow-hidden shadow-sm border bg-card text-card-foreground"
-                >
-                  <CardHeader className="flex flex-row items-center gap-4 pb-4">
-                    <MemberIdentity
-                      memberId={member._id}
-                      name={member.name}
-                      avatarUrl={member.avatarUrl}
-                      email={member.email}
-                      githubLogin={member.githubLogin}
-                      discordUsername={member.discordUsername}
-                      presence={
-                        presenceByMemberId[member._id] ??
-                        MEMBER_PRESENCE.offline
-                      }
-                      avatarClassName="size-12"
-                      textClassName="text-base font-semibold leading-none"
-                    />
-                  </CardHeader>
-                  <CardContent className="flex items-center justify-between pt-0">
-                    <RoleBadge role={member.role as MemberRole} />
-                  </CardContent>
-                </Card>
+              <Card
+                key={member._id}
+                className="overflow-hidden shadow-sm border bg-card text-card-foreground gap-0"
+              >
+                <CardHeader className="flex flex-row items-center gap-4 pb-4">
+                  <MemberInfoBadge
+                    memberId={member._id}
+                    name={member.name}
+                    avatarUrl={member.avatarUrl}
+                    email={member.email}
+                    githubLogin={member.githubLogin}
+                    discordUsername={member.discordUsername}
+                    presence={
+                      presenceByMemberId[member._id] ?? MEMBER_PRESENCE.offline
+                    }
+                    avatarClassName="size-12"
+                    textClassName="text-base font-semibold leading-none"
+                  />
+                </CardHeader>
+                <CardContent className="flex items-center justify-between pt-0">
+                  <RoleBadge role={member.role as MemberRole} />
+                </CardContent>
+              </Card>
             ))}
           </div>
         </div>
@@ -324,7 +323,7 @@ export function ProjectMembersManager({
                       className="grid gap-3 rounded-lg border bg-background/80 p-3 md:grid-cols-[1fr_auto_auto] md:items-center"
                     >
                       <div className="flex min-w-0 items-center gap-3">
-                        <MemberIdentity
+                        <MemberInfoBadge
                           memberId={member._id}
                           name={member.name}
                           avatarUrl={member.avatarUrl}
@@ -432,7 +431,7 @@ export function ProjectMembersManager({
                           onClick={(e) => e.stopPropagation()}
                         />
                         <div className="flex flex-col min-w-0">
-                          <MemberIdentity
+                          <MemberInfoBadge
                             memberId={member._id}
                             name={member.name}
                             avatarUrl={member.avatarUrl}

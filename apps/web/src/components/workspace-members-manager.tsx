@@ -13,7 +13,8 @@ import { Controller, FormProvider, useForm } from "react-hook-form";
 import { useState } from "react";
 import { MailPlus, RefreshCw, Trash2, UserMinus } from "lucide-react";
 import { MemberAvatar } from "@/components/member-avatar";
-import { MemberIdentity } from "@/components/member-identity";
+import { MemberInfoBadge } from "@/components/member-info-badge";
+import { RoleBadge } from "@/components/role-badge";
 import {
   InviteMemberValues,
   inviteMemberSchema,
@@ -307,10 +308,10 @@ export function WorkspaceMembersManager({
               {members.map((member) => (
                 <Card
                   key={member._id}
-                  className="overflow-hidden shadow-sm border bg-card text-card-foreground"
+                  className="overflow-hidden shadow-sm border bg-card text-card-foreground gap-0"
                 >
                   <CardHeader className="flex flex-row items-center gap-4 pb-4">
-                    <MemberIdentity
+                    <MemberInfoBadge
                       memberId={member._id}
                       name={member.name}
                       avatarUrl={member.avatarUrl}
@@ -322,7 +323,14 @@ export function WorkspaceMembersManager({
                       textClassName="text-base font-semibold leading-none"
                     />
                   </CardHeader>
-                  <CardContent className="pt-0" />
+                  <CardContent className="flex items-center justify-between pt-0">
+                    <Badge
+                      variant="outline"
+                      className="font-semibold text-[10px] tracking-wider"
+                    >
+                      {member.role === "OWNER" ? "OWNER" : "MEMBER"}
+                    </Badge>
+                  </CardContent>
                 </Card>
               ))}
             </div>
@@ -336,11 +344,11 @@ export function WorkspaceMembersManager({
                 <div className="grid gap-3">
                   {members.map((member) => (
                     <article
-                      className="grid gap-3 rounded-lg border p-3 md:grid-cols-[minmax(240px,1fr)_auto] md:items-center"
+                      className="grid gap-3 rounded-lg border p-3 md:grid-cols-[minmax(240px,1fr)_auto_auto] md:items-center"
                       key={member._id}
                     >
                       <div className="flex min-w-0 items-center gap-3">
-                        <MemberIdentity
+                        <MemberInfoBadge
                           memberId={member._id}
                           name={member.name}
                           avatarUrl={member.avatarUrl}
@@ -351,6 +359,14 @@ export function WorkspaceMembersManager({
                           avatarClassName="size-10"
                           textClassName="text-sm font-semibold leading-none"
                         />
+                      </div>
+                      <div className="flex items-center justify-end">
+                        <Badge
+                          variant="outline"
+                          className="font-semibold text-[10px] tracking-wider"
+                        >
+                          {member.role === "OWNER" ? "OWNER" : "MEMBER"}
+                        </Badge>
                       </div>
                       <div className="flex items-center justify-end">
                         <Button

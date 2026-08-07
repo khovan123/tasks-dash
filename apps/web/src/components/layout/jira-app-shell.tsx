@@ -384,7 +384,7 @@ export function JiraAppShell({
       <Separator />
 
       <div className="flex flex-col gap-3 p-3">
-        <WorkspaceSwitcher workspaces={workspaces} compact />
+        <WorkspaceSwitcher workspaces={workspaces} compact currentRole={footerRole} />
         <Popover open={projectPickerOpen} onOpenChange={setProjectPickerOpen}>
           <PopoverTrigger asChild>
             <Button

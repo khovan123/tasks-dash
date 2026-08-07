@@ -9,7 +9,7 @@ import {
   type GithubRepositoryOption,
 } from "@/components/repository-link-form";
 import { NewWorkItemModal } from "@/components/new-work-item-modal";
-import { MemberIdentity } from "@/components/member-identity";
+import { MemberInfoBadge } from "@/components/member-info-badge";
 import { apiData } from "@/lib/server/api-data";
 import { apiProjectData } from "@/lib/server/project-access";
 import { PriorityIcon } from "@/components/priority-icon";
@@ -204,7 +204,7 @@ export default async function ProjectPage({
                     <TableCell>
                       {item.assigneeId ? (
                         membersById[item.assigneeId] ? (
-                          <MemberIdentity
+                          <MemberInfoBadge
                             memberId={item.assigneeId}
                             name={membersById[item.assigneeId].name}
                             avatarUrl={membersById[item.assigneeId].avatarUrl}

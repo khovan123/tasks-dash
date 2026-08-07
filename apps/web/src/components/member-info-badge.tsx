@@ -6,7 +6,7 @@ import { cn } from "@/lib/utils";
 import { Github } from "lucide-react";
 import { useState } from "react";
 
-interface MemberIdentityProps {
+interface MemberInfoBadgeProps {
   memberId?: string;
   name: string;
   avatarUrl?: string;
@@ -19,7 +19,7 @@ interface MemberIdentityProps {
   textClassName?: string;
 }
 
-export function MemberIdentity({
+export function MemberInfoBadge({
   memberId,
   name,
   avatarUrl,
@@ -30,7 +30,7 @@ export function MemberIdentity({
   className,
   avatarClassName,
   textClassName,
-}: MemberIdentityProps) {
+}: MemberInfoBadgeProps) {
   const [copied, setCopied] = useState(false);
 
   const handleDiscordClick = async (e: React.MouseEvent) => {

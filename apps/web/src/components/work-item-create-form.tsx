@@ -26,7 +26,7 @@ import {
   WORK_ITEM_TYPE_LABELS,
 } from "@/components/work-item-type-icon";
 import { PriorityIcon, PRIORITY_LABELS } from "@/components/priority-icon";
-import { MemberIdentity } from "@/components/member-identity";
+import { MemberInfoBadge } from "@/components/member-info-badge";
 import {
   WorkItemFormInput,
   WorkItemFormValues,
@@ -368,7 +368,7 @@ export function WorkItemCreateForm({
                   )}
                   {members.map((member) => (
                     <SelectItem key={member.id} value={member.id}>
-                      <MemberIdentity
+                      <MemberInfoBadge
                         memberId={member.id}
                         name={member.name}
                         avatarUrl={member.avatarUrl}

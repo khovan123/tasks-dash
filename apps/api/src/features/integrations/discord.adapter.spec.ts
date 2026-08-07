@@ -19,7 +19,7 @@ describe("normalizeDiscordChannelName", () => {
 
   it("falls back to the project key when the rendered name is empty", () => {
     expect(normalizeDiscordChannelName("***", "TD", "Tasks Dash")).toBe(
-      "td-updates",
+      "td-tasks",
     );
   });
 });

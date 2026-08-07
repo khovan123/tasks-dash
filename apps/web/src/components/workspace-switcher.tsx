@@ -27,9 +27,11 @@ export interface WorkspaceOption {
 export function WorkspaceSwitcher({
   workspaces,
   compact = false,
+  currentRole,
 }: {
   workspaces: WorkspaceOption[];
   compact?: boolean;
+  currentRole?: string;
 }) {
   const active = workspaces.find((workspace) => workspace.active);
   const canCreateWorkspace = active?.role === MEMBER_ROLES.owner;
@@ -81,7 +83,7 @@ export function WorkspaceSwitcher({
                 {active?.name ?? "Chọn workspace"}
               </p>
               <p className="truncate text-[10px] text-muted-foreground">
-                {active?.role ?? "Workspace"}
+                {currentRole ?? active?.role ?? "Workspace"}
               </p>
             </div>
           </div>
@@ -123,14 +125,14 @@ export function WorkspaceSwitcher({
                   />
                   <div className="min-w-0 flex-1">
                     <p className="truncate font-medium">{ws.name}</p>
-                    <p className="truncate text-[10px] text-muted-foreground">
+                    {/* <p className="truncate text-[10px] text-muted-foreground">
                       {ws.slug}
-                    </p>
+                    </p> */}
                   </div>
                 </div>
                 <div className="flex items-center gap-1.5 shrink-0">
                   <Badge variant="outline" className="text-[9px] px-1 py-0 h-4">
-                    {ws.role}
+                    {isActive ? (currentRole ?? ws.role) : ws.role}
                   </Badge>
                   {isActive ? (
                     <Check className="size-3.5 text-primary" />
@@ -144,17 +146,22 @@ export function WorkspaceSwitcher({
         <Separator className="my-1.5" />
 
         {canCreateWorkspace ? (
-          <NewWorkspaceModal
-            trigger={
-              <button
-                type="button"
-                className="flex w-full items-center gap-2 rounded-md px-2.5 py-1.5 text-xs text-muted-foreground transition hover:bg-accent hover:text-foreground"
-              >
-                <Plus className="size-3.5" />
-                <span>Tạo Workspace mới</span>
-              </button>
-            }
-          />
+          <>
+            <NewWorkspaceModal
+              trigger={
+                <button
+                  type="button"
+                  className="flex w-full items-center gap-2 rounded-md px-2.5 py-1.5 text-xs text-muted-foreground transition hover:bg-accent hover:text-foreground"
+                >
+                  <Plus className="size-3.5" />
+                  <span>Tạo Workspace mới</span>
+                </button>
+              }
+            />
+            <a href="/workspaces/new" className="hidden">
+              Tạo workspace mới
+            </a>
+          </>
         ) : null}
       </PopoverContent>
     </Popover>
