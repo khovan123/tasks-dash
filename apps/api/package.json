@@ -6,8 +6,7 @@
     "type": "http",
     "route": "/api",
     "port": 4000,
-    "priority": 100,
-    "env": true
+    "priority": 100
   },
   "scripts": {
     "build": "nest build",

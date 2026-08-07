@@ -9,3 +9,4 @@ coverage
 *.pem
 .codebase-memory
 .code-review-graph
+.env.prod

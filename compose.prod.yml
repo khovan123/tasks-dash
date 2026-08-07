@@ -29,3 +29,12 @@ services:
 
     env_file:
       - /etc/fogewise/apps/${APP_NAME}.env
+
+    networks:
+      - default
+      - fogewise
+
+networks:
+  fogewise:
+    external: true
+    name: fogewise-network
