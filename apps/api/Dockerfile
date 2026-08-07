@@ -18,6 +18,7 @@ COPY --from=build --chown=tasksdash:nodejs /app/package.json ./package.json
 COPY --from=build --chown=tasksdash:nodejs /app/node_modules ./node_modules
 COPY --from=build --chown=tasksdash:nodejs /app/apps/api/package.json ./apps/api/package.json
 COPY --from=build --chown=tasksdash:nodejs /app/apps/api/dist ./apps/api/dist
+COPY --from=build --chown=tasksdash:nodejs /app/apps/api/public ./apps/api/public
 COPY --from=build --chown=tasksdash:nodejs /app/packages/contracts/package.json ./packages/contracts/package.json
 COPY --from=build --chown=tasksdash:nodejs /app/packages/contracts/dist ./packages/contracts/dist
 USER tasksdash
