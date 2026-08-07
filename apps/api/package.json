@@ -6,6 +6,7 @@
     "type": "http",
     "route": "/api",
     "port": 4000,
+    "portEnv": "API_PORT",
     "priority": 100,
     "env": true,
     "requires": [
