@@ -214,7 +214,7 @@ export class WorkItemsService {
     },
   ): Promise<WorkItemHydratedDocument> {
     if (options?.actorRole === MEMBER_ROLES.dev) {
-      if (item.assigneeId !== options.actorMemberId) {
+      if (item.assigneeId !== options?.actorMemberId) {
         throw new ForbiddenException(
           "Dev can only transition tasks assigned to themselves.",
         );
