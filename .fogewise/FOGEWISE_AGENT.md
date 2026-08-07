@@ -74,6 +74,19 @@ Rules:
 - Deployment-derived values such as process ports, internal upstream URLs, public upstream routes, Docker service names, and dynamic host ports must not be duplicated in the secret env file when Fogewise can derive them from metadata.
 - `NODE_ENV=production` is a runtime application setting, not deployment topology.
 
+## CI and deployment log secrecy
+
+- Treat generated Compose configuration as secret-bearing whenever any service receives an `env_file`.
+- Never stream resolved Compose configuration to GitHub Actions or another shared CI log.
+- Never run `docker compose ... config` in a streamed CI/SSH session when it may render secret environment values. For validation use `docker compose ... config --quiet >/dev/null`.
+- Never log or print `/etc/fogewise/apps/<repo>.env`, `env`, `printenv`, resolved container environment, `docker inspect` environment fields, or other secret-bearing runtime configuration.
+- Do not enable shell xtrace (`set -x`) around commands that can expand secrets, credentials, private keys, connection strings, or environment files.
+- GitHub Actions secret masking is not a protection for values that exist only on the VPS; GitHub cannot mask secrets it was never given as Actions secrets.
+- `/usr/local/sbin/fogewise-deploy` must produce only explicitly safe status output when its stdout/stderr is streamed to CI. Validation commands that can reveal secrets must be quiet or redirected.
+- As defense in depth, the repository deploy workflow must not stream raw platform deploy output unless the platform deployer is verified secret-safe. Capture raw deploy output in a root-only VPS log and print only a safe success/failure summary plus non-secret service status.
+- Server-side deploy logs that may temporarily contain sensitive diagnostics must be created with restrictive permissions (`umask 077` / mode `0600`) and must not be copied into CI artifacts.
+- Failure output sent to CI should reference the server-side log path instead of echoing secret-bearing diagnostics.
+
 ## Infrastructure dependencies
 
 - Declare infrastructure dependencies through `fogewise.requires`; do not hardcode shared infrastructure container topology into repository Compose files.
