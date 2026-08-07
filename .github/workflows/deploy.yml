@@ -1,0 +1,76 @@
+name: Deploy Production
+
+on:
+  push:
+    branches:
+      - main
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Resolve repository name
+        shell: bash
+        run: |
+          REPO_NAME="${GITHUB_REPOSITORY##*/}"
+
+          echo "REPO_NAME=$REPO_NAME" >> "$GITHUB_ENV"
+
+          echo "Repository : $REPO_NAME"
+          echo "Directory  : /srv/apps/$REPO_NAME"
+          echo "Domain     : https://$REPO_NAME.fogewise.io.vn"
+
+      - name: Configure SSH
+        env:
+          VPS_SSH_KEY: ${{ secrets.VPS_SSH_KEY }}
+          VPS_KNOWN_HOSTS: ${{ secrets.VPS_KNOWN_HOSTS }}
+        run: |
+          mkdir -p ~/.ssh
+
+          printf '%s\n' "$VPS_SSH_KEY" > ~/.ssh/id_ed25519
+          printf '%s\n' "$VPS_KNOWN_HOSTS" > ~/.ssh/known_hosts
+
+          chmod 700 ~/.ssh
+          chmod 600 ~/.ssh/id_ed25519
+          chmod 600 ~/.ssh/known_hosts
+
+      - name: Prepare server directory
+        env:
+          VPS_HOST: ${{ secrets.VPS_HOST }}
+          VPS_USER: ${{ secrets.VPS_USER }}
+        run: |
+          ssh "$VPS_USER@$VPS_HOST" \
+            "mkdir -p /srv/apps/$REPO_NAME"
+
+      - name: Upload source
+        env:
+          VPS_HOST: ${{ secrets.VPS_HOST }}
+          VPS_USER: ${{ secrets.VPS_USER }}
+        run: |
+          rsync -az \
+            --delete \
+            --exclude='.git' \
+            --exclude='.env' \
+            --exclude='.env.*' \
+            ./ \
+            "$VPS_USER@$VPS_HOST:/srv/apps/$REPO_NAME/"
+
+      - name: Deploy
+        env:
+          VPS_HOST: ${{ secrets.VPS_HOST }}
+          VPS_USER: ${{ secrets.VPS_USER }}
+        run: |
+          ssh "$VPS_USER@$VPS_HOST" \
+            "sudo /usr/local/sbin/fogewise-deploy '$REPO_NAME'"
+
+      - name: Health check
+        run: |
+          curl \
+            --fail \
+            --retry 10 \
+            --retry-delay 3 \
+            "https://${REPO_NAME}.fogewise.io.vn"

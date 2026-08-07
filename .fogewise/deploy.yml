@@ -1,0 +1,13 @@
+version: 1
+
+frontend:
+  port: 3100
+
+backend:
+  port: 4100
+  routes:
+    - /api
+    - /api/*
+
+healthcheck:
+  path: /api/health
