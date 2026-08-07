@@ -26,6 +26,9 @@ jobs:
       - name: Install dependencies
         run: npm install --no-audit --no-fund
 
+      - name: Build Contracts
+        run: npm run build -w @tasks-dash/contracts
+
       - name: Typecheck
         run: npm run typecheck
 
