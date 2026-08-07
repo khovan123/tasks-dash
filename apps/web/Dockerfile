@@ -18,6 +18,7 @@ WORKDIR /app
 RUN addgroup -S nodejs && adduser -S tasksdash -G nodejs
 COPY --from=build --chown=tasksdash:nodejs /app/apps/web/.next/standalone ./
 COPY --from=build --chown=tasksdash:nodejs /app/apps/web/.next/static ./apps/web/.next/static
+COPY --from=build --chown=tasksdash:nodejs /app/apps/web/public ./apps/web/public
 USER tasksdash
 EXPOSE 3000
 CMD ["node", "apps/web/server.js"]
