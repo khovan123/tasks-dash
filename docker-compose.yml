@@ -14,4 +14,4 @@ services:
       - "127.0.0.1:4100:4000"
 
     env_file:
-      - /etc/fogewise/apps/task-dash.env
+      - /etc/fogewise/apps/${APP_NAME}.env
