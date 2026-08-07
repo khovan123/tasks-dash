@@ -5,6 +5,9 @@ on:
     branches:
       - main
 
+permissions:
+  contents: read
+
 jobs:
   deploy:
     runs-on: ubuntu-latest
@@ -64,13 +67,38 @@ jobs:
           VPS_HOST: ${{ secrets.VPS_HOST }}
           VPS_USER: ${{ secrets.VPS_USER }}
         run: |
-          ssh "$VPS_USER@$VPS_HOST" \
-            "/usr/local/sbin/fogewise-deploy '$REPO_NAME'"
+          ssh "$VPS_USER@$VPS_HOST" "
+            set -eu
+            umask 077
+
+            LOG_DIR='/var/log/fogewise'
+            LOG_FILE=\"\$LOG_DIR/${REPO_NAME}-deploy.log\"
+
+            install -d -m 700 \"\$LOG_DIR\"
+
+            if /usr/local/sbin/fogewise-deploy '$REPO_NAME' >\"\$LOG_FILE\" 2>&1; then
+              echo 'Fogewise deploy succeeded.'
+            else
+              echo 'Fogewise deploy failed. Inspect server-side log:' \"\$LOG_FILE\" >&2
+              exit 1
+            fi
+
+            docker compose \
+              -p '$REPO_NAME' \
+              -f '/var/lib/fogewise/apps/$REPO_NAME/compose.json' \
+              ps
+          "
 
       - name: Health check
         run: |
           curl \
             --fail \
+            --silent \
+            --show-error \
+            --output /dev/null \
             --retry 10 \
             --retry-delay 3 \
+            --retry-all-errors \
             "https://${REPO_NAME}.fogewise.io.vn"
+
+          echo "Health check passed."
