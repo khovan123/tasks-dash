@@ -65,6 +65,7 @@ Rules:
 - Never publish application ports on `0.0.0.0` unless there is an explicit infrastructure decision to do so.
 - Caddy routes must be generated from declared workspace routes and resolved host ports, with more-specific routes handled before `/`.
 - The platform-level Caddyfile must retain `import /etc/caddy/sites-enabled/*.caddy`; app deploy code manages only per-app site files.
+- Generated `/etc/caddy/sites-enabled/*.caddy` files must remain readable by the `caddy` service user. Use service-readable ownership/mode such as `0644 root:root` or `0640 root:caddy`, and keep parent directories searchable.
 
 ## Runtime environment and secrets
 
@@ -84,7 +85,8 @@ Rules:
 - GitHub Actions secret masking is not a protection for values that exist only on the VPS; GitHub cannot mask secrets it was never given as Actions secrets.
 - `/usr/local/sbin/fogewise-deploy` must produce only explicitly safe status output when its stdout/stderr is streamed to CI. Validation commands that can reveal secrets must be quiet or redirected.
 - As defense in depth, the repository deploy workflow must not stream raw platform deploy output unless the platform deployer is verified secret-safe. Capture raw deploy output in a root-only VPS log and print only a safe success/failure summary plus non-secret service status.
-- Server-side deploy logs that may temporarily contain sensitive diagnostics must be created with restrictive permissions (`umask 077` / mode `0600`) and must not be copied into CI artifacts.
+- Server-side deploy logs that may temporarily contain sensitive diagnostics must be created explicitly with restrictive permissions (mode `0600`) and must not be copied into CI artifacts.
+- Do not apply `umask 077` to the entire platform deploy process. Fogewise also generates service-readable runtime configuration such as Caddy site files; an inherited restrictive umask can make those files unreadable by the service user. Scope restrictive permissions to secret-bearing log/env files, and run the deployer with a normal creation mask such as `umask 022` unless the deployer explicitly sets each output mode.
 - Failure output sent to CI should reference the server-side log path instead of echoing secret-bearing diagnostics.
 
 ## Infrastructure dependencies
