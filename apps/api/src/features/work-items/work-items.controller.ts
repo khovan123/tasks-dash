@@ -11,7 +11,7 @@ import {
   Header,
 } from "@nestjs/common";
 import { CommandBus } from "@nestjs/cqrs";
-import { Observable } from "rxjs";
+import { Observable, merge, interval } from "rxjs";
 import { filter, map } from "rxjs/operators";
 import {
   AuthSession,
@@ -54,7 +54,12 @@ export class WorkItemsController {
     @WorkspaceId() workspaceId: string,
   ): Observable<MessageEvent> {
     const projectKey = key.toUpperCase();
-    return this.service.events$.pipe(
+    
+    const keepAlive$ = interval(15000).pipe(
+      map(() => ({ data: "ping" } as MessageEvent))
+    );
+
+    const realEvents$ = this.service.events$.pipe(
       filter(
         (event) =>
           event.workspaceId === workspaceId &&
@@ -64,6 +69,8 @@ export class WorkItemsController {
         data: { type: event.type, data: event.data },
       } as MessageEvent)),
     );
+
+    return merge(realEvents$, keepAlive$);
   }
 
   @Get("projects/:projectKey/work-items")

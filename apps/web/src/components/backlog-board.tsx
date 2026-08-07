@@ -104,6 +104,7 @@ export function BacklogBoard({
 
     eventSource.onmessage = (event) => {
       try {
+        if (event.data === "ping") return;
         const payload = JSON.parse(event.data);
         const { type, data } = payload;
 
@@ -125,8 +126,7 @@ export function BacklogBoard({
     };
 
     eventSource.onerror = (err) => {
-      console.error("SSE Connection error", err);
-      eventSource.close();
+      console.warn("SSE Connection encountered an issue, browser will reconnect automatically", err);
     };
 
     return () => {
