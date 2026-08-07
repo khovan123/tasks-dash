@@ -6,7 +6,13 @@
     "type": "http",
     "route": "/",
     "port": 3000,
-    "priority": 0
+    "priority": 0,
+    "upstreams": {
+      "api": {
+        "package": "@tasks-dash/api",
+        "env": "INTERNAL_API_BASE_URL"
+      }
+    }
   },
   "scripts": {
     "dev": "next dev --turbopack",

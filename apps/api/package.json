@@ -6,7 +6,11 @@
     "type": "http",
     "route": "/api",
     "port": 4000,
-    "priority": 100
+    "priority": 100,
+    "env": true,
+    "requires": [
+      "redis"
+    ]
   },
   "scripts": {
     "build": "nest build",
