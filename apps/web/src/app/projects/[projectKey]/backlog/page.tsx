@@ -1,6 +1,7 @@
 import { BacklogBoard } from "@/components/backlog-board";
 import type { GithubWorkItemView } from "@/components/github-work-item-links";
 import { apiData } from "@/lib/server/api-data";
+import { apiProjectData } from "@/lib/server/project-access";
 import { AppPage } from "@/components/layout/app-shell";
 
 export const dynamic = "force-dynamic";
@@ -36,9 +37,9 @@ export default async function BacklogPage({
   const { projectKey } = await params;
   const key = projectKey.toUpperCase();
   const [items, workflow, membersData, session] = await Promise.all([
-    apiData<WorkItem[]>(`/projects/${key}/work-items`),
-    apiData<Workflow | null>(`/projects/${key}/workflow`),
-    apiData<{ projectMembers: any[]; workspaceMembers: any[] }>(`/projects/${key}/members`),
+    apiProjectData<WorkItem[]>(`/projects/${key}/work-items`),
+    apiProjectData<Workflow | null>(`/projects/${key}/workflow`),
+    apiProjectData<{ projectMembers: any[]; workspaceMembers: any[] }>(`/projects/${key}/members`),
     apiData<{ email: string }>("/auth/me"),
   ]);
   const statusNames = Object.fromEntries(
@@ -56,6 +57,8 @@ export default async function BacklogPage({
     name: member.name,
     email: member.email,
     avatarUrl: member.avatarUrl,
+    githubLogin: member.githubLogin,
+    discordUsername: member.discordUsername,
   }));
   const normalizedItems = items.map((item) => ({
     ...item,

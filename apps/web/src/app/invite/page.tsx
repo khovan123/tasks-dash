@@ -2,7 +2,7 @@
 
 import { Suspense, useState } from "react";
 import { useSearchParams } from "next/navigation";
-import { Github, MailWarning } from "lucide-react";
+import { AlertCircle, Github, MailWarning } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Loading } from "@/components/ui/loading";
@@ -38,8 +38,8 @@ function InvitePageContent() {
           <CardTitle className="text-3xl">Tham gia Tasks Dash</CardTitle>
           <CardDescription className="text-base leading-relaxed">
             {valid
-              ? "Chấp nhận lời mời tham gia workspace bằng cách đăng nhập tài khoản GitHub của bạn. Lời mời chỉ có hiệu lực một lần."
-              : "Link lời mời không hợp lệ hoặc đã bị cắt mất token."}
+              ? "Chấp nhận lời mời tham gia workspace."
+              : "Link lời mời không hợp."}
           </CardDescription>
         </CardHeader>
         <CardContent className="flex flex-col gap-6 w-full items-center">
@@ -62,15 +62,11 @@ function InvitePageContent() {
           )}
         </CardContent>
         <CardFooter className="justify-center text-center text-sm text-muted-foreground flex flex-col gap-2">
-          <p>
-            Email GitHub đã xác minh phải trùng chính xác với email trong lời
-            mời.
-          </p>
           {valid && (
-            <p className="text-xs text-primary font-semibold mt-2">
-              💡 Sau khi đăng nhập GitHub, bạn sẽ được tự động chuyển tiếp đến
-              liên kết tài khoản Discord để đồng bộ phân quyền và nhận thông báo
-              dự án.
+            <p className="text-xs text-muted-foreground font-semibold mt-2 flex flex-row items-start gap-2">
+              <AlertCircle /> Sau khi đăng nhập GitHub, bạn sẽ được tự động
+              chuyển tiếp đến liên kết tài khoản Discord để đồng bộ phân quyền
+              và nhận thông báo dự án.
             </p>
           )}
         </CardFooter>

@@ -6,6 +6,9 @@ import {
 } from "@/components/discord-document-manager";
 import type { JiraShellSession } from "@/components/layout/jira-app-shell";
 import { apiData } from "@/lib/server/api-data";
+import {
+  redirectIfProjectAccessLost,
+} from "@/lib/server/project-access";
 import { AppPage } from "@/components/layout/app-shell";
 import { Button } from "@/components/ui/button";
 import {
@@ -65,6 +68,7 @@ export default async function ProjectDocsPage({
   try {
     tree = await apiData<DiscordDocumentTree>(`/projects/${key}/documents`);
   } catch (cause) {
+    redirectIfProjectAccessLost(cause);
     error =
       cause instanceof Error ? cause.message : "Không thể tải Discord Docs.";
   }

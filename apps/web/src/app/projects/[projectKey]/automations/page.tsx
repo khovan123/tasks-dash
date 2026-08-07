@@ -1,4 +1,5 @@
 import { apiData, apiResponse } from "@/lib/server/api-data";
+import { apiProjectResponse } from "@/lib/server/project-access";
 import { AutomationCreateForm } from "@/components/automation-create-form";
 import {
   AutomationRuleManager,
@@ -39,7 +40,7 @@ export default async function AutomationsPage({
   const [workspaceMembers, session, rulesResponse] = await Promise.all([
     apiData<WorkspaceMembersResponse>("/workspace/members"),
     apiData<JiraShellSession>("/auth/me"),
-    apiResponse(`/projects/${key}/automations`),
+    apiProjectResponse(`/projects/${key}/automations`),
   ]);
 
   const canManage =

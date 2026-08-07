@@ -17,6 +17,7 @@ import {
   WorkItemTypeIcon,
   WORK_ITEM_TYPE_LABELS,
 } from "@/components/work-item-type-icon";
+import { MemberAvatar } from "@/components/member-avatar";
 import { apiRequest } from "@/lib/api/api-request";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { Badge } from "@/components/ui/badge";
@@ -25,11 +26,11 @@ import { Card, CardContent } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { cn } from "@/lib/utils";
 import { PriorityIcon } from "@/components/priority-icon";
-import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import {
   WorkItemDetailDrawer,
   type DetailWorkItem,
 } from "@/components/work-item-detail-drawer";
+import { useWorkspacePresence } from "@/components/layout/jira-app-shell";
 import {
   Popover,
   PopoverContent,
@@ -87,6 +88,8 @@ interface WorkspaceMember {
   name: string;
   email: string;
   avatarUrl?: string;
+  githubLogin?: string;
+  discordUsername?: string;
 }
 
 function getInitials(name: string): string {
@@ -96,6 +99,17 @@ function getInitials(name: string): string {
     .slice(0, 2)
     .map((part) => part[0]?.toUpperCase() ?? "")
     .join("");
+}
+
+function mergeItem<T extends { key: string }>(
+  items: T[],
+  nextItem: Partial<T> & { key: string },
+): T[] {
+  const index = items.findIndex((item) => item.key === nextItem.key);
+  if (index < 0) return [...items, nextItem as T];
+  return items.map((item, itemIndex) =>
+    itemIndex === index ? { ...item, ...nextItem } : item,
+  );
 }
 
 export function KanbanBoard({
@@ -119,6 +133,7 @@ export function KanbanBoard({
   const [saving, setSaving] = useState(false);
   const [detailItem, setDetailItem] = useState<DetailWorkItem | null>(null);
   const [drawerOpen, setDrawerOpen] = useState(false);
+  const presenceByMemberId = useWorkspacePresence();
   const router = useRouter();
 
   useEffect(() => {
@@ -149,9 +164,7 @@ export function KanbanBoard({
               return [...prev, data];
             });
           } else if (type === "updated") {
-            setItems((prev) =>
-              prev.map((item) => (item.key === data.key ? { ...item, ...data } : item))
-            );
+            setItems((prev) => mergeItem(prev, data));
           } else if (type === "reordered") {
             router.refresh();
           }
@@ -182,9 +195,7 @@ export function KanbanBoard({
   }, [projectKey, router]);
 
   function handleItemUpdate(updated: DetailWorkItem) {
-    setItems((prev) =>
-      prev.map((i) => (i.key === updated.key ? { ...i, ...updated } : i)),
-    );
+    setItems((prev) => mergeItem(prev, updated));
     setDetailItem(updated);
   }
 
@@ -323,7 +334,6 @@ export function KanbanBoard({
               All
             </button>
             {members.map((member) => {
-              const initials = getInitials(member.name);
               const isSelected = selectedAssigneeId === member.id;
               return (
                 <button
@@ -335,12 +345,14 @@ export function KanbanBoard({
                   )}
                   title={member.name}
                 >
-                  <Avatar className="size-7 border-0">
-                    <AvatarImage src={member.avatarUrl} alt={member.name} />
-                    <AvatarFallback className="bg-primary text-[10px] font-black text-primary-foreground">
-                      {initials}
-                    </AvatarFallback>
-                  </Avatar>
+                  <MemberAvatar
+                    memberId={member.id}
+                    name={member.name}
+                    avatarUrl={member.avatarUrl}
+                    className="size-7 border-0"
+                    fallbackClassName="bg-primary text-[10px] font-black text-primary-foreground"
+                    presence={presenceByMemberId[member.id]}
+                  />
                 </button>
               );
             })}
@@ -630,19 +642,24 @@ export function KanbanBoard({
                           </div>
 
                           {/* Assignee Avatar */}
-                          {assignee ? (
-                            <Avatar
-                              className="size-5"
-                              title={`Assigned to ${assignee.name}`}
-                            >
-                              <AvatarImage
-                                src={assignee.avatarUrl}
-                                alt={assignee.name}
-                              />
-                              <AvatarFallback className="bg-primary text-[8px] font-black text-primary-foreground">
-                                {getInitials(assignee.name)}
-                              </AvatarFallback>
-                            </Avatar>
+                           {assignee ? (
+                            (() => {
+                              const memberDetails = members.find((m) => m.id === assignee.id);
+                              return (
+                                <MemberAvatar
+                                  memberId={assignee.id}
+                                  name={assignee.name}
+                                  email={assignee.email || memberDetails?.email}
+                                  avatarUrl={assignee.avatarUrl}
+                                  githubLogin={memberDetails?.githubLogin}
+                                  discordUsername={memberDetails?.discordUsername}
+                                  className="size-5"
+                                  fallbackClassName="bg-primary text-[8px] font-black text-primary-foreground"
+                                  title={`Assigned to ${assignee.name}`}
+                                  presence={presenceByMemberId[assignee.id]}
+                                />
+                              );
+                            })()
                           ) : (
                             <div
                               className="flex size-5 items-center justify-center rounded-full bg-muted text-[8px] text-muted-foreground border"

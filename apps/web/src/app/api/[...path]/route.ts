@@ -29,6 +29,8 @@ async function proxy(
     origin: request.headers.get("origin") ?? request.nextUrl.origin,
     "x-request-id": request.headers.get("x-request-id") ?? crypto.randomUUID(),
   };
+  const accept = request.headers.get("accept");
+  if (accept) headers.accept = accept;
   const contentType = request.headers.get("content-type");
   if (contentType) headers["content-type"] = contentType;
 
@@ -121,11 +123,11 @@ async function proxy(
     response.headers.get("content-type") ?? "application/json",
   );
   if (isEventStream) {
-    responseHeaders.set("cache-control", "no-cache, no-transform");
-    responseHeaders.set("connection", "keep-alive");
+    responseHeaders.set(
+      "cache-control",
+      response.headers.get("cache-control") ?? "no-cache, no-transform",
+    );
     responseHeaders.set("x-accel-buffering", "no");
-    responseHeaders.set("content-encoding", "identity");
-    responseHeaders.set("transfer-encoding", "chunked");
   }
 
   const setCookies = [...newCookiesToSet, ...response.headers.getSetCookie()];
@@ -149,7 +151,10 @@ async function proxy(
         } catch (err) {
           controller.error(err);
         }
-      }
+      },
+      async cancel(reason) {
+        await reader.cancel(reason);
+      },
     });
 
     return new Response(stream, {

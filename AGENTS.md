@@ -49,3 +49,5 @@ Every bug fix must include:
 - `apps/web`: Next.js, Tailwind CSS, shadcn-style components, Atomic Design, feature-based modules.
 - `apps/api`: NestJS, CQRS, dependency injection, Clean Architecture, DDD, MongoDB, cron jobs, webhooks, workflow jobs.
 - `packages/contracts`: canonical API/domain constants, DTOs, and envelope contracts.
+
+@RTK.md

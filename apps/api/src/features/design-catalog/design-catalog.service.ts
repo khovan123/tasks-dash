@@ -6,6 +6,10 @@ import {
 import { InjectModel } from "@nestjs/mongoose";
 import { isValidObjectId, Model } from "mongoose";
 import { ProjectsService } from "../projects/projects.service";
+import {
+  PROJECT_REALTIME_EVENT_TYPES,
+  ProjectRealtimeService,
+} from "../projects/project-realtime.service";
 import { DiscordAdapter } from "../integrations/discord.adapter";
 import {
   DesignCatalogItemLogDocument,
@@ -28,6 +32,7 @@ export class DesignCatalogService {
     @InjectModel(DesignCatalogItemLogDocument.name)
     private readonly itemLogs: Model<DesignCatalogItemLogHydratedDocument>,
     private readonly projects: ProjectsService,
+    private readonly realtime: ProjectRealtimeService,
     private readonly discord: DiscordAdapter,
   ) {}
 
@@ -91,6 +96,12 @@ export class DesignCatalogService {
       }
     } catch { /* non-critical */ }
 
+    this.realtime.emit({
+      type: PROJECT_REALTIME_EVENT_TYPES.designCatalogChanged,
+      workspaceId,
+      projectKey: key,
+      data: { itemId: String(item._id), action: "created" },
+    });
     return item;
   }
 
@@ -128,6 +139,12 @@ export class DesignCatalogService {
       }
     } catch { /* non-critical */ }
 
+    this.realtime.emit({
+      type: PROJECT_REALTIME_EVENT_TYPES.designCatalogChanged,
+      workspaceId,
+      projectKey: item.projectKey,
+      data: { itemId: String(item._id), action: "updated" },
+    });
     return item;
   }
 
@@ -150,6 +167,12 @@ export class DesignCatalogService {
     } catch { /* non-critical */ }
 
     await this.items.deleteOne({ _id: item._id }).exec();
+    this.realtime.emit({
+      type: PROJECT_REALTIME_EVENT_TYPES.designCatalogChanged,
+      workspaceId,
+      projectKey: item.projectKey,
+      data: { itemId: String(item._id), action: "deleted" },
+    });
   }
 
   private async find(

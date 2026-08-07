@@ -12,10 +12,10 @@ import {
   GithubWorkItemLinks,
   type GithubWorkItemView,
 } from "@/components/github-work-item-links";
+import { MemberAvatar } from "@/components/member-avatar";
 import { apiRequest } from "@/lib/api/api-request";
 import { PriorityIcon } from "@/components/priority-icon";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
-import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader } from "@/components/ui/card";
@@ -34,6 +34,7 @@ import {
   WorkItemDetailDrawer,
   type DetailWorkItem,
 } from "@/components/work-item-detail-drawer";
+import { useWorkspacePresence } from "@/components/layout/jira-app-shell";
 
 interface BacklogItem {
   key: string;
@@ -58,15 +59,19 @@ interface BacklogMember {
   name: string;
   email: string;
   avatarUrl?: string;
+  githubLogin?: string;
+  discordUsername?: string;
 }
 
-function getInitials(name: string): string {
-  return name
-    .trim()
-    .split(/\s+/)
-    .slice(0, 2)
-    .map((part) => part[0]?.toUpperCase() ?? "")
-    .join("");
+function mergeItem<T extends { key: string }>(
+  items: T[],
+  nextItem: Partial<T> & { key: string },
+): T[] {
+  const index = items.findIndex((item) => item.key === nextItem.key);
+  if (index < 0) return [...items, nextItem as T];
+  return items.map((item, itemIndex) =>
+    itemIndex === index ? { ...item, ...nextItem } : item,
+  );
 }
 
 export function BacklogBoard({
@@ -92,6 +97,7 @@ export function BacklogBoard({
   const [saving, setSaving] = useState(false);
   const [detailItem, setDetailItem] = useState<DetailWorkItem | null>(null);
   const [drawerOpen, setDrawerOpen] = useState(false);
+  const presenceByMemberId = useWorkspacePresence();
   const router = useRouter();
 
   useEffect(() => {
@@ -122,9 +128,7 @@ export function BacklogBoard({
               return [...prev, data];
             });
           } else if (type === "updated") {
-            setItems((prev) =>
-              prev.map((item) => (item.key === data.key ? { ...item, ...data } : item))
-            );
+            setItems((prev) => mergeItem(prev, data));
           } else if (type === "reordered") {
             router.refresh();
           }
@@ -155,9 +159,7 @@ export function BacklogBoard({
   }, [projectKey, router]);
 
   function handleItemUpdate(updated: DetailWorkItem) {
-    setItems((prev) =>
-      prev.map((i) => (i.key === updated.key ? { ...i, ...updated } : i)),
-    );
+    setItems((prev) => mergeItem(prev, updated));
     setDetailItem(updated);
   }
 
@@ -359,20 +361,25 @@ export function BacklogBoard({
                         <GithubWorkItemLinks github={item.github} compact />
                       </div>
                     </div>
-                    <div className="flex items-center justify-end">
+                      <div className="flex items-center justify-end">
                       {assignee ? (
-                        <Avatar
-                          className="size-7"
-                          title={`Assigned to ${assignee.name}`}
-                        >
-                          <AvatarImage
-                            src={assignee.avatarUrl}
-                            alt={assignee.name}
-                          />
-                          <AvatarFallback className="text-[10px] font-black">
-                            {getInitials(assignee.name)}
-                          </AvatarFallback>
-                        </Avatar>
+                        (() => {
+                          const memberDetails = members.find((m) => m.id === assignee.id);
+                          return (
+                            <MemberAvatar
+                              memberId={assignee.id}
+                              name={assignee.name}
+                              email={assignee.email || memberDetails?.email}
+                              avatarUrl={assignee.avatarUrl}
+                              githubLogin={memberDetails?.githubLogin}
+                              discordUsername={memberDetails?.discordUsername}
+                              className="size-7"
+                              fallbackClassName="text-[10px] font-black"
+                              title={`Assigned to ${assignee.name}`}
+                              presence={presenceByMemberId[assignee.id]}
+                            />
+                          );
+                        })()
                       ) : null}
                     </div>
                   </article>

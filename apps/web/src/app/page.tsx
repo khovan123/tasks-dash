@@ -10,12 +10,13 @@ import {
   Users,
 } from "lucide-react";
 import { apiData, apiResponse } from "@/lib/server/api-data";
+import { MemberAvatar } from "@/components/member-avatar";
+import { MemberIdentity } from "@/components/member-identity";
 import { NewProjectModal } from "@/components/new-project-modal";
 import { ProjectLogo } from "@/components/project-logo";
 import { UnauthenticatedHome } from "@/components/unauthenticated-home";
 import { AppPage, SectionHeading } from "@/components/layout/app-shell";
 import type { WorkspaceOption } from "@/components/workspace-switcher";
-import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import {
@@ -43,11 +44,14 @@ interface Session {
   name: string;
 }
 interface Member {
+  _id?: string;
   name: string;
   email: string;
   avatarUrl: string;
   role: string;
   status: string;
+  githubLogin?: string;
+  discordUsername?: string;
 }
 interface Project {
   key: string;
@@ -69,16 +73,6 @@ interface Dashboard {
   projects: Project[];
   members: Member[];
   dailyActivity: DailyActivity[];
-}
-
-function initials(name: string): string {
-  return name
-    .split(/\s+/)
-    .filter(Boolean)
-    .map((part) => part[0])
-    .join("")
-    .slice(0, 2)
-    .toUpperCase();
 }
 
 function aggregateActivity(activity: DailyActivity[]) {
@@ -229,7 +223,7 @@ export default async function HomePage() {
             </div>
           </CardHeader>
           <CardFooter className="px-5 text-xs text-muted-foreground">
-            {onlineMembers} currently online
+            {onlineMembers} active now
           </CardFooter>
         </Card>
       </section>
@@ -317,43 +311,27 @@ export default async function HomePage() {
             <CardContent className="flex flex-col gap-4">
               {dashboard.members.slice(0, 8).map((member) => (
                 <div key={member.email} className="flex items-center gap-3">
-                  <Avatar className="size-9">
-                    <AvatarImage src={member.avatarUrl} alt={member.name} />
-                    <AvatarFallback>{initials(member.name)}</AvatarFallback>
-                  </Avatar>
-                  <div className="min-w-0 flex-1">
-                    <p className="truncate text-sm font-semibold">
-                      {member.name}
-                    </p>
-                    <p className="truncate text-xs text-muted-foreground">
-                      {member.email}
-                    </p>
-                  </div>
-                  <div className="text-right">
-                    <Badge variant="secondary" className="text-[10px]">
-                      {member.role.replaceAll("_", " ")}
-                    </Badge>
-                    <div className="mt-1">
-                      <Badge
-                        variant={
-                          member.status.toUpperCase() === "ONLINE"
-                            ? "success"
-                            : "warning"
-                        }
-                        className="text-[10px]"
-                      >
-                        {member.status}
-                      </Badge>
-                    </div>
-                  </div>
+                  <MemberIdentity
+                    memberId={member._id}
+                    name={member.name}
+                    avatarUrl={member.avatarUrl}
+                    email={member.email}
+                    githubLogin={member.githubLogin}
+                    discordUsername={member.discordUsername}
+                    presence={member.status as any}
+                    avatarClassName="size-9"
+                    textClassName="text-sm font-semibold"
+                  />
                 </div>
               ))}
             </CardContent>
-            <CardFooter>
-              <Button asChild variant="ghost" size="sm">
-                <Link href="/workspace/members">Quản lý thành viên</Link>
-              </Button>
-            </CardFooter>
+            {canCreateProject ? (
+              <CardFooter>
+                <Button asChild variant="ghost" size="sm">
+                  <Link href="/workspace/members">Quản lý thành viên</Link>
+                </Button>
+              </CardFooter>
+            ) : null}
           </Card>
 
           <Card>

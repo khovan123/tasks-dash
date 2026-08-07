@@ -7,7 +7,12 @@ import { EventEmitter2 } from "@nestjs/event-emitter";
 import { InjectConnection, InjectModel } from "@nestjs/mongoose";
 import { Connection, Model } from "mongoose";
 import { MemberRole, MEMBER_ROLES } from "@tasks-dash/contracts";
+import { Subject } from "rxjs";
 import { Project } from "./project.domain";
+import {
+  PROJECT_REALTIME_EVENT_TYPES,
+  ProjectRealtimeService,
+} from "./project-realtime.service";
 import { ProjectDocument, ProjectHydratedDocument } from "./project.schema";
 import { CreateProjectDto } from "./projects.dto";
 
@@ -23,14 +28,23 @@ export interface ProjectDeletedEvent {
   projectKey: string;
 }
 
+export interface ProjectStreamEvent {
+  type: "created" | "updated" | "deleted" | "members_updated";
+  workspaceId: string;
+  projectKey: string;
+}
+
 @Injectable()
 export class ProjectsService {
+  readonly events$ = new Subject<ProjectStreamEvent>();
+
   constructor(
     @InjectModel(ProjectDocument.name)
     private readonly projects: Model<ProjectHydratedDocument>,
     @InjectConnection()
     private readonly connection: Connection,
     private readonly events: EventEmitter2,
+    private readonly realtime: ProjectRealtimeService,
   ) {}
 
   async create(
@@ -64,6 +78,16 @@ export class ProjectsService {
       // Project creation remains durable when Discord is temporarily unavailable.
       // Provision-all or the Docs screen can retry channel provisioning later.
     }
+    this.events$.next({
+      type: "created",
+      workspaceId,
+      projectKey: created.key,
+    });
+    this.realtime.emit({
+      type: PROJECT_REALTIME_EVENT_TYPES.projectChanged,
+      workspaceId,
+      projectKey: created.key,
+    });
     return created;
   }
 
@@ -95,10 +119,22 @@ export class ProjectsService {
 
     project.markModified("memberRoles");
     await project.save();
+    this.realtime.syncMembers(workspaceId, project.key, memberIds);
 
     await this.events.emitAsync("project.members.updated", {
       workspaceId,
       projectKey: project.key,
+    });
+    this.events$.next({
+      type: "members_updated",
+      workspaceId,
+      projectKey: project.key,
+    });
+    this.realtime.emit({
+      type: PROJECT_REALTIME_EVENT_TYPES.projectMembersChanged,
+      workspaceId,
+      projectKey: project.key,
+      data: { memberIds },
     });
     return project;
   }
@@ -123,6 +159,17 @@ export class ProjectsService {
     await this.events.emitAsync("project.members.updated", {
       workspaceId,
       projectKey: project.key,
+    });
+    this.events$.next({
+      type: "members_updated",
+      workspaceId,
+      projectKey: project.key,
+    });
+    this.realtime.emit({
+      type: PROJECT_REALTIME_EVENT_TYPES.projectMembersChanged,
+      workspaceId,
+      projectKey: project.key,
+      data: { memberId, role },
     });
     return project;
   }
@@ -246,6 +293,16 @@ export class ProjectsService {
       project.description = dto.description.trim();
     if (dto.color !== undefined) project.color = dto.color;
     await project.save();
+    this.events$.next({
+      type: "updated",
+      workspaceId,
+      projectKey: project.key,
+    });
+    this.realtime.emit({
+      type: PROJECT_REALTIME_EVENT_TYPES.projectChanged,
+      workspaceId,
+      projectKey: project.key,
+    });
     return project;
   }
 
@@ -291,6 +348,18 @@ export class ProjectsService {
     } catch {
       // ignore event emission failure to keep deletion resilient
     }
+    this.events$.next({
+      type: "deleted",
+      workspaceId,
+      projectKey: normalizedKey,
+    });
+    this.realtime.clearProject(workspaceId, normalizedKey);
+    this.realtime.emit({
+      type: PROJECT_REALTIME_EVENT_TYPES.projectChanged,
+      workspaceId,
+      projectKey: normalizedKey,
+      data: { deleted: true },
+    });
     return { ok: true };
   }
 }

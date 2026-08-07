@@ -140,6 +140,10 @@ export function WorkspaceMembersView({
               <div className="w-full">
                 <ProjectMembersManager
                   projectKey={selectedProjectKey}
+                  projectId={
+                    projects.find((p) => p.key === selectedProjectKey)?._id ||
+                    ""
+                  }
                   initialProjectMembers={projectMembers}
                   workspaceMembers={initialMembers as any}
                   invitations={initialInvitations}

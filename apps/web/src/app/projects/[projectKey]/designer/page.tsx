@@ -2,6 +2,7 @@ import { MEMBER_ROLES, type MemberRole } from "@tasks-dash/contracts";
 import { DesignerCatalogManager } from "@/components/designer-catalog-manager";
 import type { JiraShellSession } from "@/components/layout/jira-app-shell";
 import { apiData } from "@/lib/server/api-data";
+import { apiProjectData } from "@/lib/server/project-access";
 import { AppPage } from "@/components/layout/app-shell";
 
 export const dynamic = "force-dynamic";
@@ -48,7 +49,7 @@ export default async function DesignerPage({
   const { projectKey } = await params;
   const key = projectKey.toUpperCase();
   const [items, workspaceMembers, session] = await Promise.all([
-    apiData<DesignCatalogItem[]>(`/projects/${key}/design-catalog`),
+    apiProjectData<DesignCatalogItem[]>(`/projects/${key}/design-catalog`),
     apiData<WorkspaceMembersResponse>("/workspace/members"),
     apiData<JiraShellSession>("/auth/me"),
   ]);

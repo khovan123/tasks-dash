@@ -587,6 +587,7 @@ export function WorkItemDetailDrawer({
                   <SelectTrigger className="h-8 w-auto border-none bg-transparent px-2 text-sm font-semibold shadow-none focus:ring-0">
                     {activeAssignee ? (
                       <MemberIdentity
+                        memberId={activeAssignee.id}
                         name={activeAssignee.name}
                         avatarUrl={activeAssignee.avatarUrl}
                         email={activeAssignee.email}
@@ -606,6 +607,7 @@ export function WorkItemDetailDrawer({
                     {members.map((m) => (
                       <SelectItem key={m.id} value={m.id}>
                         <MemberIdentity
+                          memberId={m.id}
                           name={m.name}
                           avatarUrl={m.avatarUrl}
                           email={m.email}

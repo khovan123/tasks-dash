@@ -6,6 +6,7 @@ import {
   type JiraShellProject,
   type JiraShellSession,
 } from "@/components/layout/jira-app-shell";
+import { Toaster } from "@/components/ui/sonner";
 import type { WorkspaceOption } from "@/components/workspace-switcher";
 import { apiData } from "@/lib/server/api-data";
 import "./globals.css";
@@ -104,6 +105,7 @@ export default async function RootLayout({
         ) : (
           children
         )}
+        <Toaster />
       </body>
     </html>
   );

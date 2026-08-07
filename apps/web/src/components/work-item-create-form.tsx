@@ -369,6 +369,7 @@ export function WorkItemCreateForm({
                   {members.map((member) => (
                     <SelectItem key={member.id} value={member.id}>
                       <MemberIdentity
+                        memberId={member.id}
                         name={member.name}
                         avatarUrl={member.avatarUrl}
                         email={member.email}
