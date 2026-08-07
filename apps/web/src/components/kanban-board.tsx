@@ -126,38 +126,58 @@ export function KanbanBoard({
   }, [initialItems]);
 
   useEffect(() => {
-    const sseUrl = `/api/projects/${projectKey}/work-items/sse`;
-    const eventSource = new EventSource(sseUrl, { withCredentials: true });
+    let eventSource: EventSource | null = null;
+    let reconnectTimeout: NodeJS.Timeout | null = null;
 
-    eventSource.onmessage = (event) => {
-      try {
-        if (event.data === "ping") return;
-        const payload = JSON.parse(event.data);
-        const { type, data } = payload;
+    const connect = () => {
+      const apiBaseUrl = process.env.NEXT_PUBLIC_API_BASE_URL || "";
+      const sseUrl = apiBaseUrl
+        ? `${apiBaseUrl.replace(/\/$/, "")}/projects/${projectKey}/work-items/sse`
+        : `/api/projects/${projectKey}/work-items/sse`;
+      
+      eventSource = new EventSource(sseUrl, { withCredentials: true });
 
-        if (type === "created") {
-          setItems((prev) => {
-            if (prev.some((item) => item.key === data.key)) return prev;
-            return [...prev, data];
-          });
-        } else if (type === "updated") {
-          setItems((prev) =>
-            prev.map((item) => (item.key === data.key ? { ...item, ...data } : item))
-          );
-        } else if (type === "reordered") {
-          router.refresh();
+      eventSource.onmessage = (event) => {
+        try {
+          if (event.data === "ping") return;
+          const payload = JSON.parse(event.data);
+          const { type, data } = payload;
+
+          if (type === "created") {
+            setItems((prev) => {
+              if (prev.some((item) => item.key === data.key)) return prev;
+              return [...prev, data];
+            });
+          } else if (type === "updated") {
+            setItems((prev) =>
+              prev.map((item) => (item.key === data.key ? { ...item, ...data } : item))
+            );
+          } else if (type === "reordered") {
+            router.refresh();
+          }
+        } catch (err) {
+          console.error("Failed to parse SSE payload", err);
         }
-      } catch (err) {
-        console.error("Failed to parse SSE payload", err);
-      }
+      };
+
+      eventSource.onerror = (err) => {
+        console.warn("SSE Connection encountered an issue. Reconnecting in 5s...", err);
+        if (eventSource) {
+          eventSource.close();
+        }
+        reconnectTimeout = setTimeout(connect, 5000);
+      };
     };
 
-    eventSource.onerror = (err) => {
-      console.warn("SSE Connection encountered an issue, browser will reconnect automatically", err);
-    };
+    connect();
 
     return () => {
-      eventSource.close();
+      if (eventSource) {
+        eventSource.close();
+      }
+      if (reconnectTimeout) {
+        clearTimeout(reconnectTimeout);
+      }
     };
   }, [projectKey, router]);
 

@@ -581,12 +581,15 @@ export class WorkItemsService {
           : input.draft
             ? GITHUB_PR_STATUSES.draft
             : GITHUB_PR_STATUSES.open;
+    const stateChanged = existing && existing.state !== input.state;
     const next: GithubPullRequestLinkDocument = {
       number: input.number,
       title: input.title || existing?.title || `Pull request #${input.number}`,
       url: input.url || existing?.url || "",
       state: input.state,
-      status: input.status ?? existing?.status ?? defaultStatus,
+      status: stateChanged
+        ? defaultStatus
+        : (input.status ?? existing?.status ?? defaultStatus),
       draft: input.draft,
       headBranch: input.headBranch || existing?.headBranch || "",
       baseBranch: input.baseBranch || existing?.baseBranch || "",
