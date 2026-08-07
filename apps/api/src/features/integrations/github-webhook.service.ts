@@ -982,25 +982,37 @@ export class GithubWebhookService {
       let prNumber: number | undefined = undefined;
 
       for (const pr of prs) {
-        if (pr.user?.login) {
-          prAuthor = pr.user.login;
+        if (pr.number) {
           prNumber = pr.number;
+          prAuthor = pr.user?.login;
           break;
         }
       }
 
-      if (!prAuthor && run.head_branch) {
-        const workItem = await this.workItemsModel
+      if (!prNumber && run.head_branch) {
+        const activePr = await this.projectPrs
           .findOne({
-            workspaceId: context.workspaceId,
-            projectKey: context.projectKey,
-            "github.branches": run.head_branch,
+            repositoryFullName: context.repositoryFullName,
+            headBranch: run.head_branch,
+            state: "open",
           })
           .exec();
-        if (workItem?.github?.pullRequestNumber) {
-          prNumber = workItem.github.pullRequestNumber;
-          const prLink = workItem.github.pullRequests.find((p) => p.number === prNumber);
-          prAuthor = prLink?.authorLogin;
+        if (activePr) {
+          prNumber = activePr.number;
+          prAuthor = activePr.authorLogin;
+        } else if (run.head_branch !== "main" && run.head_branch !== "master") {
+          const workItem = await this.workItemsModel
+            .findOne({
+              workspaceId: context.workspaceId,
+              projectKey: context.projectKey,
+              "github.branches": run.head_branch,
+            })
+            .exec();
+          if (workItem?.github?.pullRequestNumber) {
+            prNumber = workItem.github.pullRequestNumber;
+            const prLink = workItem.github.pullRequests.find((p) => p.number === prNumber);
+            prAuthor = prLink?.authorLogin;
+          }
         }
       }
 

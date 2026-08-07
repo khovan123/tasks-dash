@@ -2879,35 +2879,68 @@ export class DiscordAdapter {
     embed: { title: string; description: string; color?: number; url?: string },
     mention?: string | null,
   ): Promise<string> {
-    const message = await this.botRequest<{ id: string }>(
-      `/channels/${channelId}/messages`,
-      {
-        method: "POST",
-        body: JSON.stringify({
-          ...(mention ? { content: mention } : {}),
-          message_reference: {
-            message_id: parentMessageId,
-            fail_if_not_exists: false,
-          },
-          embeds: [
-            {
-              title: embed.title.slice(0, 256),
-              description: embed.description.slice(0, 4096),
-              color: embed.color ?? 0x5865f2,
-              url: embed.url,
+    try {
+      // Try posting directly to the thread channel (where thread ID is parentMessageId)
+      const message = await this.botRequest<{ id: string }>(
+        `/channels/${parentMessageId}/messages`,
+        {
+          method: "POST",
+          body: JSON.stringify({
+            ...(mention ? { content: mention } : {}),
+            embeds: [
+              {
+                title: embed.title.slice(0, 256),
+                description: embed.description.slice(0, 4096),
+                color: embed.color ?? 0x5865f2,
+                url: embed.url,
+              },
+            ],
+            allowed_mentions: (() => {
+              const ids = mention ? mention.match(/\d{17,21}/g) || [] : [];
+              const uniqueIds = Array.from(new Set(ids));
+              return uniqueIds.length > 0
+                ? { parse: [], users: uniqueIds }
+                : { parse: [] };
+            })(),
+          }),
+        },
+      );
+      return message.id;
+    } catch (err) {
+      console.warn(
+        `Failed to post directly to thread ${parentMessageId}, falling back to inline reply: ${String(err)}`,
+      );
+      // Fallback: send to the parent channel with message_reference (inline reply)
+      const message = await this.botRequest<{ id: string }>(
+        `/channels/${channelId}/messages`,
+        {
+          method: "POST",
+          body: JSON.stringify({
+            ...(mention ? { content: mention } : {}),
+            message_reference: {
+              message_id: parentMessageId,
+              fail_if_not_exists: false,
             },
-          ],
-          allowed_mentions: (() => {
-            const ids = mention ? mention.match(/\d{17,21}/g) || [] : [];
-            const uniqueIds = Array.from(new Set(ids));
-            return uniqueIds.length > 0
-              ? { parse: [], users: uniqueIds }
-              : { parse: [] };
-          })(),
-        }),
-      },
-    );
-    return message.id;
+            embeds: [
+              {
+                title: embed.title.slice(0, 256),
+                description: embed.description.slice(0, 4096),
+                color: embed.color ?? 0x5865f2,
+                url: embed.url,
+              },
+            ],
+            allowed_mentions: (() => {
+              const ids = mention ? mention.match(/\d{17,21}/g) || [] : [];
+              const uniqueIds = Array.from(new Set(ids));
+              return uniqueIds.length > 0
+                ? { parse: [], users: uniqueIds }
+                : { parse: [] };
+            })(),
+          }),
+        },
+      );
+      return message.id;
+    }
   }
 
   /** Delete a Discord message in a channel by bot */
