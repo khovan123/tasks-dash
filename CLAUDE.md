@@ -1,3 +1,7 @@
+# Project deployment rules
+
+@.fogewise/FOGEWISE_AGENT.md
+
 <!-- rtk-instructions v2 -->
 # RTK (Rust Token Killer) - Token-Optimized Commands
 
@@ -36,7 +40,7 @@ rtk vitest              # Vitest failures only (99.5%)
 rtk playwright test     # Playwright failures only (94%)
 rtk pytest              # Python test failures only (90%)
 rtk rake test           # Ruby test failures only (90%)
-rtk rspec               # RSpec test failures only (60%)
+rtk rspec               # RSpec failures only (60%)
 rtk test <cmd>          # Generic test wrapper - failures only
 ```
 
