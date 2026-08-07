@@ -124,6 +124,8 @@ async function proxy(
     responseHeaders.set("cache-control", "no-cache, no-transform");
     responseHeaders.set("connection", "keep-alive");
     responseHeaders.set("x-accel-buffering", "no");
+    responseHeaders.set("content-encoding", "identity");
+    responseHeaders.set("transfer-encoding", "chunked");
   }
 
   const setCookies = [...newCookiesToSet, ...response.headers.getSetCookie()];
