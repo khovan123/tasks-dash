@@ -37,6 +37,8 @@ import {
   GithubWebhookDeliveryHydratedDocument,
   GithubWorkflowLogDocument,
   GithubWorkflowLogHydratedDocument,
+  GithubCommentLogDocument,
+  GithubCommentLogHydratedDocument,
 } from "./integration.schemas";
 import {
   MemberDocument,
@@ -255,6 +257,8 @@ export class GithubWebhookService {
     private readonly workItemsModel: Model<WorkItemHydratedDocument>,
     @InjectModel(GithubWorkflowLogDocument.name)
     private readonly workflowLogs: Model<GithubWorkflowLogHydratedDocument>,
+    @InjectModel(GithubCommentLogDocument.name)
+    private readonly commentLogs: Model<GithubCommentLogHydratedDocument>,
     @InjectConnection()
     private readonly connection: Connection,
   ) {}
@@ -1171,6 +1175,7 @@ export class GithubWebhookService {
 
     const commentBody = payload.comment?.body;
     const author = payload.comment?.user?.login ?? "unknown";
+    const commentId = payload.comment?.id;
 
     if (!commentBody) {
       return { accepted: true, ignored: true, reason: "EMPTY_COMMENT" };
@@ -1196,9 +1201,25 @@ export class GithubWebhookService {
         ].join("\n");
         const pingContent = mention?.startsWith("<@") ? mention : null;
 
-        await this.discord.sendThreadReply(
+        // Check if this comment is a reply to another comment on GitHub
+        const replyToId = payload.comment?.in_reply_to_id;
+        let parentMessageId = existingLog.discordMessageId;
+
+        if (replyToId) {
+          const parentCommentLog = await this.commentLogs
+            .findOne({
+              workspaceId: context.workspaceId,
+              githubCommentId: replyToId,
+            })
+            .exec();
+          if (parentCommentLog) {
+            parentMessageId = parentCommentLog.discordMessageId;
+          }
+        }
+
+        const msgId = await this.discord.sendThreadReply(
           existingLog.discordChannelId,
-          existingLog.discordMessageId,
+          parentMessageId,
           {
             title: `New Comment on PR #${prNumber}`,
             description,
@@ -1207,6 +1228,16 @@ export class GithubWebhookService {
           },
           pingContent,
         );
+
+        if (commentId) {
+          await this.commentLogs.create({
+            workspaceId: context.workspaceId,
+            projectKey: context.projectKey,
+            githubCommentId: commentId,
+            discordMessageId: msgId,
+            discordChannelId: existingLog.discordChannelId,
+          });
+        }
       } else {
         const prChannelId = await this.discord.getOrCreatePrChannel(
           context.workspaceId,
@@ -1242,6 +1273,16 @@ export class GithubWebhookService {
             discordMessageId: msgId,
             discordChannelId: prChannelId,
           });
+
+          if (commentId) {
+            await this.commentLogs.create({
+              workspaceId: context.workspaceId,
+              projectKey: context.projectKey,
+              githubCommentId: commentId,
+              discordMessageId: msgId,
+              discordChannelId: prChannelId,
+            });
+          }
         }
       }
     } catch (e) {

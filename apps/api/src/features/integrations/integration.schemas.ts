@@ -265,3 +265,21 @@ export type IntegrationOauthStateHydratedDocument =
   HydratedDocument<IntegrationOauthStateDocument>;
 export type GithubWebhookDeliveryHydratedDocument =
   HydratedDocument<GithubWebhookDeliveryDocument>;
+
+@Schema({ collection: "github_comment_logs", timestamps: true })
+export class GithubCommentLogDocument extends BaseMongoDocument {
+  @Prop({ required: true, uppercase: true, trim: true }) projectKey!: string;
+  @Prop({ required: true, unique: true, index: true }) githubCommentId!: number;
+  @Prop({ required: true }) discordMessageId!: string;
+  @Prop({ required: true }) discordChannelId!: string;
+}
+export const GithubCommentLogSchema = SchemaFactory.createForClass(
+  GithubCommentLogDocument,
+);
+GithubCommentLogSchema.index(
+  { workspaceId: 1, githubCommentId: 1 },
+  { unique: true },
+);
+
+export type GithubCommentLogHydratedDocument =
+  HydratedDocument<GithubCommentLogDocument>;

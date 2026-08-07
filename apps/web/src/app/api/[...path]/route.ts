@@ -121,7 +121,7 @@ async function proxy(
     response.headers.get("content-type") ?? "application/json",
   );
   if (isEventStream) {
-    responseHeaders.set("cache-control", "no-cache");
+    responseHeaders.set("cache-control", "no-cache, no-transform");
     responseHeaders.set("connection", "keep-alive");
     responseHeaders.set("x-accel-buffering", "no");
   }
@@ -132,7 +132,25 @@ async function proxy(
   }
 
   if (isEventStream && response.body) {
-    return new Response(response.body as any, {
+    const reader = response.body.getReader();
+    const stream = new ReadableStream({
+      async start(controller) {
+        try {
+          while (true) {
+            const { done, value } = await reader.read();
+            if (done) {
+              controller.close();
+              break;
+            }
+            controller.enqueue(value);
+          }
+        } catch (err) {
+          controller.error(err);
+        }
+      }
+    });
+
+    return new Response(stream, {
       status: response.status,
       headers: responseHeaders,
     });
