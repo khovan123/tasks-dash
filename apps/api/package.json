@@ -2,6 +2,13 @@
   "name": "@tasks-dash/api",
   "version": "0.1.0",
   "private": true,
+  "fogewise": {
+    "type": "http",
+    "route": "/api",
+    "port": 4000,
+    "priority": 100,
+    "env": true
+  },
   "scripts": {
     "build": "nest build",
     "start": "node dist/main.js",

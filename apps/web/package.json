@@ -2,6 +2,12 @@
   "name": "@tasks-dash/web",
   "version": "0.1.0",
   "private": true,
+  "fogewise": {
+    "type": "http",
+    "route": "/",
+    "port": 3000,
+    "priority": 0
+  },
   "scripts": {
     "dev": "next dev --turbopack",
     "build": "next build",
