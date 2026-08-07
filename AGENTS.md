@@ -4,6 +4,10 @@ Centralised AI agent instructions. Add coding guidelines, style guides, and proj
 
 Ruler concatenates all .md files in this directory (and subdirectories), starting with AGENTS.md (if present), then remaining files in sorted order.
 
+## Deployment rules
+
+- For Docker, production runtime, environment, Caddy, static assets, infrastructure dependencies, or GitHub Actions deployment changes, follow `@.fogewise/FOGEWISE_AGENT.md`.
+
 ## Contract value-set typing
 
 - Do not define TypeScript enums for app/domain value sets. Use `as const` objects and derive types from them.
