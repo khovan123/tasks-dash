@@ -53,7 +53,7 @@ Expected flow:
         -> generate /var/lib/fogewise/apps/<repo>/compose.json
         -> docker compose up -d --build --remove-orphans
         -> inspect dynamically allocated loopback host ports
-        -> generate /etc/caddy/sites-enabled/<repo>.caddy
+        -> generate /etc/caddy/conf.d/<repo>.caddy
         -> validate and reload Caddy
 ```
 
@@ -64,7 +64,8 @@ Rules:
 - Host ports must be loopback-only and dynamically allocated; do not hardcode host ports such as `3100` or `4100`.
 - Never publish application ports on `0.0.0.0` unless there is an explicit infrastructure decision to do so.
 - Caddy routes must be generated from declared workspace routes and resolved host ports, with more-specific routes handled before `/`.
-- The platform-level Caddyfile must retain `import /etc/caddy/sites-enabled/*.caddy`; app deploy code manages only per-app site files.
+- The platform-level Caddyfile must retain `import /etc/caddy/conf.d/*.caddy`; app deploy code manages only per-app site files in `/etc/caddy/conf.d`.
+- Generated Caddy site files must be service-readable (mode `0644`); deployment behavior must not depend on the caller's shell umask.
 
 ## Runtime environment and secrets
 
@@ -84,7 +85,8 @@ Rules:
 - GitHub Actions secret masking is not a protection for values that exist only on the VPS; GitHub cannot mask secrets it was never given as Actions secrets.
 - `/usr/local/sbin/fogewise-deploy` must produce only explicitly safe status output when its stdout/stderr is streamed to CI. Validation commands that can reveal secrets must be quiet or redirected.
 - As defense in depth, the repository deploy workflow must not stream raw platform deploy output unless the platform deployer is verified secret-safe. Capture raw deploy output in a root-only VPS log and print only a safe success/failure summary plus non-secret service status.
-- Server-side deploy logs that may temporarily contain sensitive diagnostics must be created with restrictive permissions (`umask 077` / mode `0600`) and must not be copied into CI artifacts.
+- Server-side deploy logs that may temporarily contain sensitive diagnostics must be created explicitly with mode `0600` and must not be copied into CI artifacts.
+- Do not wrap the whole deploy process in `umask 077`; the deployer creates service-readable runtime files such as Caddy site configs. Restrict only the log file itself and run the deployer with a normal `022` umask.
 - Failure output sent to CI should reference the server-side log path instead of echoing secret-bearing diagnostics.
 
 ## Infrastructure dependencies
@@ -117,7 +119,7 @@ docker compose \
   -f /var/lib/fogewise/apps/<repo>/compose.json \
   ps
 
-cat /etc/caddy/sites-enabled/<repo>.caddy
+cat /etc/caddy/conf.d/<repo>.caddy
 curl -I https://<repo>.fogewise.io.vn
 ```
 
@@ -139,7 +141,7 @@ For this project, important production checks include:
 
 ## Change discipline
 
-- Do not reintroduce `compose.prod.yml`, hardcoded frontend/backend service names, hardcoded public route topology, or fixed host ports.
-- If the Fogewise metadata schema changes, update this file in the same PR.
+- Do not reintroduce `compose.prod.yml`, hardcoded frontend/backend service names, hardcoded public route topology, fixed host ports, or the obsolete `/etc/caddy/sites-enabled` convention.
+- If the Fogewise metadata schema or platform Caddy layout changes, update this file in the same PR.
 - If a Dockerfile change affects runtime files, verify the final runtime stage rather than only the build stage.
 - Any deployment bug fix must document the exact failing layer: source, image build, container runtime, Docker network, generated Compose, Caddy, or Cloudflare.
