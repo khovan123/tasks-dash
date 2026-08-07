@@ -69,14 +69,14 @@ jobs:
         run: |
           ssh "$VPS_USER@$VPS_HOST" "
             set -eu
-            umask 077
 
             LOG_DIR='/var/log/fogewise'
             LOG_FILE=\"\$LOG_DIR/${REPO_NAME}-deploy.log\"
 
             install -d -m 700 \"\$LOG_DIR\"
+            install -m 600 /dev/null \"\$LOG_FILE\"
 
-            if /usr/local/sbin/fogewise-deploy '$REPO_NAME' >\"\$LOG_FILE\" 2>&1; then
+            if (umask 022; /usr/local/sbin/fogewise-deploy '$REPO_NAME') >\"\$LOG_FILE\" 2>&1; then
               echo 'Fogewise deploy succeeded.'
             else
               echo 'Fogewise deploy failed. Inspect server-side log:' \"\$LOG_FILE\" >&2
