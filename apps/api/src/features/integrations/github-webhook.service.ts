@@ -67,7 +67,7 @@ const GITHUB_SUSPENSION_ACTIONS = new Set<string>([
 
 interface RepositoryPayload {
   installation?: { id?: number };
-  repository?: { full_name?: string };
+  repository?: { full_name?: string; default_branch?: string };
 }
 
 interface PullRequestData {
@@ -866,12 +866,15 @@ export class GithubWebhookService {
       );
       if (linked) linkedKeys.push(workItemKey);
     }
-    for (const workItemKey of linkedKeys) {
-      await this.workItems.transitionBySystemRule(
-        context.workspaceId,
-        workItemKey,
-        DEFAULT_WORKFLOW_STATUS_IDS.inProgress,
-      );
+    const defaultBranch = body.repository?.default_branch || "main";
+    if (branch !== defaultBranch && branch !== "main" && branch !== "master") {
+      for (const workItemKey of linkedKeys) {
+        await this.workItems.transitionBySystemRule(
+          context.workspaceId,
+          workItemKey,
+          DEFAULT_WORKFLOW_STATUS_IDS.inProgress,
+        );
+      }
     }
 
     return {
