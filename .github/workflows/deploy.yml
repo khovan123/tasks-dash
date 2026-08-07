@@ -65,7 +65,7 @@ jobs:
           VPS_USER: ${{ secrets.VPS_USER }}
         run: |
           ssh "$VPS_USER@$VPS_HOST" \
-            "sudo /usr/local/sbin/fogewise-deploy '$REPO_NAME'"
+            "/usr/local/sbin/fogewise-deploy '$REPO_NAME'"
 
       - name: Health check
         run: |
