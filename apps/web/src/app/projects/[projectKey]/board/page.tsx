@@ -1,4 +1,5 @@
 import { apiData } from "@/lib/server/api-data";
+import { apiProjectData } from "@/lib/server/project-access";
 import { KanbanBoard } from "@/components/kanban-board";
 import { AppPage } from "@/components/layout/app-shell";
 
@@ -52,10 +53,10 @@ export default async function BoardPage({
   const key = projectKey.toUpperCase();
 
   const [project, items, workflow, membersData, session] = await Promise.all([
-    apiData<Project>(`/projects/${key}`),
-    apiData<WorkItem[]>(`/projects/${key}/work-items`),
-    apiData<Workflow | null>(`/projects/${key}/workflow`),
-    apiData<{ projectMembers: any[]; workspaceMembers: any[] }>(`/projects/${key}/members`),
+    apiProjectData<Project>(`/projects/${key}`),
+    apiProjectData<WorkItem[]>(`/projects/${key}/work-items`),
+    apiProjectData<Workflow | null>(`/projects/${key}/workflow`),
+    apiProjectData<{ projectMembers: any[]; workspaceMembers: any[] }>(`/projects/${key}/members`),
     apiData<{ email: string }>("/auth/me"),
   ]);
 
@@ -76,6 +77,8 @@ export default async function BoardPage({
     name: member.name,
     email: member.email,
     avatarUrl: member.avatarUrl,
+    githubLogin: member.githubLogin,
+    discordUsername: member.discordUsername,
   }));
   const normalizedItems = items.map((item) => ({
     ...item,

@@ -1,10 +1,14 @@
 "use client";
 
-import { MEMBER_ROLES } from "@tasks-dash/contracts";
+import {
+  MEMBER_PRESENCE,
+  MEMBER_ROLES,
+  type MemberPresence,
+} from "@tasks-dash/contracts";
 import type { ReactNode } from "react";
-import { useEffect, useMemo, useState } from "react";
+import { createContext, useContext, useEffect, useMemo, useState } from "react";
 import Link from "next/link";
-import { usePathname } from "next/navigation";
+import { usePathname, useRouter } from "next/navigation";
 import {
   Boxes,
   Check,
@@ -59,8 +63,10 @@ import {
   CommandItem,
   CommandList,
 } from "@/components/ui/command";
+import { apiRequest } from "@/lib/api/api-request";
 
 export interface JiraShellSession {
+  memberId: string;
   name: string;
   login: string;
   email: string;
@@ -72,6 +78,7 @@ export interface JiraShellProject {
   key: string;
   name: string;
   color?: string;
+  currentMemberRole?: string;
 }
 
 interface JiraAppShellProps {
@@ -79,6 +86,14 @@ interface JiraAppShellProps {
   session: JiraShellSession;
   projects: JiraShellProject[];
   workspaces: WorkspaceOption[];
+}
+
+type PresenceMap = Record<string, MemberPresence>;
+
+const WorkspacePresenceContext = createContext<PresenceMap>({});
+
+export function useWorkspacePresence(): PresenceMap {
+  return useContext(WorkspacePresenceContext);
 }
 
 const GLOBAL_LINKS = [
@@ -155,9 +170,11 @@ export function JiraAppShell({
 
   const [orderedProjects, setOrderedProjects] =
     useState<JiraShellProject[]>(projects);
+  const [presenceByMemberId, setPresenceByMemberId] = useState<PresenceMap>({});
   const [draggedProjectKey, setDraggedProjectKey] = useState<string | null>(
     null,
   );
+  const router = useRouter();
 
   // Sync projects and restore ordered list from localStorage
   useEffect(() => {
@@ -182,6 +199,90 @@ export function JiraAppShell({
     }
     setOrderedProjects(projects);
   }, [projects, session.workspaceId]);
+
+  useEffect(() => {
+    let cancelled = false;
+
+    async function heartbeat() {
+      try {
+        const result = await apiRequest<{ presence: PresenceMap }>(
+          "/api/projects/presence",
+          { method: "POST" },
+        );
+        if (!cancelled) {
+          setPresenceByMemberId(result.presence);
+        }
+      } catch {
+        // Presence heartbeat should not block shell rendering.
+      }
+    }
+
+    void heartbeat();
+    const intervalId = window.setInterval(() => {
+      void heartbeat();
+    }, 20_000);
+
+    return () => {
+      cancelled = true;
+      window.clearInterval(intervalId);
+    };
+  }, []);
+
+  useEffect(() => {
+    let eventSource: EventSource | null = null;
+    let reconnectTimeout: NodeJS.Timeout | null = null;
+
+    const connect = () => {
+      const apiBaseUrl = process.env.NEXT_PUBLIC_API_BASE_URL || "";
+      const sseUrl = apiBaseUrl
+        ? `${apiBaseUrl.replace(/\/$/, "")}/projects/sse`
+        : "/api/projects/sse";
+
+      eventSource = new EventSource(sseUrl, { withCredentials: true });
+
+      eventSource.onmessage = (event) => {
+        try {
+          if (event.data === "ping") return;
+          const payload = JSON.parse(event.data) as {
+            type: string;
+            data?: { presence?: PresenceMap };
+          };
+          if (payload.type === "PRESENCE_CHANGED" && payload.data?.presence) {
+            setPresenceByMemberId(payload.data.presence);
+            if (pathname === "/") {
+              router.refresh();
+            }
+            return;
+          }
+          router.refresh();
+        } catch (err) {
+          console.error("Failed to parse project SSE payload", err);
+        }
+      };
+
+      eventSource.onerror = (err) => {
+        console.warn(
+          "Project SSE connection encountered an issue. Reconnecting in 5s...",
+          err,
+        );
+        if (eventSource) {
+          eventSource.close();
+        }
+        reconnectTimeout = setTimeout(connect, 5000);
+      };
+    };
+
+    connect();
+
+    return () => {
+      if (eventSource) {
+        eventSource.close();
+      }
+      if (reconnectTimeout) {
+        clearTimeout(reconnectTimeout);
+      }
+    };
+  }, [router]);
 
   function persistProjectOrder(nextProjects: JiraShellProject[]) {
     setOrderedProjects(nextProjects);
@@ -243,6 +344,18 @@ export function JiraAppShell({
   const activeProject = projects.find((project) =>
     pathname.startsWith(`/projects/${project.key}`),
   );
+  const footerRole =
+    activeWorkspace?.role === MEMBER_ROLES.owner
+      ? MEMBER_ROLES.owner
+      : activeProject?.currentMemberRole ?? "MEMBER";
+  const workspacePresence = useMemo(
+    () => ({
+      ...presenceByMemberId,
+      [session.memberId]:
+        presenceByMemberId[session.memberId] ?? MEMBER_PRESENCE.online,
+    }),
+    [presenceByMemberId, session.memberId],
+  );
 
   const sidebar = (
     <aside className="flex h-full w-72 flex-col border-r bg-background text-foreground shadow-xl transition-colors duration-300">
@@ -271,7 +384,7 @@ export function JiraAppShell({
       <Separator />
 
       <div className="flex flex-col gap-3 p-3">
-        <WorkspaceSwitcher workspaces={workspaces} compact />
+        <WorkspaceSwitcher workspaces={workspaces} compact currentRole={footerRole} />
         <Popover open={projectPickerOpen} onOpenChange={setProjectPickerOpen}>
           <PopoverTrigger asChild>
             <Button
@@ -538,7 +651,7 @@ export function JiraAppShell({
             </p>
             <div className="mt-0.5 flex items-center gap-2">
               <Badge className="text-[10px]" variant="outline">
-                {activeWorkspace?.role ?? "MEMBER"}
+                {footerRole}
               </Badge>
             </div>
           </div>
@@ -549,24 +662,25 @@ export function JiraAppShell({
   );
 
   return (
-    <div className="min-h-screen bg-background text-foreground">
-      <div className="fixed inset-y-0 left-0 z-40 hidden lg:block">
-        {sidebar}
-      </div>
+    <WorkspacePresenceContext.Provider value={workspacePresence}>
+      <div className="min-h-screen bg-background text-foreground">
+        <div className="fixed inset-y-0 left-0 z-40 hidden lg:block">
+          {sidebar}
+        </div>
 
-      {mobileOpen ? (
-        <>
-          <button
-            className="fixed inset-0 z-40 bg-background/80 backdrop-blur-md lg:hidden"
-            aria-label="Đóng menu"
-            onClick={() => setMobileOpen(false)}
-          />
-          <div className="fixed inset-y-0 left-0 z-50 lg:hidden">{sidebar}</div>
-        </>
-      ) : null}
+        {mobileOpen ? (
+          <>
+            <button
+              className="fixed inset-0 z-40 bg-background/80 backdrop-blur-md lg:hidden"
+              aria-label="Đóng menu"
+              onClick={() => setMobileOpen(false)}
+            />
+            <div className="fixed inset-y-0 left-0 z-50 lg:hidden">{sidebar}</div>
+          </>
+        ) : null}
 
-      <div className="min-h-screen lg:pl-72">
-        <header className="sticky top-0 z-30 flex h-16 items-center gap-3 border-b border-border bg-background/85 px-4 backdrop-blur-xl sm:px-6 lg:px-8">
+        <div className="min-h-screen lg:pl-72">
+          <header className="sticky top-0 z-30 flex h-16 items-center gap-3 border-b border-border bg-background/85 px-4 backdrop-blur-xl sm:px-6 lg:px-8">
           <Button
             variant="ghost"
             size="icon"
@@ -649,34 +763,35 @@ export function JiraAppShell({
               {initials(session.name || session.login)}
             </AvatarFallback>
           </Avatar>
-        </header>
-        <div className="min-w-0">{children}</div>
-        <footer className="border-t border-border/70 px-4 py-5 text-sm text-muted-foreground sm:px-6 lg:px-8">
-          <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
-            <p>Tasks Dash workspace experience.</p>
-            <div className="flex flex-wrap items-center gap-x-4 gap-y-2">
-              <Link
-                href="/verify-user"
-                className="transition hover:text-foreground"
-              >
-                Verify User
-              </Link>
-              <Link
-                href="/terms-of-service"
-                className="transition hover:text-foreground"
-              >
-                Terms of Service
-              </Link>
-              <Link
-                href="/privacy-policy"
-                className="transition hover:text-foreground"
-              >
-                Privacy Policy
-              </Link>
+          </header>
+          <div className="min-w-0">{children}</div>
+          <footer className="border-t border-border/70 px-4 py-5 text-sm text-muted-foreground sm:px-6 lg:px-8">
+            <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+              <p>Tasks Dash workspace experience.</p>
+              <div className="flex flex-wrap items-center gap-x-4 gap-y-2">
+                <Link
+                  href="/verify-user"
+                  className="transition hover:text-foreground"
+                >
+                  Verify User
+                </Link>
+                <Link
+                  href="/terms-of-service"
+                  className="transition hover:text-foreground"
+                >
+                  Terms of Service
+                </Link>
+                <Link
+                  href="/privacy-policy"
+                  className="transition hover:text-foreground"
+                >
+                  Privacy Policy
+                </Link>
+              </div>
             </div>
-          </div>
-        </footer>
+          </footer>
+        </div>
       </div>
-    </div>
+    </WorkspacePresenceContext.Provider>
   );
 }

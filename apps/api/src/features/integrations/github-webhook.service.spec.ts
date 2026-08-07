@@ -35,6 +35,7 @@ function createService(options: {
       options.upsertGithubPullRequest ?? jest.fn().mockResolvedValue({}),
     linkGithubCommits:
       options.linkGithubCommits ?? jest.fn().mockResolvedValue({}),
+    transitionBySystemRule: jest.fn().mockResolvedValue({}),
   } as unknown as WorkItemsService;
   const events = {
     emitAsync: jest.fn().mockResolvedValue([]),

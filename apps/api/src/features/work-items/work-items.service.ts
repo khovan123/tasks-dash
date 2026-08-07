@@ -75,6 +75,10 @@ function uniqueValues<T extends string>(values: T[]): T[] {
 }
 
 import { Subject } from "rxjs";
+import {
+  PROJECT_REALTIME_EVENT_TYPES,
+  ProjectRealtimeService,
+} from "../projects/project-realtime.service";
 
 @Injectable()
 export class WorkItemsService {
@@ -84,6 +88,7 @@ export class WorkItemsService {
     @InjectModel(WorkItemDocument.name)
     private readonly items: Model<WorkItemHydratedDocument>,
     private readonly projects: ProjectsService,
+    private readonly realtime: ProjectRealtimeService,
     private readonly workflows: WorkflowsService,
     private readonly events: EventEmitter2,
     @Inject(forwardRef(() => DiscordAdapter))
@@ -209,7 +214,7 @@ export class WorkItemsService {
     },
   ): Promise<WorkItemHydratedDocument> {
     if (options?.actorRole === MEMBER_ROLES.dev) {
-      if (item.assigneeId !== options.actorMemberId) {
+      if (item.assigneeId !== options?.actorMemberId) {
         throw new ForbiddenException(
           "Dev can only transition tasks assigned to themselves.",
         );
@@ -280,6 +285,12 @@ export class WorkItemsService {
     }
 
     this.events$.next({ type: "updated", workspaceId, projectKey: item.projectKey, data: item });
+    this.realtime.emit({
+      type: PROJECT_REALTIME_EVENT_TYPES.workItemsChanged,
+      workspaceId,
+      projectKey: item.projectKey,
+      data: { workItemKey: item.key, action: "updated" },
+    });
     return item;
   }
 
@@ -426,6 +437,12 @@ export class WorkItemsService {
     }
 
     this.events$.next({ type: "created", workspaceId, projectKey: key, data: item });
+    this.realtime.emit({
+      type: PROJECT_REALTIME_EVENT_TYPES.workItemsChanged,
+      workspaceId,
+      projectKey: key,
+      data: { workItemKey: item.key, action: "created" },
+    });
     return item;
   }
 
@@ -465,6 +482,12 @@ export class WorkItemsService {
       })),
     );
     this.events$.next({ type: "reordered", workspaceId, projectKey: key, data: normalizedKeys });
+    this.realtime.emit({
+      type: PROJECT_REALTIME_EVENT_TYPES.workItemsChanged,
+      workspaceId,
+      projectKey: key,
+      data: { action: "reordered" },
+    });
     return { updated: result.modifiedCount };
   }
 
@@ -499,6 +522,12 @@ export class WorkItemsService {
     item.assigneeId = assigneeId ?? undefined;
     await item.save();
     this.events$.next({ type: "updated", workspaceId, projectKey: item.projectKey, data: item });
+    this.realtime.emit({
+      type: PROJECT_REALTIME_EVENT_TYPES.workItemsChanged,
+      workspaceId,
+      projectKey: item.projectKey,
+      data: { workItemKey: item.key, action: "updated" },
+    });
     return item;
   }
 
@@ -558,6 +587,12 @@ export class WorkItemsService {
     item.set("github", github);
     await item.save();
     this.events$.next({ type: "updated", workspaceId, projectKey: item.projectKey, data: item });
+    this.realtime.emit({
+      type: PROJECT_REALTIME_EVENT_TYPES.workItemsChanged,
+      workspaceId,
+      projectKey: item.projectKey,
+      data: { workItemKey: item.key, action: "updated" },
+    });
     return item;
   }
 
@@ -581,12 +616,15 @@ export class WorkItemsService {
           : input.draft
             ? GITHUB_PR_STATUSES.draft
             : GITHUB_PR_STATUSES.open;
+    const stateChanged = existing && existing.state !== input.state;
     const next: GithubPullRequestLinkDocument = {
       number: input.number,
       title: input.title || existing?.title || `Pull request #${input.number}`,
       url: input.url || existing?.url || "",
       state: input.state,
-      status: input.status ?? existing?.status ?? defaultStatus,
+      status: stateChanged
+        ? defaultStatus
+        : (input.status ?? existing?.status ?? defaultStatus),
       draft: input.draft,
       headBranch: input.headBranch || existing?.headBranch || "",
       baseBranch: input.baseBranch || existing?.baseBranch || "",
@@ -615,6 +653,12 @@ export class WorkItemsService {
     item.set("github", github);
     await item.save();
     this.events$.next({ type: "updated", workspaceId, projectKey: item.projectKey, data: item });
+    this.realtime.emit({
+      type: PROJECT_REALTIME_EVENT_TYPES.workItemsChanged,
+      workspaceId,
+      projectKey: item.projectKey,
+      data: { workItemKey: item.key, action: "updated" },
+    });
     return item;
   }
 
@@ -747,6 +791,12 @@ export class WorkItemsService {
     }
 
     this.events$.next({ type: "updated", workspaceId, projectKey: item.projectKey, data: item });
+    this.realtime.emit({
+      type: PROJECT_REALTIME_EVENT_TYPES.workItemsChanged,
+      workspaceId,
+      projectKey: item.projectKey,
+      data: { workItemKey: item.key, action: "updated" },
+    });
     return item;
   }
 

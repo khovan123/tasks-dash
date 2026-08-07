@@ -9,6 +9,10 @@ import { ConfigService } from "@nestjs/config";
 import { InjectModel } from "@nestjs/mongoose";
 import { isValidObjectId, Model } from "mongoose";
 import { ProjectsService } from "../projects/projects.service";
+import {
+  PROJECT_REALTIME_EVENT_TYPES,
+  ProjectRealtimeService,
+} from "../projects/project-realtime.service";
 import { DiscordAdapter } from "../integrations/discord.adapter";
 import { MemberDocument, MemberHydratedDocument } from "../members/member.schema";
 import {
@@ -67,6 +71,7 @@ export class DocumentsService {
     @InjectModel(MemberDocument.name)
     private readonly members: Model<MemberHydratedDocument>,
     private readonly projects: ProjectsService,
+    private readonly realtime: ProjectRealtimeService,
     private readonly config: ConfigService,
     private readonly discord: DiscordAdapter,
   ) {}
@@ -306,6 +311,12 @@ export class DocumentsService {
         0x3b82f6,
         actorMention.mention,
       );
+      this.realtime.emit({
+        type: PROJECT_REALTIME_EVENT_TYPES.documentsChanged,
+        workspaceId,
+        projectKey: context.project.key,
+        data: { folderId: String(folder._id), action: "created" },
+      });
       return { id: String(folder._id), name: folder.name, parentFolderId: folder.parentFolderId ?? null };
     } catch (error) {
       if ((error as { code?: number }).code === 11000) {
@@ -334,6 +345,12 @@ export class DocumentsService {
       0x3b82f6,
       actorMention.mention,
     );
+    this.realtime.emit({
+      type: PROJECT_REALTIME_EVENT_TYPES.documentsChanged,
+      workspaceId,
+      projectKey: context.project.key,
+      data: { folderId: String(folder._id), action: "updated" },
+    });
     return { id: String(folder._id), name: folder.name };
   }
 
@@ -361,6 +378,12 @@ export class DocumentsService {
       0xef4444,
       actorMention.mention,
     );
+    this.realtime.emit({
+      type: PROJECT_REALTIME_EVENT_TYPES.documentsChanged,
+      workspaceId,
+      projectKey: context.project.key,
+      data: { folderId: String(folder._id), action: "deleted" },
+    });
   }
 
   private async uploadMessage(
@@ -486,6 +509,12 @@ export class DocumentsService {
           actorMention.mention,
         );
       }
+      this.realtime.emit({
+        type: PROJECT_REALTIME_EVENT_TYPES.documentsChanged,
+        workspaceId,
+        projectKey: context.project.key,
+        data: { documentId: String(document._id), action: "updated" },
+      });
       return {
         documentId: String(document._id),
         version: version.version,
@@ -589,6 +618,12 @@ export class DocumentsService {
         actorMention.mention,
       );
     }
+    this.realtime.emit({
+      type: PROJECT_REALTIME_EVENT_TYPES.documentsChanged,
+      workspaceId,
+      projectKey: context.project.key,
+      data: { documentId: String(document._id), action: "updated" },
+    });
     return { id: String(document._id), name: document.name, folderId: document.folderId ?? null, tags: document.tags };
   }
 
@@ -614,6 +649,12 @@ export class DocumentsService {
       0xef4444,
       actorMention.mention,
     );
+    this.realtime.emit({
+      type: PROJECT_REALTIME_EVENT_TYPES.documentsChanged,
+      workspaceId,
+      projectKey: context.project.key,
+      data: { documentId: String(document._id), action: "deleted" },
+    });
   }
 
   async downloadUrl(workspaceId: string, projectKey: string, documentId: string): Promise<string> {

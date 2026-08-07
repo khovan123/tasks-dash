@@ -1,7 +1,12 @@
 import { Controller, Get, Injectable, Module } from "@nestjs/common";
 import { InjectModel, MongooseModule } from "@nestjs/mongoose";
 import { Model } from "mongoose";
-import { MemberRole, WORKFLOW_CATEGORIES } from "@tasks-dash/contracts";
+import {
+  GITHUB_PR_STATES,
+  MEMBER_PRESENCE,
+  MemberRole,
+  WORKFLOW_CATEGORIES,
+} from "@tasks-dash/contracts";
 import { WorkspaceId } from "../../common/auth-context";
 import { MemberDocument, MemberSchema } from "../members/member.schema";
 import {
@@ -19,6 +24,8 @@ import {
   WorkflowHydratedDocument,
   WorkflowSchema,
 } from "../workflows/workflows.schema";
+import { ProjectsModule } from "../projects/projects.module";
+import { ProjectRealtimeService } from "../projects/project-realtime.service";
 
 export interface DashboardMemberResponse {
   id: string;
@@ -67,6 +74,7 @@ export class DashboardService {
     private readonly workflows: Model<WorkflowHydratedDocument>,
     @InjectModel(MemberDocument.name)
     private readonly members: Model<MemberDocument>,
+    private readonly realtime: ProjectRealtimeService,
   ) {}
 
   async overview(workspaceId: string): Promise<DashboardOverviewResponse> {
@@ -92,14 +100,18 @@ export class DashboardService {
       ]).exec(),
     ]);
 
-    const members: DashboardMemberResponse[] = memberDocuments.map((member) => ({
-      id: String(member._id),
-      name: member.name,
-      email: member.email,
-      avatarUrl: member.avatarUrl,
-      role: member.role,
-      status: member.status,
-    }));
+    const presenceByMemberId = this.realtime.getPresenceSnapshot(workspaceId, "");
+    const members: DashboardMemberResponse[] = memberDocuments.map((member) => {
+      const memberId = String(member._id);
+      return {
+        id: memberId,
+        name: member.name,
+        email: member.email,
+        avatarUrl: member.avatarUrl,
+        role: member.role,
+        status: presenceByMemberId[memberId] ?? MEMBER_PRESENCE.offline,
+      };
+    });
 
     const projectCards = await Promise.all(
       projects.map(async (project): Promise<DashboardProjectResponse> => {
@@ -111,12 +123,7 @@ export class DashboardService {
         const [totalItems, completedItems, openPrItems] = await Promise.all([
           this.items.countDocuments({ workspaceId, projectKey: project.key }),
           this.items.countDocuments({ workspaceId, projectKey: project.key, statusId: { $in: doneStatusIds } }),
-          this.items.countDocuments({
-            workspaceId,
-            projectKey: project.key,
-            "github.pullRequestNumber": { $exists: true },
-            completedAt: { $exists: false },
-          }),
+          this.countOpenPullRequests(workspaceId, project.key, doneStatusIds),
         ]);
         return {
           key: project.key,
@@ -140,6 +147,39 @@ export class DashboardService {
 
     return { projects: projectCards, members, dailyActivity };
   }
+
+  private async countOpenPullRequests(
+    workspaceId: string,
+    projectKey: string,
+    doneStatusIds: string[],
+  ): Promise<number> {
+    const result = await this.items.aggregate<{ total: number }>([
+      {
+        $match: {
+          workspaceId,
+          projectKey,
+          statusId: { $nin: doneStatusIds },
+          "github.pullRequests.0": { $exists: true },
+        },
+      },
+      { $unwind: "$github.pullRequests" },
+      {
+        $match: {
+          "github.pullRequests.state": GITHUB_PR_STATES.open,
+        },
+      },
+      {
+        $group: {
+          _id: "$github.pullRequests.number",
+        },
+      },
+      {
+        $count: "total",
+      },
+    ]).exec();
+
+    return result[0]?.total ?? 0;
+  }
 }
 
 @Controller("dashboard")
@@ -154,6 +194,7 @@ export class DashboardController {
 
 @Module({
   imports: [
+    ProjectsModule,
     MongooseModule.forFeature([
       { name: ProjectDocument.name, schema: ProjectSchema },
       { name: WorkItemDocument.name, schema: WorkItemSchema },

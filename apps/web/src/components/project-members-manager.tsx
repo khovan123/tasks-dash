@@ -15,8 +15,11 @@ import { Button } from "@/components/ui/button";
 import { Checkbox } from "@/components/ui/checkbox";
 import { apiRequest } from "@/lib/api/api-request";
 import { cn } from "@/lib/utils";
+import { useWorkspacePresence } from "@/components/layout/jira-app-shell";
+import { MemberAvatar } from "@/components/member-avatar";
 import { RoleBadge } from "@/components/role-badge";
 import {
+  MEMBER_PRESENCE,
   MEMBER_INVITATION_STATUSES,
   MEMBER_ROLES,
   MemberRole,
@@ -45,8 +48,7 @@ import {
   EmptyTitle,
 } from "@/components/ui/empty";
 import { Badge } from "@/components/ui/badge";
-import { MemberIdentity } from "@/components/member-identity";
-import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
+import { MemberInfoBadge } from "@/components/member-info-badge";
 import { Card, CardContent, CardHeader } from "@/components/ui/card";
 
 interface Member {
@@ -54,7 +56,10 @@ interface Member {
   name: string;
   email: string;
   role: string;
+  status?: string;
   avatarUrl?: string;
+  githubLogin?: string;
+  discordUsername?: string;
 }
 
 interface WorkspaceInvitation {
@@ -68,25 +73,9 @@ interface WorkspaceInvitation {
 
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 
-interface Member {
-  _id: string;
-  name: string;
-  email: string;
-  role: string;
-  avatarUrl?: string;
-}
-
-interface WorkspaceInvitation {
-  _id: string;
-  email: string;
-  role: MemberRole;
-  status: string;
-  expiresAt: string;
-  lastSentAt?: string;
-}
-
 interface ProjectMembersManagerProps {
   projectKey: string;
+  projectId: string;
   initialProjectMembers: Member[];
   workspaceMembers: Member[];
   invitations: WorkspaceInvitation[];
@@ -95,12 +84,14 @@ interface ProjectMembersManagerProps {
 
 export function ProjectMembersManager({
   projectKey,
+  projectId,
   initialProjectMembers,
   workspaceMembers,
   invitations,
   canManage,
 }: ProjectMembersManagerProps) {
   const router = useRouter();
+  const presenceByMemberId = useWorkspacePresence();
   const [selectedIds, setSelectedIds] = useState<string[]>(
     initialProjectMembers.map((m) => m._id),
   );
@@ -181,7 +172,9 @@ export function ProjectMembersManager({
       router.refresh();
     } catch (err) {
       setError(
-        err instanceof Error ? err.message : "Không thể thay đổi vai trò thành viên.",
+        err instanceof Error
+          ? err.message
+          : "Không thể thay đổi vai trò thành viên.",
       );
     } finally {
       setUpdatingRoleId(null);
@@ -203,6 +196,7 @@ export function ProjectMembersManager({
         body: JSON.stringify({
           email: inviteEmail.trim(),
           role: inviteRole,
+          projectIds: [projectId],
         }),
       });
       setInviteSuccess("Đã gửi lời mời thành công đến " + inviteEmail);
@@ -223,7 +217,9 @@ export function ProjectMembersManager({
     }
   }
 
-  const currentProjectMembers = workspaceMembers.filter((m) => selectedIds.includes(m._id));
+  const currentProjectMembers = workspaceMembers.filter((m) =>
+    selectedIds.includes(m._id),
+  );
 
   return (
     <div className="rounded-xl border border-border/70 bg-card/90 p-4 shadow-sm backdrop-blur-2xl w-full">
@@ -242,30 +238,22 @@ export function ProjectMembersManager({
             {initialProjectMembers.map((member) => (
               <Card
                 key={member._id}
-                className="overflow-hidden shadow-sm border bg-card text-card-foreground"
+                className="overflow-hidden shadow-sm border bg-card text-card-foreground gap-0"
               >
                 <CardHeader className="flex flex-row items-center gap-4 pb-4">
-                  <Avatar className="size-12">
-                    {member.avatarUrl ? (
-                      <AvatarImage src={member.avatarUrl} alt={member.name} />
-                    ) : null}
-                    <AvatarFallback>
-                      {member.name
-                        .split(" ")
-                        .map((n) => n[0])
-                        .join("")
-                        .slice(0, 2)
-                        .toUpperCase()}
-                    </AvatarFallback>
-                  </Avatar>
-                  <div className="min-w-0">
-                    <strong className="block truncate text-base font-semibold">
-                      {member.name}
-                    </strong>
-                    <span className="block truncate text-sm text-muted-foreground">
-                      {member.email}
-                    </span>
-                  </div>
+                  <MemberInfoBadge
+                    memberId={member._id}
+                    name={member.name}
+                    avatarUrl={member.avatarUrl}
+                    email={member.email}
+                    githubLogin={member.githubLogin}
+                    discordUsername={member.discordUsername}
+                    presence={
+                      presenceByMemberId[member._id] ?? MEMBER_PRESENCE.offline
+                    }
+                    avatarClassName="size-12"
+                    textClassName="text-base font-semibold leading-none"
+                  />
                 </CardHeader>
                 <CardContent className="flex items-center justify-between pt-0">
                   <RoleBadge role={member.role as MemberRole} />
@@ -282,7 +270,8 @@ export function ProjectMembersManager({
               Quản lý thành viên dự án
             </h3>
             <p className="text-xs text-muted-foreground">
-              Cấu hình quyền, thêm/bớt nhân sự và theo dõi các lời mời của dự án.
+              Cấu hình quyền, thêm/bớt nhân sự và theo dõi các lời mời của dự
+              án.
             </p>
           </div>
 
@@ -293,7 +282,9 @@ export function ProjectMembersManager({
               <TabsList variant="line">
                 <TabsTrigger value="members">Thành viên hiện tại</TabsTrigger>
                 <TabsTrigger value="manage">Thêm vào dự án</TabsTrigger>
-                <TabsTrigger value="invitations">Lời mời đã gửi ({invitations.length})</TabsTrigger>
+                <TabsTrigger value="invitations">
+                  Lời mời đã gửi ({invitations.length})
+                </TabsTrigger>
               </TabsList>
 
               <Button
@@ -332,27 +323,20 @@ export function ProjectMembersManager({
                       className="grid gap-3 rounded-lg border bg-background/80 p-3 md:grid-cols-[1fr_auto_auto] md:items-center"
                     >
                       <div className="flex min-w-0 items-center gap-3">
-                        <Avatar className="size-10">
-                          {member.avatarUrl ? (
-                            <AvatarImage src={member.avatarUrl} alt={member.name} />
-                          ) : null}
-                          <AvatarFallback>
-                            {member.name
-                              .split(" ")
-                              .map((n) => n[0])
-                              .join("")
-                              .slice(0, 2)
-                              .toUpperCase()}
-                          </AvatarFallback>
-                        </Avatar>
-                        <div className="min-w-0">
-                          <strong className="block truncate text-sm font-semibold">
-                            {member.name}
-                          </strong>
-                          <span className="block truncate text-xs text-muted-foreground mt-0.5">
-                            {member.email}
-                          </span>
-                        </div>
+                        <MemberInfoBadge
+                          memberId={member._id}
+                          name={member.name}
+                          avatarUrl={member.avatarUrl}
+                          email={member.email}
+                          githubLogin={member.githubLogin}
+                          discordUsername={member.discordUsername}
+                          presence={
+                            presenceByMemberId[member._id] ??
+                            MEMBER_PRESENCE.offline
+                          }
+                          avatarClassName="size-10"
+                          textClassName="text-sm font-semibold leading-none"
+                        />
                       </div>
 
                       <div className="flex items-center justify-end gap-3 min-w-44">
@@ -365,7 +349,10 @@ export function ProjectMembersManager({
                             value={member.role}
                             disabled={updatingRoleId === member._id}
                             onValueChange={(val) =>
-                              void handleRoleChange(member._id, val as MemberRole)
+                              void handleRoleChange(
+                                member._id,
+                                val as MemberRole,
+                              )
                             }
                           >
                             <SelectTrigger className="w-36 h-8 bg-transparent">
@@ -394,7 +381,9 @@ export function ProjectMembersManager({
                             size="icon-sm"
                             title="Xóa khỏi dự án"
                             onClick={() => {
-                              const nextIds = selectedIds.filter((id) => id !== member._id);
+                              const nextIds = selectedIds.filter(
+                                (id) => id !== member._id,
+                              );
                               setSelectedIds(nextIds);
                               void saveProjectMembers(nextIds);
                             }}
@@ -442,10 +431,13 @@ export function ProjectMembersManager({
                           onClick={(e) => e.stopPropagation()}
                         />
                         <div className="flex flex-col min-w-0">
-                          <MemberIdentity
+                          <MemberInfoBadge
+                            memberId={member._id}
                             name={member.name}
                             avatarUrl={member.avatarUrl}
                             email={member.email}
+                            githubLogin={member.githubLogin}
+                            discordUsername={member.discordUsername}
                             avatarClassName="size-8"
                             textClassName="text-sm font-medium leading-none"
                           />
@@ -515,12 +507,25 @@ export function ProjectMembersManager({
                       </div>
                       <Badge
                         variant={
-                          invite.status === MEMBER_INVITATION_STATUSES.pending
-                            ? "warning"
-                            : "secondary"
+                          invite.status === MEMBER_INVITATION_STATUSES.accepted
+                            ? "success"
+                            : invite.status ===
+                                MEMBER_INVITATION_STATUSES.pending
+                              ? "warning"
+                              : invite.status ===
+                                  MEMBER_INVITATION_STATUSES.expired
+                                ? "secondary"
+                                : "destructive" // revoked
                         }
                       >
-                        {invite.status}
+                        {invite.status === MEMBER_INVITATION_STATUSES.accepted
+                          ? "Đã chấp nhận"
+                          : invite.status === MEMBER_INVITATION_STATUSES.pending
+                            ? "Đang chờ"
+                            : invite.status ===
+                                MEMBER_INVITATION_STATUSES.expired
+                              ? "Hết hạn"
+                              : "Đã thu hồi"}
                       </Badge>
                       {invite.status === MEMBER_INVITATION_STATUSES.pending ? (
                         <div className="flex flex-wrap gap-2">
@@ -547,10 +552,10 @@ export function ProjectMembersManager({
                             disabled={busyInvitationId === invite._id}
                             onClick={() =>
                               void runInvitationAction(invite._id, async () => {
-                                  await apiRequest(
-                                    `/api/workspace/invitations/${invite._id}`,
-                                    { method: "DELETE" },
-                                  );
+                                await apiRequest(
+                                  `/api/workspace/invitations/${invite._id}`,
+                                  { method: "DELETE" },
+                                );
                               })
                             }
                           >

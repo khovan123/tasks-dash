@@ -2,14 +2,18 @@
 
 import { zodResolver } from "@hookform/resolvers/zod";
 import {
+  MEMBER_PRESENCE,
   MEMBER_INVITATION_STATUSES,
   MEMBER_ROLES,
+  type MemberPresence,
   type MemberRole,
 } from "@tasks-dash/contracts";
 import { useRouter } from "next/navigation";
 import { Controller, FormProvider, useForm } from "react-hook-form";
 import { useState } from "react";
 import { MailPlus, RefreshCw, Trash2, UserMinus } from "lucide-react";
+import { MemberAvatar } from "@/components/member-avatar";
+import { MemberInfoBadge } from "@/components/member-info-badge";
 import { RoleBadge } from "@/components/role-badge";
 import {
   InviteMemberValues,
@@ -18,7 +22,6 @@ import {
 import { apiRequest } from "@/lib/api/api-request";
 import { FormCard, SectionHeading } from "@/components/layout/app-shell";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
-import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader } from "@/components/ui/card";
@@ -44,6 +47,7 @@ import {
 } from "@/components/ui/select";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Checkbox } from "@/components/ui/checkbox";
+import { useWorkspacePresence } from "@/components/layout/jira-app-shell";
 
 interface WorkspaceMember {
   _id: string;
@@ -52,6 +56,8 @@ interface WorkspaceMember {
   avatarUrl: string;
   role: MemberRole;
   status: string;
+  githubLogin?: string;
+  discordUsername?: string;
   lastLoginAt?: string;
 }
 interface WorkspaceInvitation {
@@ -69,13 +75,8 @@ interface Project {
   name: string;
 }
 
-function initials(name: string): string {
-  return name
-    .split(" ")
-    .map((part) => part[0])
-    .join("")
-    .slice(0, 2)
-    .toUpperCase();
+function roleLabel(role: MemberRole): string {
+  return role.replaceAll("_", " ");
 }
 
 export function WorkspaceMembersManager({
@@ -90,6 +91,7 @@ export function WorkspaceMembersManager({
   canManage: boolean;
 }) {
   const router = useRouter();
+  const presenceByMemberId = useWorkspacePresence();
   const [actionError, setActionError] = useState<string | null>(null);
   const [busyId, setBusyId] = useState<string | null>(null);
   const form = useForm<InviteMemberValues>({
@@ -142,6 +144,13 @@ export function WorkspaceMembersManager({
     }
   }
 
+  function memberPresence(member: WorkspaceMember): MemberPresence {
+    return (
+      (presenceByMemberId[member._id] as MemberPresence | undefined) ??
+      MEMBER_PRESENCE.offline
+    );
+  }
+
   return (
     <div className="flex flex-col gap-6">
       <FormProvider {...form}>
@@ -185,10 +194,7 @@ export function WorkspaceMembersManager({
                             .filter((role) => role !== MEMBER_ROLES.owner)
                             .map((role) => (
                               <SelectItem key={role} value={role}>
-                                <RoleBadge
-                                  role={role}
-                                  className="border-none shadow-none bg-transparent p-0 dark:bg-transparent"
-                                />
+                                {roleLabel(role)}
                               </SelectItem>
                             ))}
                         </SelectContent>
@@ -244,11 +250,16 @@ export function WorkspaceMembersManager({
                                   checked={isChecked}
                                   onCheckedChange={(checked) => {
                                     if (checked) {
-                                      form.setValue("projectIds", [...selectedIds, project._id]);
+                                      form.setValue("projectIds", [
+                                        ...selectedIds,
+                                        project._id,
+                                      ]);
                                     } else {
                                       form.setValue(
                                         "projectIds",
-                                        selectedIds.filter((id) => id !== project._id),
+                                        selectedIds.filter(
+                                          (id) => id !== project._id,
+                                        ),
                                       );
                                     }
                                   }}
@@ -297,25 +308,28 @@ export function WorkspaceMembersManager({
               {members.map((member) => (
                 <Card
                   key={member._id}
-                  className="overflow-hidden shadow-sm border bg-card text-card-foreground"
+                  className="overflow-hidden shadow-sm border bg-card text-card-foreground gap-0"
                 >
                   <CardHeader className="flex flex-row items-center gap-4 pb-4">
-                    <Avatar className="size-12">
-                      <AvatarImage src={member.avatarUrl} alt={member.name} />
-                      <AvatarFallback>{initials(member.name)}</AvatarFallback>
-                    </Avatar>
-                    <div className="min-w-0">
-                      <strong className="block truncate text-base font-semibold">
-                        {member.name}
-                      </strong>
-                      <span className="block truncate text-sm text-muted-foreground">
-                        {member.email}
-                      </span>
-                    </div>
+                    <MemberInfoBadge
+                      memberId={member._id}
+                      name={member.name}
+                      avatarUrl={member.avatarUrl}
+                      email={member.email}
+                      githubLogin={member.githubLogin}
+                      discordUsername={member.discordUsername}
+                      presence={memberPresence(member)}
+                      avatarClassName="size-12"
+                      textClassName="text-base font-semibold leading-none"
+                    />
                   </CardHeader>
                   <CardContent className="flex items-center justify-between pt-0">
-                    <RoleBadge role={member.role} />
-                    <Badge variant="info">{member.status}</Badge>
+                    <Badge
+                      variant="outline"
+                      className="font-semibold text-[10px] tracking-wider"
+                    >
+                      {member.role === "OWNER" ? "OWNER" : "MEMBER"}
+                    </Badge>
                   </CardContent>
                 </Card>
               ))}
@@ -330,88 +344,52 @@ export function WorkspaceMembersManager({
                 <div className="grid gap-3">
                   {members.map((member) => (
                     <article
-                      className="grid gap-3 rounded-lg border p-3 md:grid-cols-[minmax(240px,1fr)_minmax(150px,220px)_auto_auto] md:items-center"
+                      className="grid gap-3 rounded-lg border p-3 md:grid-cols-[minmax(240px,1fr)_auto_auto] md:items-center"
                       key={member._id}
                     >
                       <div className="flex min-w-0 items-center gap-3">
-                        <Avatar>
-                          <AvatarImage
-                            src={member.avatarUrl}
-                            alt={member.name}
-                          />
-                          <AvatarFallback>
-                            {initials(member.name)}
-                          </AvatarFallback>
-                        </Avatar>
-                        <div className="min-w-0">
-                          <strong className="block truncate">
-                            {member.name}
-                          </strong>
-                          <span className="block truncate text-sm text-muted-foreground">
-                            {member.email}
-                          </span>
-                        </div>
+                        <MemberInfoBadge
+                          memberId={member._id}
+                          name={member.name}
+                          avatarUrl={member.avatarUrl}
+                          email={member.email}
+                          githubLogin={member.githubLogin}
+                          discordUsername={member.discordUsername}
+                          presence={memberPresence(member)}
+                          avatarClassName="size-10"
+                          textClassName="text-sm font-semibold leading-none"
+                        />
                       </div>
-                      {member.role === MEMBER_ROLES.owner || !canManage ? (
-                        <div className="w-full max-w-55">
-                          <RoleBadge role={member.role} />
-                        </div>
-                      ) : (
-                        <Select
-                          value={member.role}
-                          disabled={busyId === member._id}
-                          onValueChange={(val) =>
+                      <div className="flex items-center justify-end">
+                        <Badge
+                          variant="outline"
+                          className="font-semibold text-[10px] tracking-wider"
+                        >
+                          {member.role === "OWNER" ? "OWNER" : "MEMBER"}
+                        </Badge>
+                      </div>
+                      <div className="flex items-center justify-end">
+                        <Button
+                          variant="destructive"
+                          size="sm"
+                          type="button"
+                          disabled={
+                            !canManage ||
+                            busyId === member._id ||
+                            member.role === MEMBER_ROLES.owner
+                          }
+                          onClick={() =>
                             void runAction(member._id, async () => {
                               await apiRequest(
-                                `/api/workspace/members/${member._id}/role`,
-                                {
-                                  method: "PATCH",
-                                  body: JSON.stringify({
-                                    role: val as MemberRole,
-                                  }),
-                                },
+                                `/api/workspace/members/${member._id}`,
+                                { method: "DELETE" },
                               );
                             })
                           }
                         >
-                          <SelectTrigger className="w-full">
-                            <SelectValue />
-                          </SelectTrigger>
-                          <SelectContent>
-                            {Object.values(MEMBER_ROLES)
-                              .filter((role) => role !== MEMBER_ROLES.owner)
-                              .map((role) => (
-                                <SelectItem key={role} value={role}>
-                                  <RoleBadge
-                                    role={role}
-                                    className="border-none shadow-none bg-transparent p-0 dark:bg-transparent"
-                                  />
-                                </SelectItem>
-                              ))}
-                          </SelectContent>
-                        </Select>
-                      )}
-                      <Badge variant="info">{member.status}</Badge>
-                      <Button
-                        variant="destructive"
-                        size="sm"
-                        type="button"
-                        disabled={
-                          !canManage ||
-                          busyId === member._id ||
-                          member.role === MEMBER_ROLES.owner
-                        }
-                        onClick={() =>
-                          void runAction(member._id, async () => {
-                            await apiRequest(
-                              `/api/workspace/members/${member._id}`,
-                              { method: "DELETE" },
-                            );
-                          })
-                        }
-                      >
-                        <UserMinus data-icon="inline-start" /> Xóa
-                      </Button>
+                          <UserMinus data-icon="inline-start" /> Xóa
+                        </Button>
+                      </div>
                     </article>
                   ))}
                 </div>
@@ -436,25 +414,37 @@ export function WorkspaceMembersManager({
                         >
                           <div className="flex flex-col gap-1">
                             <strong className="block">{invite.email}</strong>
-                            <div className="flex items-center gap-2 mt-1">
-                              <RoleBadge role={invite.role} />
-                              <span className="text-xs text-muted-foreground">
-                                · hết hạn{" "}
-                                {new Date(invite.expiresAt).toLocaleString(
-                                  "vi-VN",
-                                )}
-                              </span>
-                            </div>
+                            <span className="text-xs text-muted-foreground mt-1">
+                              Hết hạn{" "}
+                              {new Date(invite.expiresAt).toLocaleString(
+                                "vi-VN",
+                              )}
+                            </span>
                           </div>
                           <Badge
                             variant={
                               invite.status ===
-                              MEMBER_INVITATION_STATUSES.pending
-                                ? "warning"
-                                : "secondary"
+                              MEMBER_INVITATION_STATUSES.accepted
+                                ? "success"
+                                : invite.status ===
+                                    MEMBER_INVITATION_STATUSES.pending
+                                  ? "warning"
+                                  : invite.status ===
+                                      MEMBER_INVITATION_STATUSES.expired
+                                    ? "secondary"
+                                    : "destructive" // revoked
                             }
                           >
-                            {invite.status}
+                            {invite.status ===
+                            MEMBER_INVITATION_STATUSES.accepted
+                              ? "Đã chấp nhận"
+                              : invite.status ===
+                                  MEMBER_INVITATION_STATUSES.pending
+                                ? "Đang chờ"
+                                : invite.status ===
+                                    MEMBER_INVITATION_STATUSES.expired
+                                  ? "Hết hạn"
+                                  : "Đã thu hồi"}
                           </Badge>
                           {invite.status ===
                           MEMBER_INVITATION_STATUSES.pending ? (

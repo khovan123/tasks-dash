@@ -1,6 +1,7 @@
 import { MEMBER_ROLES, type MemberRole } from "@tasks-dash/contracts";
 import type { JiraShellSession } from "@/components/layout/jira-app-shell";
 import { apiData } from "@/lib/server/api-data";
+import { apiProjectData } from "@/lib/server/project-access";
 import { AppPage } from "@/components/layout/app-shell";
 import { ProjectSettingsForm } from "@/components/project-settings-form";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
@@ -47,7 +48,7 @@ export default async function ProjectSettingsPage({
   const { projectKey } = await params;
   const key = projectKey.toUpperCase();
   const [project, workspaceMembers, session] = await Promise.all([
-    apiData<Project>(`/projects/${key}`),
+    apiProjectData<Project>(`/projects/${key}`),
     apiData<WorkspaceMembersResponse>("/workspace/members"),
     apiData<JiraShellSession>("/auth/me"),
   ]);

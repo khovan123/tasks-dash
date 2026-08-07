@@ -9,8 +9,9 @@ import {
   type GithubRepositoryOption,
 } from "@/components/repository-link-form";
 import { NewWorkItemModal } from "@/components/new-work-item-modal";
-import { MemberIdentity } from "@/components/member-identity";
+import { MemberInfoBadge } from "@/components/member-info-badge";
 import { apiData } from "@/lib/server/api-data";
+import { apiProjectData } from "@/lib/server/project-access";
 import { PriorityIcon } from "@/components/priority-icon";
 import {
   AppPage,
@@ -89,18 +90,18 @@ export default async function ProjectPage({
 }) {
   const { projectKey } = await params;
   const key = projectKey.toUpperCase();
-  const [project, items, workflow, membersData, repositories, session] = await Promise.all(
-    [
-      apiData<Project>(`/projects/${key}`),
-      apiData<WorkItem[]>(`/projects/${key}/work-items`),
-      apiData<Workflow | null>(`/projects/${key}/workflow`),
-      apiData<{ projectMembers: any[]; workspaceMembers: any[] }>(`/projects/${key}/members`),
-      apiData<GithubRepositoryOption[]>(
-        "/integrations/github/repositories",
-      ).catch(() => []),
+  const [project, items, workflow, membersData, repositories, session] =
+    await Promise.all([
+      apiProjectData<Project>(`/projects/${key}`),
+      apiProjectData<WorkItem[]>(`/projects/${key}/work-items`),
+      apiProjectData<Workflow | null>(`/projects/${key}/workflow`),
+      apiProjectData<{ projectMembers: any[]; workspaceMembers: any[] }>(
+        `/projects/${key}/members`,
+      ),
+      apiData<GithubRepositoryOption[]>("/integrations/github/repositories")
+        .catch(() => []),
       apiData<{ email: string }>("/auth/me"),
-    ],
-  );
+    ]);
   const membersById = Object.fromEntries(
     membersData.workspaceMembers.map((member) => [member._id, member]),
   );
@@ -203,10 +204,13 @@ export default async function ProjectPage({
                     <TableCell>
                       {item.assigneeId ? (
                         membersById[item.assigneeId] ? (
-                          <MemberIdentity
+                          <MemberInfoBadge
+                            memberId={item.assigneeId}
                             name={membersById[item.assigneeId].name}
                             avatarUrl={membersById[item.assigneeId].avatarUrl}
                             email={membersById[item.assigneeId].email}
+                            githubLogin={membersById[item.assigneeId].githubLogin}
+                            discordUsername={membersById[item.assigneeId].discordUsername}
                             avatarClassName="size-6"
                             textClassName="text-sm"
                           />

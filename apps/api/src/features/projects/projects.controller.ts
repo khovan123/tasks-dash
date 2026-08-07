@@ -1,5 +1,20 @@
-import { Body, Controller, Delete, Get, Param, Patch, Post, Inject, forwardRef } from "@nestjs/common";
+import {
+  Body,
+  Controller,
+  Delete,
+  Get,
+  Header,
+  MessageEvent,
+  Param,
+  Patch,
+  Post,
+  Sse,
+  Inject,
+  forwardRef,
+} from "@nestjs/common";
 import { CommandBus, QueryBus } from "@nestjs/cqrs";
+import { Observable, interval, merge, of } from "rxjs";
+import { filter, map } from "rxjs/operators";
 import {
   AuthSession,
   CurrentMemberRole,
@@ -10,6 +25,7 @@ import {
 } from "../../common/auth-context";
 import { MEMBER_ROLES, MemberRole } from "@tasks-dash/contracts";
 import { CreateProjectCommand, ListProjectsQuery } from "./projects.cqrs";
+import { ProjectRealtimeService } from "./project-realtime.service";
 import { CreateProjectDto, UpdateProjectDto } from "./projects.dto";
 import { ProjectsService } from "./projects.service";
 import { MembersService } from "../members/members.service";
@@ -20,6 +36,7 @@ export class ProjectsController {
     private readonly commands: CommandBus,
     private readonly queries: QueryBus,
     private readonly service: ProjectsService,
+    private readonly realtime: ProjectRealtimeService,
     @Inject(forwardRef(() => MembersService))
     private readonly membersService: MembersService,
   ) {}
@@ -30,9 +47,125 @@ export class ProjectsController {
     @CurrentSession() session: AuthSession,
     @CurrentMemberRole() role: MemberRole,
   ) {
-    return this.queries.execute(
-      new ListProjectsQuery(workspaceId, session.memberId, role),
+    return this.queries
+      .execute(
+        new ListProjectsQuery(workspaceId, session.memberId, role),
+      )
+      .then((projects: any[]) =>
+        projects.map((project) => {
+          const currentMemberRole =
+            role === MEMBER_ROLES.owner
+              ? MEMBER_ROLES.owner
+              : project.memberRoles instanceof Map
+                ? project.memberRoles.get(session.memberId)
+                : project.memberRoles?.[session.memberId];
+
+          return {
+            key: project.key,
+            name: project.name,
+            color: project.color,
+            currentMemberRole: currentMemberRole ?? MEMBER_ROLES.viewer,
+          };
+        }),
+      );
+  }
+
+  @Sse("sse")
+  @Header("Content-Type", "text/event-stream")
+  @Header("Cache-Control", "no-cache, no-transform")
+  @Header("Connection", "keep-alive")
+  @Header("X-Accel-Buffering", "no")
+  sse(@WorkspaceId() workspaceId: string): Observable<MessageEvent> {
+    const keepAlive$ = interval(15000).pipe(
+      map(() => ({ data: "ping" } as MessageEvent)),
     );
+
+    const realEvents$ = this.service.events$.pipe(
+      filter((event) => event.workspaceId === workspaceId),
+      map(
+        (event) =>
+          ({
+            data: {
+              type: event.type,
+              data: { projectKey: event.projectKey },
+            },
+          }) as MessageEvent,
+      ),
+    );
+    const realtimeEvents$ = this.realtime.events$.pipe(
+      filter((event) => event.workspaceId === workspaceId),
+      map(
+        (event) =>
+          ({
+            data: {
+              type: event.type,
+              data: event.data ?? { projectKey: event.projectKey },
+            },
+          }) as MessageEvent,
+      ),
+    );
+
+    return merge(realEvents$, realtimeEvents$, keepAlive$);
+  }
+
+  @Post("presence")
+  presenceHeartbeat(
+    @WorkspaceId() workspaceId: string,
+    @CurrentSession() session: AuthSession,
+  ) {
+    return {
+      presence: this.realtime.touchPresence(workspaceId, "", session.memberId),
+    };
+  }
+
+  @Sse(":key/sse")
+  @RequireProjectAccess("key")
+  @Header("Content-Type", "text/event-stream")
+  @Header("Cache-Control", "no-cache, no-transform")
+  @Header("Connection", "keep-alive")
+  @Header("X-Accel-Buffering", "no")
+  projectSse(
+    @Param("key") key: string,
+    @WorkspaceId() workspaceId: string,
+  ): Observable<MessageEvent> {
+    const projectKey = key.toUpperCase();
+    const keepAlive$ = interval(15000).pipe(
+      map(() => ({ data: "ping" } as MessageEvent)),
+    );
+    const initial$ = of({
+      data: {
+        type: "PRESENCE_CHANGED",
+        data: {
+          presence: this.realtime.getPresenceSnapshot(workspaceId, projectKey),
+        },
+      },
+    } as MessageEvent);
+    const realEvents$ = this.realtime.events$.pipe(
+      filter(
+        (event) =>
+          event.workspaceId === workspaceId &&
+          event.projectKey.toUpperCase() === projectKey,
+      ),
+      map((event) => ({ data: { type: event.type, data: event.data } }) as MessageEvent),
+    );
+
+    return merge(initial$, realEvents$, keepAlive$);
+  }
+
+  @Post(":key/presence")
+  @RequireProjectAccess("key")
+  presence(
+    @Param("key") key: string,
+    @WorkspaceId() workspaceId: string,
+    @CurrentSession() session: AuthSession,
+  ) {
+    return {
+      presence: this.realtime.touchPresence(
+        workspaceId,
+        key.toUpperCase(),
+        session.memberId,
+      ),
+    };
   }
 
   @Get(":key")
