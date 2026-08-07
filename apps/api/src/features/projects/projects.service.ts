@@ -5,7 +5,7 @@ import {
 } from "@nestjs/common";
 import { EventEmitter2 } from "@nestjs/event-emitter";
 import { InjectConnection, InjectModel } from "@nestjs/mongoose";
-import { Connection, Model } from "mongoose";
+import { Connection, Model, Types } from "mongoose";
 import { MemberRole, MEMBER_ROLES } from "@tasks-dash/contracts";
 import { Subject } from "rxjs";
 import { Project } from "./project.domain";
@@ -103,10 +103,21 @@ export class ProjectsService {
       project.memberRoles = new Map();
     }
 
-    // Default new members to dev role
+    // Fetch members from db to get their workspace role
+    const objectIds = memberIds
+      .filter((id) => Types.ObjectId.isValid(id))
+      .map((id) => new Types.ObjectId(id));
+    const members = await this.connection
+      .collection("members")
+      .find({ _id: { $in: objectIds } })
+      .toArray();
+    const roleMap = new Map(members.map((m) => [String(m._id), m.role]));
+
+    // Default new members to their workspace role
     for (const memberId of memberIds) {
       if (!project.memberRoles.has(memberId)) {
-        project.memberRoles.set(memberId, MEMBER_ROLES.dev);
+        const workspaceRole = roleMap.get(memberId) || MEMBER_ROLES.dev;
+        project.memberRoles.set(memberId, workspaceRole);
       }
     }
 
@@ -361,5 +372,28 @@ export class ProjectsService {
       data: { deleted: true },
     });
     return { ok: true };
+  }
+
+  async getEnv(workspaceId: string, key: string): Promise<Record<string, string>> {
+    const project = await this.getByKey(workspaceId, key);
+    return Object.fromEntries(project.environmentVariables || new Map());
+  }
+
+  async updateEnv(
+    workspaceId: string,
+    key: string,
+    envs: Record<string, string>,
+  ): Promise<Record<string, string>> {
+    const project = await this.getByKey(workspaceId, key);
+    project.environmentVariables = new Map(Object.entries(envs));
+    project.markModified("environmentVariables");
+    await project.save();
+    this.realtime.emit({
+      type: PROJECT_REALTIME_EVENT_TYPES.projectChanged,
+      workspaceId,
+      projectKey: project.key,
+      data: { envsUpdated: true },
+    });
+    return Object.fromEntries(project.environmentVariables);
   }
 }

@@ -63,6 +63,15 @@ function createService(options: {
     create: jest.fn().mockResolvedValue({}),
   } as unknown as import("mongoose").Model<any>;
 
+  const projectPrs = {
+    findOne: jest.fn().mockReturnValue({ exec: jest.fn().mockResolvedValue(null) }),
+    updateOne: jest.fn().mockResolvedValue({}),
+    updateMany: jest.fn().mockResolvedValue({}),
+  };
+  const realtime = {
+    emit: jest.fn(),
+  };
+
   return new GithubWebhookService(
     {} as ConfigService,
     github,
@@ -76,6 +85,8 @@ function createService(options: {
     workItemsModel,
     {} as never,
     commentLogs,
+    projectPrs as any,
+    realtime as any,
     {} as never,
   ) as unknown as TestableGithubWebhookService;
 }

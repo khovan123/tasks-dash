@@ -11,6 +11,7 @@ import {
   Sse,
   Inject,
   forwardRef,
+  Query,
 } from "@nestjs/common";
 import { CommandBus, QueryBus } from "@nestjs/cqrs";
 import { Observable, interval, merge, of } from "rxjs";
@@ -22,6 +23,7 @@ import {
   RequireProjectAccess,
   RequireRoles,
   WorkspaceId,
+  PublicRoute,
 } from "../../common/auth-context";
 import { MEMBER_ROLES, MemberRole } from "@tasks-dash/contracts";
 import { CreateProjectCommand, ListProjectsQuery } from "./projects.cqrs";
@@ -29,6 +31,7 @@ import { ProjectRealtimeService } from "./project-realtime.service";
 import { CreateProjectDto, UpdateProjectDto } from "./projects.dto";
 import { ProjectsService } from "./projects.service";
 import { MembersService } from "../members/members.service";
+import { GithubAppService } from "../integrations/github-app.service";
 
 @Controller("projects")
 export class ProjectsController {
@@ -39,6 +42,8 @@ export class ProjectsController {
     private readonly realtime: ProjectRealtimeService,
     @Inject(forwardRef(() => MembersService))
     private readonly membersService: MembersService,
+    @Inject(forwardRef(() => GithubAppService))
+    private readonly githubAppService: GithubAppService,
   ) {}
 
   @Get()
@@ -251,5 +256,36 @@ export class ProjectsController {
     @WorkspaceId() workspaceId: string,
   ) {
     return this.service.updateMemberRole(workspaceId, key, memberId, role);
+  }
+
+  @Get(":key/development/pull-requests")
+  @RequireProjectAccess("key")
+  getDetailedPRs(
+    @Param("key") key: string,
+    @Query("force") force: string,
+    @WorkspaceId() workspaceId: string,
+  ) {
+    const bypassCache = force === "true";
+    return this.githubAppService.listDetailedPullRequests(workspaceId, key, bypassCache);
+  }
+
+  @Get(":key/env")
+  @RequireProjectAccess("key")
+  getEnv(
+    @Param("key") key: string,
+    @WorkspaceId() workspaceId: string,
+  ) {
+    return this.service.getEnv(workspaceId, key);
+  }
+
+  @Post(":key/env")
+  @RequireProjectAccess("key")
+  @RequireRoles(MEMBER_ROLES.owner, MEMBER_ROLES.dev)
+  updateEnv(
+    @Param("key") key: string,
+    @Body() body: Record<string, string>,
+    @WorkspaceId() workspaceId: string,
+  ) {
+    return this.service.updateEnv(workspaceId, key, body);
   }
 }

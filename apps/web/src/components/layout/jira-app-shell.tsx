@@ -38,6 +38,7 @@ import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
+import { toast } from "sonner";
 import { cn } from "@/lib/utils";
 import { NewWorkspaceModal } from "@/components/new-workspace-modal";
 import { NewProjectModal } from "@/components/new-project-modal";
@@ -222,9 +223,18 @@ export function JiraAppShell({
       void heartbeat();
     }, 20_000);
 
+    const handleRateLimit = (e: Event) => {
+      const customEvent = e as CustomEvent<string>;
+      toast.error(
+        customEvent.detail || "Bạn thao tác quá nhanh. Xin vui lòng đợi.",
+      );
+    };
+    window.addEventListener("api-rate-limited", handleRateLimit);
+
     return () => {
       cancelled = true;
       window.clearInterval(intervalId);
+      window.removeEventListener("api-rate-limited", handleRateLimit);
     };
   }, []);
 

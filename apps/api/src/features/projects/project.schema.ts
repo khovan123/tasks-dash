@@ -27,6 +27,13 @@ export class ProjectDocument extends BaseMongoDocument {
     default: {},
   })
   memberRoles!: Map<string, string>;
+
+  @Prop({
+    type: Map,
+    of: String,
+    default: {},
+  })
+  environmentVariables!: Map<string, string>;
 }
 
 export type ProjectHydratedDocument = HydratedDocument<ProjectDocument>;

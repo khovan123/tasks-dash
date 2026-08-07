@@ -44,6 +44,8 @@ import {
   MemberDocument,
   MemberHydratedDocument,
 } from "../members/member.schema";
+import { ProjectRealtimeService } from "../projects/project-realtime.service";
+import { ProjectPullRequestDocument } from "./project-pull-request.schema";
 
 export const AUTOMATION_GITHUB_PULL_REQUEST_EVENT =
   "automation.github.pull-request";
@@ -78,12 +80,15 @@ interface PullRequestData {
   state?: string;
   merged?: boolean;
   draft?: boolean;
+  created_at?: string;
   updated_at?: string;
   closed_at?: string;
   merged_at?: string;
-  user?: { login?: string };
+  user?: { login?: string; avatar_url?: string };
   head?: { ref?: string; sha?: string };
   base?: { ref?: string };
+  commits?: number;
+  changed_files?: number;
 }
 
 interface PullRequestPayload extends RepositoryPayload {
@@ -259,6 +264,9 @@ export class GithubWebhookService {
     private readonly workflowLogs: Model<GithubWorkflowLogHydratedDocument>,
     @InjectModel(GithubCommentLogDocument.name)
     private readonly commentLogs: Model<GithubCommentLogHydratedDocument>,
+    @InjectModel(ProjectPullRequestDocument.name)
+    private readonly projectPrs: Model<ProjectPullRequestDocument>,
+    private readonly realtime: ProjectRealtimeService,
     @InjectConnection()
     private readonly connection: Connection,
   ) {}
@@ -485,6 +493,55 @@ export class GithubWebhookService {
         input,
       );
       if (linked) linkedKeys.push(workItemKey);
+    }
+
+    // Cache/Upsert Pull Request to database
+    try {
+      const commitsCount = (pullRequest as any).commits ?? 0;
+      const changedFilesCount = (pullRequest as any).changed_files ?? 0;
+
+      const existingPr = await this.projectPrs
+        .findOne({
+          repositoryFullName: context.repositoryFullName,
+          number: pullRequest.number,
+        })
+        .exec();
+      const checkState = existingPr ? existingPr.checkState : null;
+
+      await this.projectPrs.updateOne(
+        { repositoryFullName: context.repositoryFullName, number: pullRequest.number },
+        {
+          $set: {
+            repositoryFullName: context.repositoryFullName,
+            number: pullRequest.number,
+            title: pullRequest.title ?? "",
+            url: pullRequest.html_url,
+            state: pullRequest.merged ? "merged" : (pullRequest.state ?? "open"),
+            draft: Boolean(pullRequest.draft),
+            headBranch: pullRequest.head?.ref ?? "",
+            baseBranch: pullRequest.base?.ref ?? "",
+            headSha: pullRequest.head?.sha ?? "",
+            authorLogin: pullRequest.user?.login ?? null,
+            authorAvatarUrl: pullRequest.user?.avatar_url ?? null,
+            commitsCount,
+            changedFilesCount,
+            createdAt: pullRequest.created_at ? new Date(pullRequest.created_at) : new Date(),
+            updatedAt: pullRequest.updated_at ? new Date(pullRequest.updated_at) : new Date(),
+            closedAt: pullRequest.closed_at ? new Date(pullRequest.closed_at) : null,
+            mergedAt: pullRequest.merged_at ? new Date(pullRequest.merged_at) : null,
+            checkState,
+          },
+        },
+        { upsert: true },
+      );
+
+      this.realtime.emit({
+        type: "PROJECT_CHANGED",
+        workspaceId: context.workspaceId,
+        projectKey: context.projectKey,
+      });
+    } catch (dbErr) {
+      this.logger.error(`Failed to cache PR in database: ${String(dbErr)}`);
     }
 
     let autoStatusId: string | null = null;
@@ -1085,10 +1142,46 @@ export class GithubWebhookService {
             },
           );
         }
+
+        // Update checkState of matching ProjectPullRequests and emit SSE
+        const headSha = (payload.workflow_run as any)?.head_sha;
+        if (headSha) {
+          let checkState: "success" | "failure" | "pending" | null = null;
+          if (run.status === "completed") {
+            if (
+              run.conclusion === "success" ||
+              run.conclusion === "neutral" ||
+              run.conclusion === "skipped"
+            ) {
+              checkState = "success";
+            } else if (
+              run.conclusion === "failure" ||
+              run.conclusion === "timed_out" ||
+              run.conclusion === "action_required" ||
+              run.conclusion === "cancelled"
+            ) {
+              checkState = "failure";
+            }
+          } else {
+            checkState = "pending";
+          }
+
+          if (checkState) {
+            await this.projectPrs.updateMany(
+              { repositoryFullName: context.repositoryFullName, headSha },
+              { $set: { checkState } },
+            );
+            this.realtime.emit({
+              type: "PROJECT_CHANGED",
+              workspaceId: context.workspaceId,
+              projectKey: context.projectKey,
+            });
+          }
+        }
       }
     } catch (err) {
       this.logger.error(
-        `Failed to process workflow run on Discord: ${String(err)}`,
+        `Failed to process workflow run: ${String(err)}`,
       );
     }
 

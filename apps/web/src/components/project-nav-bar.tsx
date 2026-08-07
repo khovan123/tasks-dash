@@ -12,6 +12,7 @@ import {
   Kanban,
   Workflow,
   Users,
+  Terminal,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 
@@ -19,6 +20,7 @@ const PROJECT_NAV_LINKS = [
   { suffix: "", label: "Summary", icon: LayoutDashboard },
   { suffix: "/board", label: "Board", icon: Kanban },
   { suffix: "/backlog", label: "Backlog", icon: FolderKanban },
+  { suffix: "/development", label: "Development", icon: Terminal },
   { suffix: "/members", label: "Members", icon: Users },
   { suffix: "/docs", label: "Docs", icon: FileArchive },
   { suffix: "/designer", label: "Designer", icon: Figma },
@@ -39,7 +41,6 @@ export function ProjectNavBar({
   return (
     <div className="sticky top-16 z-20 border-b bg-background/85 backdrop-blur-xl px-6 py-4 transition-colors duration-300">
       <div className="flex flex-col gap-4">
-
         {/* Horizontal Navigation */}
         <nav className="flex items-center gap-2 overflow-x-auto pb-0 scrollbar-none">
           {PROJECT_NAV_LINKS.map((link) => {

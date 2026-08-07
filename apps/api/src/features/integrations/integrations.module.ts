@@ -32,6 +32,10 @@ import {
   GithubCommentLogDocument,
   GithubCommentLogSchema,
 } from "./integration.schemas";
+import {
+  ProjectPullRequestDocument,
+  ProjectPullRequestSchema,
+} from "./project-pull-request.schema";
 import { forwardRef } from "@nestjs/common";
 
 @Module({
@@ -51,6 +55,7 @@ import { forwardRef } from "@nestjs/common";
       { name: GithubWorkflowLogDocument.name, schema: GithubWorkflowLogSchema },
       { name: GithubCommentLogDocument.name, schema: GithubCommentLogSchema },
       { name: MemberDocument.name, schema: MemberSchema },
+      { name: ProjectPullRequestDocument.name, schema: ProjectPullRequestSchema },
     ]),
   ],
   controllers: [IntegrationsController],

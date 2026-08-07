@@ -7,11 +7,14 @@ import { CreateProjectHandler, ListProjectsHandler } from "./projects.cqrs";
 import { ProjectsController } from "./projects.controller";
 import { ProjectsService } from "./projects.service";
 import { MembersModule } from "../members/members.module";
+import { IntegrationsModule } from "../integrations/integrations.module";
+
 @Module({
   imports: [
     CqrsModule,
     MongooseModule.forFeature([{ name: ProjectDocument.name, schema: ProjectSchema }]),
     forwardRef(() => MembersModule),
+    forwardRef(() => IntegrationsModule),
   ],
   controllers: [ProjectsController],
   providers: [
