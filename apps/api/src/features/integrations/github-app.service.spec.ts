@@ -14,9 +14,20 @@ function createService() {
     linkRepository: jest.fn().mockResolvedValue({ key: "ALPHA" }),
     unlinkRepository: jest.fn().mockResolvedValue({ key: "ALPHA" }),
   } as unknown as ProjectsService;
+  const projectPrs = {
+    find: jest.fn().mockReturnValue({
+      sort: jest.fn().mockReturnValue({
+        limit: jest.fn().mockReturnValue({
+          exec: jest.fn().mockResolvedValue([]),
+        }),
+      }),
+    }),
+    updateOne: jest.fn().mockResolvedValue({}),
+  };
   const service = new GithubAppService(
     {} as ConfigService,
     {} as never,
+    projectPrs as any,
     projects,
     {} as GithubUserTokenService,
   );

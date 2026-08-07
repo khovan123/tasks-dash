@@ -33,8 +33,15 @@ import {
   WorkspaceInvitationDocument,
   WorkspaceInvitationHydratedDocument,
 } from "./workspace-invitation.schema";
-import { WorkspaceDocument, WorkspaceHydratedDocument } from "./workspace.schema";
-import { ProjectDocument, ProjectHydratedDocument } from "../projects/project.schema";
+import {
+  WorkspaceDocument,
+  WorkspaceHydratedDocument,
+} from "./workspace.schema";
+import {
+  ProjectDocument,
+  ProjectHydratedDocument,
+} from "../projects/project.schema";
+import { RedisService } from "../../common/redis.service";
 
 interface IdentityProfile {
   name: string;
@@ -56,6 +63,7 @@ export class MembersService {
     private readonly config: ConfigService,
     private readonly mailer: InvitationMailerService,
     private readonly events: EventEmitter2,
+    private readonly redis: RedisService,
     @InjectConnection() private readonly connection: Connection,
     @InjectModel(MemberDocument.name)
     private readonly members: Model<MemberHydratedDocument>,
@@ -93,7 +101,10 @@ export class MembersService {
   }
 
   private async workspaceName(workspaceId: string): Promise<string> {
-    const workspace = await this.workspaces.findOne({ workspaceId }).lean().exec();
+    const workspace = await this.workspaces
+      .findOne({ workspaceId })
+      .lean()
+      .exec();
     return workspace?.name ?? `Workspace ${workspaceId}`;
   }
 
@@ -171,7 +182,10 @@ export class MembersService {
     emailInput: string,
     profile: IdentityProfile,
     dto: CreateWorkspaceDto,
-  ): Promise<{ workspace: WorkspaceHydratedDocument; member: MemberHydratedDocument }> {
+  ): Promise<{
+    workspace: WorkspaceHydratedDocument;
+    member: MemberHydratedDocument;
+  }> {
     const email = this.normalizeEmail(emailInput);
     let createdWorkspace: WorkspaceHydratedDocument | null = null;
     let createdMember: MemberHydratedDocument | null = null;
@@ -250,7 +264,9 @@ export class MembersService {
       .find({ workspaceId: { $in: workspaceIds } })
       .lean()
       .exec();
-    const byId = new Map(workspaces.map((workspace) => [workspace.workspaceId, workspace]));
+    const byId = new Map(
+      workspaces.map((workspace) => [workspace.workspaceId, workspace]),
+    );
     return memberships.flatMap((member) => {
       const workspace = byId.get(member.workspaceId);
       if (!workspace) return [];
@@ -329,6 +345,18 @@ export class MembersService {
     projectIds?: string[],
     allProjects?: boolean,
   ): Promise<WorkspaceInvitationHydratedDocument> {
+    const oldPending = await this.invitations
+      .find({
+        workspaceId,
+        email,
+        status: MEMBER_INVITATION_STATUSES.pending,
+      })
+      .exec();
+    const redis = this.redis.getClient();
+    for (const old of oldPending) {
+      await redis.del(`invite:hash:${old.tokenHash}`);
+    }
+
     await this.invitations.updateMany(
       {
         workspaceId,
@@ -390,6 +418,7 @@ export class MembersService {
     invitation.status = MEMBER_INVITATION_STATUSES.revoked;
     invitation.revokedAt = new Date();
     await invitation.save();
+    await this.redis.getClient().del(`invite:hash:${invitation.tokenHash}`);
   }
 
   async acceptInvitation(
@@ -427,7 +456,10 @@ export class MembersService {
         .findOne({ workspaceId: invitation.workspaceId, email })
         .session(session)
         .exec();
-      if (existing?.authIdentityId && existing.authIdentityId !== authIdentityId) {
+      if (
+        existing?.authIdentityId &&
+        existing.authIdentityId !== authIdentityId
+      ) {
         throw new ConflictException(
           "This workspace membership is linked to another GitHub account.",
         );
@@ -512,11 +544,18 @@ export class MembersService {
     });
 
     if (!acceptedMember) {
-      throw new UnauthorizedException("Workspace invitation acceptance failed.");
+      throw new UnauthorizedException(
+        "Workspace invitation acceptance failed.",
+      );
     }
-    void this.events.emitAsync("workspace.members.changed", {
-      workspaceId: (acceptedMember as MemberHydratedDocument).workspaceId,
-    }).catch(() => { /* non-critical */ });
+    await this.redis.getClient().del(`invite:hash:${hash}`);
+    void this.events
+      .emitAsync("workspace.members.changed", {
+        workspaceId: (acceptedMember as MemberHydratedDocument).workspaceId,
+      })
+      .catch(() => {
+        /* non-critical */
+      });
     return acceptedMember;
   }
 
@@ -572,14 +611,20 @@ export class MembersService {
     }
     const member = await this.memberById(workspaceId, memberId);
     if (member.role === MEMBER_ROLES.owner) {
-      throw new ForbiddenException("Cannot modify or change role of workspace OWNER.");
+      throw new ForbiddenException(
+        "Cannot modify or change role of workspace OWNER.",
+      );
     }
     if (memberId === actorMemberId && role === MEMBER_ROLES.viewer) {
       throw new ConflictException("You cannot change yourself to viewer.");
     }
     member.role = role;
     await member.save();
-    void this.events.emitAsync("workspace.members.changed", { workspaceId }).catch(() => { /* non-critical */ });
+    void this.events
+      .emitAsync("workspace.members.changed", { workspaceId })
+      .catch(() => {
+        /* non-critical */
+      });
     return member;
   }
 
@@ -589,14 +634,20 @@ export class MembersService {
     memberId: string,
   ): Promise<void> {
     if (memberId === actorMemberId) {
-      throw new ConflictException("You cannot remove yourself from the workspace.");
+      throw new ConflictException(
+        "You cannot remove yourself from the workspace.",
+      );
     }
     const member = await this.memberById(workspaceId, memberId);
     if (member.role === MEMBER_ROLES.owner) {
       throw new ForbiddenException("Cannot remove workspace OWNER.");
     }
     await this.members.deleteOne({ _id: member._id, workspaceId }).exec();
-    void this.events.emitAsync("workspace.members.changed", { workspaceId }).catch(() => { /* non-critical */ });
+    void this.events
+      .emitAsync("workspace.members.changed", { workspaceId })
+      .catch(() => {
+        /* non-critical */
+      });
   }
 
   private async memberById(

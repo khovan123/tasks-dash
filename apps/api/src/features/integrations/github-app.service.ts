@@ -17,6 +17,7 @@ import {
   IntegrationOauthStateDocument,
   IntegrationOauthStateHydratedDocument,
 } from "./integration.schemas";
+import { ProjectPullRequestDocument } from "./project-pull-request.schema";
 
 const GITHUB_API = "https://api.github.com";
 const GITHUB_API_VERSION = "2026-03-10";
@@ -142,10 +143,14 @@ export interface GithubCodeScanningAlertSummary {
 
 @Injectable()
 export class GithubAppService {
+  private prsCache = new Map<string, { data: any[]; expiresAt: number }>();
+
   constructor(
     private readonly config: ConfigService,
     @InjectModel(GithubInstallationDocument.name)
     private readonly installations: Model<GithubInstallationHydratedDocument>,
+    @InjectModel(ProjectPullRequestDocument.name)
+    private readonly projectPrs: Model<ProjectPullRequestDocument>,
     private readonly projects: ProjectsService,
     private readonly userTokens: GithubUserTokenService,
   ) {}
@@ -171,7 +176,10 @@ export class GithubAppService {
       );
     }
     let key = raw;
-    if (!key.includes("BEGIN RSA PRIVATE KEY") && !key.includes("BEGIN PRIVATE KEY")) {
+    if (
+      !key.includes("BEGIN RSA PRIVATE KEY") &&
+      !key.includes("BEGIN PRIVATE KEY")
+    ) {
       key = Buffer.from(key, "base64").toString("utf8");
     }
     if (key.includes("BEGIN RSA PRIVATE KEY")) {
@@ -247,11 +255,12 @@ export class GithubAppService {
           `GitHub repository listing failed with HTTP ${response.status}.`,
         );
       }
-      const batch = (
-        (await response.json()) as {
-          repositories?: GithubRepositoryResponse[];
-        }
-      ).repositories ?? [];
+      const batch =
+        (
+          (await response.json()) as {
+            repositories?: GithubRepositoryResponse[];
+          }
+        ).repositories ?? [];
       all.push(...batch);
       if (batch.length < 100) break;
     }
@@ -263,8 +272,13 @@ export class GithubAppService {
     installationId: number,
     memberId: string,
   ): Promise<Record<string, unknown>> {
-    await this.userTokens.assertInstallationAccessible(memberId, installationId);
-    const existing = await this.installations.findOne({ installationId }).exec();
+    await this.userTokens.assertInstallationAccessible(
+      memberId,
+      installationId,
+    );
+    const existing = await this.installations
+      .findOne({ installationId })
+      .exec();
     if (existing && existing.workspaceId !== workspaceId) {
       throw new ConflictException(
         "This GitHub App installation is already connected to another workspace.",
@@ -309,9 +323,7 @@ export class GithubAppService {
     ).map((item) => this.statusOf(item));
   }
 
-  async repositories(
-    workspaceId: string,
-  ): Promise<GithubRepositoryResponse[]> {
+  async repositories(workspaceId: string): Promise<GithubRepositoryResponse[]> {
     const [installations, projects] = await Promise.all([
       this.installations.find({ workspaceId, suspended: false }).exec(),
       this.projects.list(workspaceId),
@@ -341,7 +353,9 @@ export class GithubAppService {
     for (const repository of batches.flat()) {
       unique.set(repository.id, {
         ...repository,
-        linkedProjectKey: linkedProjects.get(repository.full_name.toLowerCase()),
+        linkedProjectKey: linkedProjects.get(
+          repository.full_name.toLowerCase(),
+        ),
       });
     }
     return [...unique.values()].sort((a, b) =>
@@ -392,7 +406,10 @@ export class GithubAppService {
     workspaceId: string,
     projectKey: string,
   ): Promise<Record<string, unknown>> {
-    const project = await this.projects.unlinkRepository(workspaceId, projectKey);
+    const project = await this.projects.unlinkRepository(
+      workspaceId,
+      projectKey,
+    );
     return { projectKey: project.key, repository: null };
   }
 
@@ -446,9 +463,7 @@ export class GithubAppService {
       .exec();
   }
 
-  private statusOf(
-    item: GithubInstallationDocument,
-  ): Record<string, unknown> {
+  private statusOf(item: GithubInstallationDocument): Record<string, unknown> {
     return {
       installationId: item.installationId,
       accountLogin: item.accountLogin,
@@ -511,7 +526,8 @@ export class GithubAppService {
         message?: string;
       };
       throw new ServiceUnavailableException(
-        errorData.message ?? `GitHub API request failed with HTTP ${response.status}.`,
+        errorData.message ??
+          `GitHub API request failed with HTTP ${response.status}.`,
       );
     }
     if (response.status === 204) {
@@ -536,7 +552,9 @@ export class GithubAppService {
     const installations = await this.installations
       .find({ workspaceId, suspended: false })
       .exec();
-    return [...new Set(installations.flatMap((item) => item.repositoryFullNames))];
+    return [
+      ...new Set(installations.flatMap((item) => item.repositoryFullNames)),
+    ];
   }
 
   async createIssueInRepository(
@@ -560,7 +578,10 @@ export class GithubAppService {
     workspaceId: string,
     projectKey?: string,
   ): Promise<GithubPullRequestSummary[]> {
-    const repositories = await this.resolveRepositories(workspaceId, projectKey);
+    const repositories = await this.resolveRepositories(
+      workspaceId,
+      projectKey,
+    );
     const prs: GithubPullRequestSummary[] = [];
     for (const repositoryFullName of repositories) {
       try {
@@ -588,7 +609,11 @@ export class GithubAppService {
         );
       }
     }
-    return prs.sort((a, b) => a.repositoryFullName.localeCompare(b.repositoryFullName) || a.number - b.number);
+    return prs.sort(
+      (a, b) =>
+        a.repositoryFullName.localeCompare(b.repositoryFullName) ||
+        a.number - b.number,
+    );
   }
 
   async mergePullRequest(
@@ -700,7 +725,10 @@ export class GithubAppService {
     workspaceId: string,
     projectKey?: string,
   ): Promise<GithubIssueSummary[]> {
-    const repositories = await this.resolveRepositories(workspaceId, projectKey);
+    const repositories = await this.resolveRepositories(
+      workspaceId,
+      projectKey,
+    );
     const issues: GithubIssueSummary[] = [];
     for (const repositoryFullName of repositories) {
       try {
@@ -789,7 +817,10 @@ export class GithubAppService {
     workspaceId: string,
     projectKey?: string,
   ): Promise<GithubWorkflowRunSummary[]> {
-    const repositories = await this.resolveRepositories(workspaceId, projectKey);
+    const repositories = await this.resolveRepositories(
+      workspaceId,
+      projectKey,
+    );
     const runs: GithubWorkflowRunSummary[] = [];
     for (const repositoryFullName of repositories) {
       try {
@@ -874,8 +905,8 @@ export class GithubAppService {
     const repositorySet = new Set(
       await this.resolveRepositories(workspaceId, projectKey),
     );
-    const catalogs = (await this.repositories(workspaceId)).filter((repository) =>
-      repositorySet.has(repository.full_name),
+    const catalogs = (await this.repositories(workspaceId)).filter(
+      (repository) => repositorySet.has(repository.full_name),
     );
     const suites: GithubCheckSuiteSummary[] = [];
     for (const repository of catalogs) {
@@ -933,7 +964,10 @@ export class GithubAppService {
     workspaceId: string,
     projectKey?: string,
   ): Promise<GithubDeploymentSummary[]> {
-    const repositories = await this.resolveRepositories(workspaceId, projectKey);
+    const repositories = await this.resolveRepositories(
+      workspaceId,
+      projectKey,
+    );
     const deployments: GithubDeploymentSummary[] = [];
     for (const repositoryFullName of repositories) {
       try {
@@ -960,13 +994,15 @@ export class GithubAppService {
           deployments.push({
             id: deployment.id,
             repositoryFullName,
-            environment: latestStatus?.environment ?? deployment.environment ?? "unknown",
+            environment:
+              latestStatus?.environment ?? deployment.environment ?? "unknown",
             ref: deployment.ref ?? "?",
             creator: deployment.creator?.login ?? "unknown",
             state: latestStatus?.state ?? "pending",
             description: latestStatus?.description ?? null,
             createdAt: deployment.created_at ?? null,
-            updatedAt: latestStatus?.updated_at ?? deployment.updated_at ?? null,
+            updatedAt:
+              latestStatus?.updated_at ?? deployment.updated_at ?? null,
             originalEnvironment: deployment.original_environment ?? null,
           });
         }
@@ -1011,7 +1047,10 @@ export class GithubAppService {
     workspaceId: string,
     projectKey?: string,
   ): Promise<GithubDependabotAlertSummary[]> {
-    const repositories = await this.resolveRepositories(workspaceId, projectKey);
+    const repositories = await this.resolveRepositories(
+      workspaceId,
+      projectKey,
+    );
     const alerts: GithubDependabotAlertSummary[] = [];
     for (const repositoryFullName of repositories) {
       try {
@@ -1068,7 +1107,9 @@ export class GithubAppService {
           state,
           dismissed_reason: state === "dismissed" ? dismissedReason : undefined,
           dismissed_comment:
-            state === "dismissed" ? dismissedComment?.trim() || undefined : undefined,
+            state === "dismissed"
+              ? dismissedComment?.trim() || undefined
+              : undefined,
         }),
       },
     );
@@ -1078,7 +1119,10 @@ export class GithubAppService {
     workspaceId: string,
     projectKey?: string,
   ): Promise<GithubCodeScanningAlertSummary[]> {
-    const repositories = await this.resolveRepositories(workspaceId, projectKey);
+    const repositories = await this.resolveRepositories(
+      workspaceId,
+      projectKey,
+    );
     const alerts: GithubCodeScanningAlertSummary[] = [];
     for (const repositoryFullName of repositories) {
       try {
@@ -1134,10 +1178,232 @@ export class GithubAppService {
           state,
           dismissed_reason: state === "dismissed" ? dismissedReason : undefined,
           dismissed_comment:
-            state === "dismissed" ? dismissedComment?.trim() || undefined : undefined,
+            state === "dismissed"
+              ? dismissedComment?.trim() || undefined
+              : undefined,
         }),
       },
     );
+  }
+
+  async listDetailedPullRequests(
+    workspaceId: string,
+    projectKey: string,
+    bypassCache = false,
+  ): Promise<any[]> {
+    const project = await this.projects.getByKey(workspaceId, projectKey);
+    if (!project?.repositoryFullName) {
+      return [];
+    }
+    const repositoryFullName = project.repositoryFullName;
+
+    if (!bypassCache) {
+      const cachedPrs = await this.projectPrs
+        .find({ repositoryFullName })
+        .sort({ number: -1 })
+        .limit(15)
+        .exec();
+      if (cachedPrs.length > 0) {
+        return cachedPrs.map((pr) => ({
+          number: pr.number,
+          title: pr.title,
+          url: pr.url,
+          state: pr.state,
+          draft: pr.draft,
+          headBranch: pr.headBranch,
+          baseBranch: pr.baseBranch,
+          headSha: pr.headSha,
+          authorLogin: pr.authorLogin,
+          authorAvatarUrl: pr.authorAvatarUrl,
+          commitsCount: pr.commitsCount,
+          changedFilesCount: pr.changedFilesCount,
+          createdAt: pr.createdAt.toISOString(),
+          updatedAt: pr.updatedAt.toISOString(),
+          closedAt: pr.closedAt ? pr.closedAt.toISOString() : null,
+          mergedAt: pr.mergedAt ? pr.mergedAt.toISOString() : null,
+          checkState: pr.checkState,
+        }));
+      }
+    }
+
+    const rateLimitKey = `ratelimit:${repositoryFullName}`;
+    if (!bypassCache) {
+      const rateLimitActive = this.prsCache.get(rateLimitKey);
+      if (rateLimitActive && Date.now() < rateLimitActive.expiresAt) {
+        return [];
+      }
+    }
+
+    try {
+      const pulls = await this.requestRepository<any[]>(
+        workspaceId,
+        repositoryFullName,
+        `/repos/${repositoryFullName}/pulls?state=all&per_page=15`,
+      );
+      if (!Array.isArray(pulls)) return [];
+
+      const detailedPulls = await Promise.all(
+        pulls.map(async (pr) => {
+          try {
+            const detail = await this.requestRepository<any>(
+              workspaceId,
+              repositoryFullName,
+              `/repos/${repositoryFullName}/pulls/${pr.number}`,
+            ).catch(() => ({}));
+
+            const checkRunsResponse = await this.requestRepository<{
+              check_runs: any[];
+            }>(
+              workspaceId,
+              repositoryFullName,
+              `/repos/${repositoryFullName}/commits/${pr.head?.sha}/check-runs`,
+            ).catch(() => ({ check_runs: [] }));
+
+            let checkState: "success" | "failure" | "pending" | null = null;
+            const runs = checkRunsResponse.check_runs || [];
+            if (runs.length > 0) {
+              if (
+                runs.some(
+                  (r) => r.status === "in_progress" || r.status === "queued",
+                )
+              ) {
+                checkState = "pending";
+              } else if (
+                runs.some(
+                  (r) =>
+                    r.conclusion === "failure" ||
+                    r.conclusion === "timed_out" ||
+                    r.conclusion === "action_required" ||
+                    r.conclusion === "cancelled",
+                )
+              ) {
+                checkState = "failure";
+              } else if (
+                runs.every(
+                  (r) =>
+                    r.conclusion === "success" ||
+                    r.conclusion === "neutral" ||
+                    r.conclusion === "skipped",
+                )
+              ) {
+                checkState = "success";
+              }
+            }
+
+            const mappedPr = {
+              number: pr.number,
+              title: pr.title,
+              url: pr.html_url,
+              state: pr.merged_at ? "merged" : pr.state,
+              draft: Boolean(pr.draft),
+              headBranch: pr.head?.ref ?? "",
+              baseBranch: pr.base?.ref ?? "",
+              headSha: pr.head?.sha ?? "",
+              authorLogin: pr.user?.login ?? null,
+              authorAvatarUrl: pr.user?.avatar_url ?? null,
+              commitsCount: detail.commits ?? 0,
+              changedFilesCount: detail.changed_files ?? 0,
+              createdAt: pr.created_at,
+              updatedAt: pr.updated_at,
+              closedAt: pr.closed_at,
+              mergedAt: pr.merged_at,
+              checkState,
+            };
+
+            // Save/upsert to DB
+            await this.projectPrs.updateOne(
+              { repositoryFullName, number: pr.number },
+              {
+                $set: {
+                  repositoryFullName,
+                  number: pr.number,
+                  title: mappedPr.title,
+                  url: mappedPr.url,
+                  state: mappedPr.state,
+                  draft: mappedPr.draft,
+                  headBranch: mappedPr.headBranch,
+                  baseBranch: mappedPr.baseBranch,
+                  headSha: mappedPr.headSha,
+                  authorLogin: mappedPr.authorLogin,
+                  authorAvatarUrl: mappedPr.authorAvatarUrl,
+                  commitsCount: mappedPr.commitsCount,
+                  changedFilesCount: mappedPr.changedFilesCount,
+                  createdAt: new Date(mappedPr.createdAt),
+                  updatedAt: new Date(mappedPr.updatedAt),
+                  closedAt: mappedPr.closedAt
+                    ? new Date(mappedPr.closedAt)
+                    : null,
+                  mergedAt: mappedPr.mergedAt
+                    ? new Date(mappedPr.mergedAt)
+                    : null,
+                  checkState: mappedPr.checkState,
+                },
+              },
+              { upsert: true },
+            );
+
+            return mappedPr;
+          } catch (err) {
+            console.error(`Failed to fetch details for PR #${pr.number}:`, err);
+            const fallbackPr = {
+              number: pr.number,
+              title: pr.title,
+              url: pr.html_url,
+              state: pr.state,
+              draft: Boolean(pr.draft),
+              headBranch: pr.head?.ref ?? "",
+              baseBranch: pr.base?.ref ?? "",
+              headSha: pr.head?.sha ?? "",
+              authorLogin: pr.user?.login ?? null,
+              authorAvatarUrl: pr.user?.avatar_url ?? null,
+              commitsCount: 0,
+              changedFilesCount: 0,
+              createdAt: pr.created_at,
+              checkState: null,
+            };
+
+            await this.projectPrs.updateOne(
+              { repositoryFullName, number: pr.number },
+              {
+                $set: {
+                  repositoryFullName,
+                  number: pr.number,
+                  title: fallbackPr.title,
+                  url: fallbackPr.url,
+                  state: fallbackPr.state,
+                  draft: fallbackPr.draft,
+                  headBranch: fallbackPr.headBranch,
+                  baseBranch: fallbackPr.baseBranch,
+                  headSha: fallbackPr.headSha,
+                  authorLogin: fallbackPr.authorLogin,
+                  authorAvatarUrl: fallbackPr.authorAvatarUrl,
+                  commitsCount: 0,
+                  changedFilesCount: 0,
+                  createdAt: new Date(fallbackPr.createdAt),
+                  updatedAt: new Date(),
+                  checkState: null,
+                },
+              },
+              { upsert: true },
+            );
+
+            return fallbackPr;
+          }
+        }),
+      );
+
+      return detailedPulls;
+    } catch (error) {
+      console.error(
+        `Failed to list detailed PRs for project ${projectKey}:`,
+        error,
+      );
+      this.prsCache.set(rateLimitKey, {
+        data: [],
+        expiresAt: Date.now() + 60 * 1000,
+      });
+      return [];
+    }
   }
 }
 

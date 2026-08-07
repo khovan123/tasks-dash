@@ -19,6 +19,10 @@ import { DesignCatalogModule } from "./features/design-catalog/design-catalog.mo
 import { DocumentsModule } from "./features/documents/documents.module";
 import { HealthModule } from "./features/health/health.module";
 
+import { APP_GUARD } from "@nestjs/core";
+import { RedisModule } from "./common/redis.module";
+import { RateLimiterGuard } from "./common/rate-limiter.guard";
+
 @Module({
   imports: [
     ConfigModule.forRoot({
@@ -58,6 +62,13 @@ import { HealthModule } from "./features/health/health.module";
     DocumentsModule,
     AutomationsModule,
     DesignCatalogModule,
+    RedisModule,
+  ],
+  providers: [
+    {
+      provide: APP_GUARD,
+      useClass: RateLimiterGuard,
+    },
   ],
 })
 export class AppModule {}

@@ -52,6 +52,7 @@ import {
   SESSION_COOKIE,
   SessionService,
 } from "./session.service";
+import { RedisService } from "../../common/redis.service";
 import {
   IntegrationOauthStateDocument,
   IntegrationOauthStateHydratedDocument,
@@ -90,6 +91,7 @@ export class AuthController {
     private readonly githubTokens: GithubUserTokenService,
     private readonly encryption: CredentialEncryptionService,
     private readonly members: MembersService,
+    private readonly redis: RedisService,
     @InjectModel(AuthIdentityDocument.name)
     private readonly identities: Model<AuthIdentityHydratedDocument>,
     @InjectModel(AuthLoginCodeDocument.name)
@@ -346,13 +348,25 @@ export class AuthController {
       );
     }
     const hash = createHash("sha256").update(inviteToken).digest("hex");
-    const invitation = await this.invitations
-      .findOne({
-        tokenHash: hash,
-        status: MEMBER_INVITATION_STATUSES.pending,
-        expiresAt: { $gt: new Date() },
-      })
-      .exec();
+    const redis = this.redis.getClient();
+    const cacheKey = `invite:hash:${hash}`;
+    const cached = await redis.get(cacheKey);
+
+    let invitation: any = null;
+    if (cached) {
+      invitation = JSON.parse(cached);
+    } else {
+      invitation = await this.invitations
+        .findOne({
+          tokenHash: hash,
+          status: MEMBER_INVITATION_STATUSES.pending,
+          expiresAt: { $gt: new Date() },
+        })
+        .exec();
+      if (invitation) {
+        await redis.set(cacheKey, JSON.stringify(invitation), "EX", 10 * 60);
+      }
+    }
     if (!invitation) {
       throw new BadRequestException("Lời mời không hợp lệ hoặc đã hết hạn.");
     }
@@ -381,19 +395,17 @@ export class AuthController {
 
     const code = this.createOneTimeLoginCode();
     const expiresAt = new Date(Date.now() + 15 * 60 * 1000);
-    await this.loginCodes
-      .findOneAndUpdate(
-        { identityId: session.identityId },
-        {
-          $set: {
-            identityId: session.identityId,
-            codeHash: this.loginCodeHash(this.normalizeLoginCode(code)),
-            expiresAt,
-          },
-        },
-        { upsert: true, new: true, setDefaultsOnInsert: true },
-      )
-      .exec();
+    const codeHash = this.loginCodeHash(this.normalizeLoginCode(code));
+
+    const redis = this.redis.getClient();
+    const existingHashKey = `logincode:identity:${session.identityId}`;
+    const oldHash = await redis.get(existingHashKey);
+    if (oldHash) {
+      await redis.del(`logincode:hash:${oldHash}`);
+    }
+
+    await redis.set(`logincode:hash:${codeHash}`, session.identityId, "EX", 15 * 60);
+    await redis.set(existingHashKey, codeHash, "EX", 15 * 60);
 
     return {
       code,
@@ -413,23 +425,21 @@ export class AuthController {
     }
 
     const codeHash = this.loginCodeHash(normalizedCode);
-    const loginCode = await this.loginCodes.findOne({ codeHash }).exec();
-    if (!loginCode) {
+    const redis = this.redis.getClient();
+    const identityId = await redis.get(`logincode:hash:${codeHash}`);
+    if (!identityId) {
       throw new UnauthorizedException(
         "Mã đăng nhập không hợp lệ hoặc đã được sử dụng.",
       );
     }
-    if (loginCode.expiresAt <= new Date()) {
-      await this.loginCodes.deleteOne({ _id: loginCode._id }).exec();
-      throw new UnauthorizedException(
-        "Mã đăng nhập đã hết hạn. Hãy tạo mã mới.",
-      );
-    }
+
+    // Clean up code from Redis (one-time use)
+    await redis.del(`logincode:hash:${codeHash}`);
+    await redis.del(`logincode:identity:${identityId}`);
 
     const identity = await this.identities
-      .findById(loginCode.identityId)
+      .findById(identityId)
       .exec();
-    await this.loginCodes.deleteOne({ _id: loginCode._id }).exec();
     if (!identity) {
       throw new UnauthorizedException(
         "Không tìm thấy tài khoản cho mã đăng nhập này.",

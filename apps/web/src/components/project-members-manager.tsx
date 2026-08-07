@@ -217,9 +217,16 @@ export function ProjectMembersManager({
     }
   }
 
-  const currentProjectMembers = workspaceMembers.filter((m) =>
-    selectedIds.includes(m._id),
+  const projectRolesMap = new Map(
+    initialProjectMembers.map((m) => [m._id, m.role]),
   );
+
+  const currentProjectMembers = workspaceMembers
+    .filter((m) => selectedIds.includes(m._id))
+    .map((m) => ({
+      ...m,
+      role: projectRolesMap.get(m._id) || m.role,
+    }));
 
   return (
     <div className="rounded-xl border border-border/70 bg-card/90 p-4 shadow-sm backdrop-blur-2xl w-full">
