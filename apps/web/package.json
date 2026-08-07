@@ -6,6 +6,7 @@
     "type": "http",
     "route": "/",
     "port": 3000,
+    "portEnv": "PORT",
     "priority": 0,
     "upstreams": {
       "api": {
