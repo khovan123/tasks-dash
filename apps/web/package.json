@@ -10,7 +10,8 @@
     "upstreams": {
       "api": {
         "package": "@tasks-dash/api",
-        "env": "INTERNAL_API_BASE_URL"
+        "env": "INTERNAL_API_BASE_URL",
+        "buildEnv": "NEXT_PUBLIC_API_BASE_URL"
       }
     }
   },
