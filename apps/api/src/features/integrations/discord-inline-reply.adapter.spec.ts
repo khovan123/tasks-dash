@@ -1,14 +1,15 @@
 import { DiscordInlineReplyAdapter } from "./discord-inline-reply.adapter";
 
 describe("DiscordInlineReplyAdapter", () => {
+  function createAdapterWithBotRequest(botRequest: jest.Mock): DiscordInlineReplyAdapter {
+    const adapter = Object.create(DiscordInlineReplyAdapter.prototype) as any;
+    adapter.botRequest = botRequest;
+    return adapter as DiscordInlineReplyAdapter;
+  }
+
   it("posts replies to the parent channel instead of treating the message id as a channel id", async () => {
     const botRequest = jest.fn().mockResolvedValue({ id: "reply-456" });
-    const adapter = Object.create(
-      DiscordInlineReplyAdapter.prototype,
-    ) as DiscordInlineReplyAdapter & {
-      botRequest: typeof botRequest;
-    };
-    adapter.botRequest = botRequest;
+    const adapter = createAdapterWithBotRequest(botRequest);
 
     const result = await adapter.sendThreadReply(
       "channel-123",
@@ -42,12 +43,7 @@ describe("DiscordInlineReplyAdapter", () => {
 
   it("keeps explicit Discord user mentions allowlisted", async () => {
     const botRequest = jest.fn().mockResolvedValue({ id: "reply-789" });
-    const adapter = Object.create(
-      DiscordInlineReplyAdapter.prototype,
-    ) as DiscordInlineReplyAdapter & {
-      botRequest: typeof botRequest;
-    };
-    adapter.botRequest = botRequest;
+    const adapter = createAdapterWithBotRequest(botRequest);
 
     await adapter.sendThreadReply(
       "channel-123",
