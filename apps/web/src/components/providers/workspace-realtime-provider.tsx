@@ -40,7 +40,9 @@ export function WorkspaceRealtimeProvider({
   initialProjects: RealtimeProject[];
 }) {
   const dispatch = useAppDispatch();
-  const workItemSyncTimersRef = useRef<Record<string, ReturnType<typeof setTimeout>>>({});
+  const workItemSyncTimersRef = useRef<
+    Record<string, ReturnType<typeof setTimeout>>
+  >({});
   const projectsSyncTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   useEffect(() => {
@@ -51,13 +53,13 @@ export function WorkspaceRealtimeProvider({
     let cancelled = false;
     let eventSource: EventSource | null = null;
     let reconnectTimer: ReturnType<typeof setTimeout> | null = null;
+    let hasConnected = false;
 
     async function heartbeat() {
       try {
-        const result = await apiRequest<{ presence: Record<string, MemberPresence> }>(
-          "/api/projects/presence",
-          { method: "POST" },
-        );
+        const result = await apiRequest<{
+          presence: Record<string, MemberPresence>;
+        }>("/api/projects/presence", { method: "POST" });
         if (!cancelled) {
           dispatch(setPresence(result.presence));
         }
@@ -83,7 +85,13 @@ export function WorkspaceRealtimeProvider({
           `/api/projects/${projectKey}/work-items`,
         );
         if (!cancelled) {
-          dispatch(replaceWorkItems({ projectKey, items }));
+          dispatch(
+            replaceWorkItems({
+              projectKey,
+              items,
+              bumpRevision: false,
+            }),
+          );
         }
       } catch {
         // Keep the last normalized snapshot when a transient sync fails.
@@ -139,7 +147,6 @@ export function WorkspaceRealtimeProvider({
           dispatch(bumpProjectRevision({ projectKey, resource: "project" }));
           break;
         case "PROJECT_MEMBERS_CHANGED":
-        case "members_updated":
           dispatch(bumpProjectRevision({ projectKey, resource: "members" }));
           break;
         case "DOCUMENTS_CHANGED":
@@ -156,7 +163,9 @@ export function WorkspaceRealtimeProvider({
     }
 
     function connect() {
-      dispatch(setConnectionStatus(reconnectTimer ? "reconnecting" : "connecting"));
+      dispatch(
+        setConnectionStatus(hasConnected ? "reconnecting" : "connecting"),
+      );
       const apiBaseUrl = process.env.NEXT_PUBLIC_API_BASE_URL || "";
       const sseUrl = apiBaseUrl
         ? `${apiBaseUrl.replace(/\/$/, "")}/projects/sse`
@@ -164,6 +173,7 @@ export function WorkspaceRealtimeProvider({
 
       eventSource = new EventSource(sseUrl, { withCredentials: true });
       eventSource.onopen = () => {
+        hasConnected = true;
         dispatch(setConnectionStatus("open"));
       };
       eventSource.onmessage = (event) => {
