@@ -1,6 +1,6 @@
 import { ProjectOverview } from "@/components/organisms/project-overview";
-import type { GithubRepositoryOption } from "@/components/repository-link-form";
 import { AppPage } from "@/components/templates/app-page";
+import type { GithubRepositoryOption } from "@/features/integrations/types";
 import { loadProjectWorkItemsContext } from "@/features/work-items/server/load-project-work-items-context";
 import { apiData } from "@/lib/server/api-data";
 import { apiProjectData } from "@/lib/server/project-access";

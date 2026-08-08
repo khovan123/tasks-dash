@@ -1,14 +1,12 @@
 "use client";
 
 import { useMemo } from "react";
-import { NewWorkItemModal } from "@/components/new-work-item-modal";
-import {
-  RepositoryLinkForm,
-  type GithubRepositoryOption,
-} from "@/components/repository-link-form";
 import { SectionHeading } from "@/components/molecules/section-heading";
+import { NewWorkItemModal } from "@/components/organisms/new-work-item-modal";
+import { RepositoryLinkForm } from "@/components/organisms/repository-link-form";
 import { WorkItemsTable } from "@/components/organisms/work-items-table";
 import { Card, CardContent, CardHeader } from "@/components/ui/card";
+import type { GithubRepositoryOption } from "@/features/integrations/types";
 import { useRealtimeProject } from "@/features/projects/hooks/use-realtime-project";
 import { useProjectWorkItems } from "@/features/work-items/hooks/use-project-work-items";
 import type {

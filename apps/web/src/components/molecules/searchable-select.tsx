@@ -43,7 +43,7 @@ export function SearchableSelect({
   placeholder: string;
   searchPlaceholder?: string;
   emptyText?: string;
-  groupOrder?: string[];
+  groupOrder?: readonly string[];
   disabled?: boolean;
   triggerId?: string;
   contentClassName?: string;
@@ -103,7 +103,9 @@ export function SearchableSelect({
           <CommandInput placeholder={searchPlaceholder} />
           <CommandList>
             <CommandEmpty>{emptyText}</CommandEmpty>
-            {ungrouped.length ? <CommandGroup>{renderOptions(ungrouped)}</CommandGroup> : null}
+            {ungrouped.length ? (
+              <CommandGroup>{renderOptions(ungrouped)}</CommandGroup>
+            ) : null}
             {groups.map((group) => {
               const grouped = options.filter((option) => option.group === group);
               return grouped.length ? (
