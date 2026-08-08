@@ -1,5 +1,5 @@
 import { MEMBER_ROLES } from "@tasks-dash/contracts";
-import { RealtimeDesignerCatalogManager } from "@/components/realtime-designer-catalog-manager";
+import { RealtimeDesignerCatalogManager } from "@/components/organisms/realtime-designer-catalog-manager";
 import { AppPage } from "@/components/templates/app-page";
 import {
   hasWorkspaceRole,
