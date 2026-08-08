@@ -9,13 +9,29 @@ import {
 } from "@tasks-dash/contracts";
 import { useRouter } from "next/navigation";
 import { Controller, FormProvider, useForm } from "react-hook-form";
-import { Clock, Info, MessageSquare, Plus, Zap } from "lucide-react";
+import {
+  Check,
+  ChevronsUpDown,
+  Clock,
+  Info,
+  MessageSquare,
+  Plus,
+  Zap,
+} from "lucide-react";
+import {
+  AUTOMATION_CHANNEL_OPTIONS,
+  AUTOMATION_CRON_PRESETS,
+  AUTOMATION_HELPER_VARIABLES,
+  AUTOMATION_TRIGGER_GROUPS,
+  AUTOMATION_TRIGGER_OPTIONS,
+  renderAutomationSamplePreview,
+} from "@/features/automations/config";
 import {
   DiscordAutomationValues,
   discordAutomationSchema,
 } from "@/features/automations/schemas/discord-automation.schema";
 import { apiRequest } from "@/lib/api/api-request";
-import { FormCard } from "@/components/layout/app-shell";
+import { FormCard } from "@/components/organisms/form-card";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import {
@@ -34,7 +50,6 @@ import {
   InputGroupText,
 } from "@/components/ui/input-group";
 import { Input } from "@/components/ui/input";
-import { Check, ChevronsUpDown } from "lucide-react";
 import {
   Popover,
   PopoverContent,
@@ -50,135 +65,7 @@ import {
 } from "@/components/ui/command";
 import { cn } from "@/lib/utils";
 import { Separator } from "@/components/ui/separator";
-import { Textarea } from "@/components/ui/textarea";
 
-const HELPER_VARIABLES = [
-  { code: "{{projectKey}}", label: "Mã dự án", example: "TD" },
-  { code: "{{workItemKey}}", label: "Mã Task", example: "TD-12" },
-  { code: "{{title}}", label: "Tiêu đề Event", example: "Fix auth bug" },
-  { code: "{{pullRequestNumber}}", label: "Số PR", example: "#42" },
-  {
-    code: "{{pullRequestUrl}}",
-    label: "Link PR",
-    example: "https://github...",
-  },
-  { code: "{{repositoryFullName}}", label: "Tên Repo", example: "org/repo" },
-  { code: "{{authorLogin}}", label: "Người tạo", example: "octocat" },
-];
-
-const CRON_PRESETS = [
-  { label: "Mỗi 5 phút", cron: "*/5 * * * *" },
-  { label: "Mỗi giờ", cron: "0 * * * *" },
-  { label: "9:00 Sáng hằng ngày", cron: "0 9 * * *" },
-  { label: "9:00 Sáng T2 - T6", cron: "0 9 * * 1-5" },
-];
-
-function renderSamplePreview(template: string, projectKey: string): string {
-  if (!template) return "";
-  return template
-    .replace(/\{\{projectKey\}\}/g, projectKey)
-    .replace(/\{\{workItemKey\}\}/g, `${projectKey}-42`)
-    .replace(/\{\{title\}\}/g, "Fix authentication token refresh issue")
-    .replace(/\{\{pullRequestNumber\}\}/g, "42")
-    .replace(
-      /\{\{pullRequestUrl\}\}/g,
-      `https://github.com/tasks-dash/app/pull/42`,
-    )
-    .replace(/\{\{repositoryFullName\}\}/g, "tasks-dash/app")
-    .replace(/\{\{authorLogin\}\}/g, "developer_bot");
-}
-const TRIGGER_OPTIONS = [
-  {
-    value: AUTOMATION_TRIGGERS.pullRequestOpened,
-    label: "GitHub · PR Opened (Tạo Pull Request)",
-    group: "GitHub Webhooks",
-  },
-  {
-    value: AUTOMATION_TRIGGERS.pullRequestMerged,
-    label: "GitHub · PR Merged (Merge Pull Request)",
-    group: "GitHub Webhooks",
-  },
-  {
-    value: AUTOMATION_TRIGGERS.pullRequestClosed,
-    label: "GitHub · PR Closed (Đóng Pull Request)",
-    group: "GitHub Webhooks",
-  },
-  {
-    value: AUTOMATION_TRIGGERS.pullRequestReviewCommented,
-    label: "GitHub · PR Review Comment (Bình luận PR)",
-    group: "GitHub Webhooks",
-  },
-  {
-    value: AUTOMATION_TRIGGERS.pullRequestApproved,
-    label: "GitHub · PR Approved (Duyệt Pull Request)",
-    group: "GitHub Webhooks",
-  },
-  {
-    value: AUTOMATION_TRIGGERS.githubPushCommit,
-    label: "GitHub · Push Commit (Push code mới)",
-    group: "GitHub Webhooks",
-  },
-  {
-    value: AUTOMATION_TRIGGERS.githubIssueCreated,
-    label: "GitHub · Issue Created (Tạo Issue mới)",
-    group: "GitHub Webhooks",
-  },
-  {
-    value: AUTOMATION_TRIGGERS.ciCdDeploymentSuccess,
-    label: "CI/CD · Build Success (Deployment thành công)",
-    group: "CI/CD & Builds",
-  },
-  {
-    value: AUTOMATION_TRIGGERS.ciCdDeploymentFailed,
-    label: "CI/CD · Build Failed (Deployment thất bại)",
-    group: "CI/CD & Builds",
-  },
-  {
-    value: AUTOMATION_TRIGGERS.workItemCreated,
-    label: "WorkItem · Task Created (Tạo Task mới)",
-    group: "WorkItem / Tasks",
-  },
-  {
-    value: AUTOMATION_TRIGGERS.workItemTransitioned,
-    label: "WorkItem · Task Status Changed (Chuyển trạng thái Task)",
-    group: "WorkItem / Tasks",
-  },
-  {
-    value: AUTOMATION_TRIGGERS.memberAdded,
-    label: "Workspace · Member Joined (Thành viên mới)",
-    group: "Workspace & Hệ thống",
-  },
-  {
-    value: AUTOMATION_TRIGGERS.documentCreated,
-    label: "Docs · Document Created (Tài liệu mới)",
-    group: "Workspace & Hệ thống",
-  },
-  {
-    value: AUTOMATION_TRIGGERS.documentDeleted,
-    label: "Docs · Document Deleted (Tài liệu bị xóa)",
-    group: "Workspace & Hệ thống",
-  },
-  {
-    value: AUTOMATION_TRIGGERS.designCatalogUpdated,
-    label: "Designer · Catalog Updated (Figma link cập nhật)",
-    group: "Workspace & Hệ thống",
-  },
-  {
-    value: AUTOMATION_TRIGGERS.scheduled,
-    label: "Scheduler · Cron Execution (Chạy theo lịch)",
-    group: "Workspace & Hệ thống",
-  },
-];
-const FALLBACK_CHANNELS = [
-  { id: "updates", name: "Kênh cập nhật chung (#updates)" },
-  { id: "deployment", name: "Kênh CI/CD & Deployments (#deployment)" },
-  { id: "docs", name: "Kênh Tài liệu (#docs)" },
-  { id: "general", name: "Kênh Thảo luận chung (#general)" },
-  { id: "designer", name: "Kênh Figma / Design (#designer)" },
-  { id: "members", name: "Kênh Thành viên (#members)" },
-  { id: "reports", name: "Kênh Báo cáo tiến độ (#reports)" },
-  { id: "meeting", name: "Kênh Họp team (#meeting)" },
-];
 export function AutomationCreateForm({ projectKey }: { projectKey: string }) {
   const router = useRouter();
   const [discordChannels, setDiscordChannels] = useState<
@@ -213,7 +100,7 @@ export function AutomationCreateForm({ projectKey }: { projectKey: string }) {
           form.setValue("channelType", channels[0].id || channels[0].name);
         }
       } catch {
-        /* fallback to predefined list */
+        // Fallback to the shared predefined channel catalog.
       } finally {
         if (active) setIsLoadingChannels(false);
       }
@@ -227,8 +114,8 @@ export function AutomationCreateForm({ projectKey }: { projectKey: string }) {
   const watchedTrigger = form.watch("trigger");
   const watchedTitle = form.watch("title");
   const watchedMessage = form.watch("message");
-  const previewTitle = renderSamplePreview(watchedTitle, projectKey);
-  const previewMessage = renderSamplePreview(watchedMessage, projectKey);
+  const previewTitle = renderAutomationSamplePreview(watchedTitle, projectKey);
+  const previewMessage = renderAutomationSamplePreview(watchedMessage, projectKey);
 
   async function submit(values: DiscordAutomationValues): Promise<void> {
     form.clearErrors("root");
@@ -319,8 +206,9 @@ export function AutomationCreateForm({ projectKey }: { projectKey: string }) {
                         className="w-full justify-between font-normal"
                       >
                         {field.value
-                          ? TRIGGER_OPTIONS.find((t) => t.value === field.value)
-                              ?.label
+                          ? AUTOMATION_TRIGGER_OPTIONS.find(
+                              (trigger) => trigger.value === field.value,
+                            )?.label
                           : "Chọn trigger sự kiện..."}
                         <ChevronsUpDown className="ml-2 size-4 shrink-0 opacity-50" />
                       </Button>
@@ -332,33 +220,28 @@ export function AutomationCreateForm({ projectKey }: { projectKey: string }) {
                           <CommandEmpty>
                             Không tìm thấy trigger nào.
                           </CommandEmpty>
-                          {[
-                            "GitHub Webhooks",
-                            "CI/CD & Builds",
-                            "WorkItem / Tasks",
-                            "Workspace & Hệ thống",
-                          ].map((groupName) => (
+                          {AUTOMATION_TRIGGER_GROUPS.map((groupName) => (
                             <CommandGroup key={groupName} heading={groupName}>
-                              {TRIGGER_OPTIONS.filter(
-                                (t) => t.group === groupName,
-                              ).map((opt) => (
+                              {AUTOMATION_TRIGGER_OPTIONS.filter(
+                                (trigger) => trigger.group === groupName,
+                              ).map((option) => (
                                 <CommandItem
-                                  key={opt.value}
-                                  value={opt.label}
+                                  key={option.value}
+                                  value={option.label}
                                   onSelect={() => {
-                                    field.onChange(opt.value);
+                                    field.onChange(option.value);
                                     setOpenTrigger(false);
                                   }}
                                 >
                                   <Check
                                     className={cn(
                                       "mr-2 size-4",
-                                      field.value === opt.value
+                                      field.value === option.value
                                         ? "opacity-100"
                                         : "opacity-0",
                                     )}
                                   />
-                                  {opt.label}
+                                  {option.label}
                                 </CommandItem>
                               ))}
                             </CommandGroup>
@@ -385,9 +268,9 @@ export function AutomationCreateForm({ projectKey }: { projectKey: string }) {
                   const channelList =
                     discordChannels.length > 0
                       ? discordChannels
-                      : FALLBACK_CHANNELS;
+                      : AUTOMATION_CHANNEL_OPTIONS;
                   const selectedChannel = channelList.find(
-                    (c) => c.id === field.value,
+                    (channel) => channel.id === field.value,
                   );
                   return (
                     <Popover open={openChannel} onOpenChange={setOpenChannel}>
@@ -451,7 +334,6 @@ export function AutomationCreateForm({ projectKey }: { projectKey: string }) {
             </Field>
           </FieldGroup>
 
-          {/* Conditional Cron setup */}
           {watchedTrigger === AUTOMATION_TRIGGERS.scheduled ? (
             <Field className="flex flex-col gap-3 rounded-lg border border-warning/40 bg-warning/10 p-4">
               <FieldLabel
@@ -471,7 +353,7 @@ export function AutomationCreateForm({ projectKey }: { projectKey: string }) {
                 <span className="mr-1 self-center text-xs text-muted-foreground">
                   Lịch mẫu:
                 </span>
-                {CRON_PRESETS.map((preset) => (
+                {AUTOMATION_CRON_PRESETS.map((preset) => (
                   <Badge
                     key={preset.cron}
                     variant="secondary"
@@ -507,17 +389,19 @@ export function AutomationCreateForm({ projectKey }: { projectKey: string }) {
               Biến có sẵn (Bấm để chèn nhanh vào Nội dung)
             </div>
             <div className="flex flex-wrap gap-1.5">
-              {HELPER_VARIABLES.map((v) => (
-                <div key={v.code} className="inline-flex items-center gap-1">
+              {AUTOMATION_HELPER_VARIABLES.map((variable) => (
+                <div key={variable.code} className="inline-flex items-center gap-1">
                   <Badge
                     variant="outline"
                     className="cursor-pointer bg-background font-mono text-[11px]"
-                    onClick={() => appendVariable("message", v.code)}
-                    title={`Chèn ${v.code} vào Nội dung`}
+                    onClick={() => appendVariable("message", variable.code)}
+                    title={`Chèn ${variable.code} vào Nội dung`}
                   >
                     <Plus className="mr-0.5 size-3" />
-                    {v.label}{" "}
-                    <span className="opacity-60 font-mono">({v.code})</span>
+                    {variable.label}{" "}
+                    <span className="opacity-60 font-mono">
+                      ({variable.code})
+                    </span>
                   </Badge>
                 </div>
               ))}

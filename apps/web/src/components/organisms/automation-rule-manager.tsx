@@ -2,6 +2,12 @@
 
 import { useState } from "react";
 import { AlertTriangle, Clock, Play, Power, Trash2 } from "lucide-react";
+import {
+  automationChannelLabel,
+  automationModeLabel,
+  automationTriggerLabel,
+} from "@/features/automations/config";
+import type { AutomationRule } from "@/features/automations/types";
 import { apiRequest } from "@/lib/api/api-request";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import {
@@ -18,60 +24,12 @@ import {
 } from "@/components/ui/alert-dialog";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
-import { Empty, EmptyDescription, EmptyHeader, EmptyTitle } from "@/components/ui/empty";
-
-export interface AutomationRule {
-  _id: string;
-  name: string;
-  isSystem?: boolean;
-  enabled: boolean;
-  trigger: string;
-  executionMode: string;
-  cronExpression?: string;
-  actions?: Array<{
-    type: string;
-    config?: { channelType?: string; title?: string; message?: string };
-  }>;
-  runCount: number;
-  lastRunAt?: string;
-  lastResult?: string;
-  lastError?: string;
-}
-
-const TRIGGER_LABELS: Record<string, string> = {
-  PULL_REQUEST_OPENED: "GitHub · Tạo Pull Request",
-  PULL_REQUEST_MERGED: "GitHub · PR Merged (Merge PR)",
-  PULL_REQUEST_CLOSED: "GitHub · PR Closed (Đóng PR)",
-  PULL_REQUEST_REVIEW_COMMENTED: "GitHub · PR Review / Comment",
-  PULL_REQUEST_APPROVED: "GitHub · PR Approved (Duyệt PR)",
-  GITHUB_PUSH_COMMIT: "GitHub · Push Commit mới",
-  GITHUB_ISSUE_CREATED: "GitHub · Tạo Issue mới",
-  CICD_DEPLOYMENT_SUCCESS: "CI/CD · Deployment Thành công",
-  CICD_DEPLOYMENT_FAILED: "CI/CD · Deployment Thất bại",
-  WORK_ITEM_CREATED: "Task · Tạo Task mới",
-  WORK_ITEM_TRANSITIONED: "Task · Chuyển trạng thái Task",
-  MEMBER_ADDED: "Workspace · Thành viên gia nhập",
-  DOCUMENT_CREATED: "Docs · Tạo tài liệu mới",
-  DOCUMENT_DELETED: "Docs · Xóa tài liệu",
-  DESIGN_CATALOG_UPDATED: "Designer · Figma catalog cập nhật",
-  SCHEDULED: "Lịch chạy định kỳ (Cron)",
-};
-
-const MODE_LABELS: Record<string, string> = {
-  EVENT: "Sự kiện (Realtime)",
-  SCHEDULED: "Lịch định kỳ (Scheduled)",
-};
-
-const CHANNEL_LABELS: Record<string, string> = {
-  updates: "#updates (Cập nhật)",
-  deployment: "#deployment (CI/CD)",
-  docs: "#docs (Tài liệu)",
-  general: "#general (Thảo luận)",
-  designer: "#designer (Design)",
-  members: "#members (Thành viên)",
-  reports: "#reports (Báo cáo)",
-  meeting: "#meeting (Họp team)",
-};
+import {
+  Empty,
+  EmptyDescription,
+  EmptyHeader,
+  EmptyTitle,
+} from "@/components/ui/empty";
 
 export function AutomationRuleManager({
   projectKey,
@@ -100,7 +58,7 @@ export function AutomationRuleManager({
         ),
       );
     } catch {
-      // Revert on error
+      // Keep current state when the server rejects the toggle.
     } finally {
       setTogglingId(null);
     }
@@ -119,11 +77,11 @@ export function AutomationRuleManager({
         );
       }
     } catch (cause) {
-      const msg = cause instanceof Error ? cause.message : "Chạy thất bại";
+      const message = cause instanceof Error ? cause.message : "Chạy thất bại";
       setRules((prev) =>
         prev.map((item) =>
           item._id === rule._id
-            ? { ...item, lastResult: "FAILED", lastError: msg }
+            ? { ...item, lastResult: "FAILED", lastError: message }
             : item,
         ),
       );
@@ -139,7 +97,7 @@ export function AutomationRuleManager({
       });
       setRules((prev) => prev.filter((item) => item._id !== ruleId));
     } catch {
-      // ignore
+      // Keep the rule visible when delete fails.
     }
   }
 
@@ -188,14 +146,14 @@ export function AutomationRuleManager({
                 <span>
                   Kích hoạt:{" "}
                   <strong className="font-medium text-foreground">
-                    {TRIGGER_LABELS[rule.trigger] ?? rule.trigger}
+                    {automationTriggerLabel(rule.trigger)}
                   </strong>
                 </span>
                 <span>•</span>
                 <span>
                   Chế độ:{" "}
                   <strong className="font-medium text-foreground">
-                    {MODE_LABELS[rule.executionMode] ?? rule.executionMode}
+                    {automationModeLabel(rule.executionMode)}
                   </strong>
                 </span>
                 {rule.cronExpression ? (
@@ -216,7 +174,7 @@ export function AutomationRuleManager({
                     <span>
                       Kênh:{" "}
                       <span className="font-medium text-foreground">
-                        {CHANNEL_LABELS[channelType] ?? `#${channelType}`}
+                        {automationChannelLabel(channelType)}
                       </span>
                     </span>
                   </>
@@ -234,9 +192,8 @@ export function AutomationRuleManager({
                 </p>
               </div>
 
-              {canManage && (
+              {canManage ? (
                 <div className="flex items-center gap-1.5">
-                  {/* Toggle Button */}
                   <Button
                     variant={rule.enabled ? "default" : "outline"}
                     size="sm"
@@ -253,7 +210,6 @@ export function AutomationRuleManager({
                     {rule.enabled ? "Tắt" : "Bật"}
                   </Button>
 
-                  {/* Manual Run Button */}
                   <Button
                     variant="ghost"
                     size="sm"
@@ -266,7 +222,6 @@ export function AutomationRuleManager({
                     {isRunning ? "Đang chạy…" : "Chạy thử"}
                   </Button>
 
-                  {/* Delete Button */}
                   <AlertDialog>
                     <AlertDialogTrigger asChild>
                       <Button
@@ -304,7 +259,7 @@ export function AutomationRuleManager({
                     </AlertDialogContent>
                   </AlertDialog>
                 </div>
-              )}
+              ) : null}
             </div>
 
             {rule.lastError ? (
