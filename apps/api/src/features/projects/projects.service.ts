@@ -103,7 +103,6 @@ export class ProjectsService {
       project.memberRoles = new Map();
     }
 
-    // Fetch members from db to get their workspace role
     const objectIds = memberIds
       .filter((id) => Types.ObjectId.isValid(id))
       .map((id) => new Types.ObjectId(id));
@@ -113,7 +112,6 @@ export class ProjectsService {
       .toArray();
     const roleMap = new Map(members.map((m) => [String(m._id), m.role]));
 
-    // Default new members to their workspace role
     for (const memberId of memberIds) {
       if (!project.memberRoles.has(memberId)) {
         const workspaceRole = roleMap.get(memberId) || MEMBER_ROLES.dev;
@@ -121,7 +119,6 @@ export class ProjectsService {
       }
     }
 
-    // Clean up removed members
     for (const roleKey of Array.from(project.memberRoles.keys())) {
       if (!memberIds.includes(roleKey)) {
         project.memberRoles.delete(roleKey);
@@ -236,6 +233,12 @@ export class ProjectsService {
     }
     project.repositoryFullName = normalizedRepository;
     await project.save();
+    this.realtime.emit({
+      type: PROJECT_REALTIME_EVENT_TYPES.projectChanged,
+      workspaceId,
+      projectKey: project.key,
+      data: { repositoryFullName: normalizedRepository },
+    });
     return project;
   }
 
@@ -246,6 +249,12 @@ export class ProjectsService {
     const project = await this.getByKey(workspaceId, projectKey);
     project.repositoryFullName = undefined;
     await project.save();
+    this.realtime.emit({
+      type: PROJECT_REALTIME_EVENT_TYPES.projectChanged,
+      workspaceId,
+      projectKey: project.key,
+      data: { repositoryFullName: null },
+    });
     return project;
   }
 
@@ -278,6 +287,12 @@ export class ProjectsService {
     project.discordDocsChannelName = channels.docsChannelName;
     project.discordProvisionedAt = new Date();
     await project.save();
+    this.realtime.emit({
+      type: PROJECT_REALTIME_EVENT_TYPES.projectChanged,
+      workspaceId,
+      projectKey: project.key,
+      data: { discordChannelsUpdated: true },
+    });
     return project;
   }
 
@@ -326,7 +341,6 @@ export class ProjectsService {
       throw new NotFoundException(`Project ${normalizedKey} was not found.`);
     }
 
-    // Force clean up all project-related database collections
     const collectionsToClean = [
       "work_items",
       "sprints",
@@ -346,8 +360,8 @@ export class ProjectsService {
           workspaceId,
           projectKey: normalizedKey,
         });
-      } catch (err) {
-        // ignore individual collection clean up failure
+      } catch {
+        // Ignore individual collection cleanup failure.
       }
     }
 
@@ -357,7 +371,7 @@ export class ProjectsService {
         projectKey: normalizedKey,
       } satisfies ProjectDeletedEvent);
     } catch {
-      // ignore event emission failure to keep deletion resilient
+      // Ignore event emission failure to keep deletion resilient.
     }
     this.events$.next({
       type: "deleted",
