@@ -14,6 +14,7 @@ export function FormCard({
   children,
   footer,
 }: {
+  eyebrow?: string;
   title: ReactNode;
   description?: ReactNode;
   children: ReactNode;
