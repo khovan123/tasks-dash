@@ -10,7 +10,6 @@ export interface RealtimeProject {
   repositoryFullName?: string;
   discordDocsChannelId?: string;
   discordDocsChannelName?: string;
-  [key: string]: unknown;
 }
 
 export interface RealtimeWorkItem {
@@ -307,7 +306,11 @@ const realtimeSlice = createSlice({
         resource: keyof ProjectRealtimeRevisions;
       }>,
     ) {
-      bumpRevision(state, action.payload.projectKey, action.payload.resource);
+      bumpRevision(
+        state,
+        action.payload.projectKey,
+        action.payload.resource,
+      );
     },
     setConnectionStatus(
       state,
@@ -368,7 +371,8 @@ export function selectWorkItemsByProject(projectKey: string) {
   return createSelector(
     [
       (state: RealtimeRootState) => state.realtime.workItemsByProject[key]?.ids,
-      (state: RealtimeRootState) => state.realtime.workItemsByProject[key]?.entities,
+      (state: RealtimeRootState) =>
+        state.realtime.workItemsByProject[key]?.entities,
     ],
     (ids = [], entities = {}) =>
       ids.map((id) => entities[id]).filter(Boolean) as RealtimeWorkItem[],
@@ -384,9 +388,7 @@ export function selectWorkItemsHydrated(projectKey: string) {
 export function selectDocumentTree(projectKey: string) {
   const key = normalizeProjectKey(projectKey);
   return createSelector(
-    [
-      (state: RealtimeRootState) => state.realtime.documentsByProject[key],
-    ],
+    [(state: RealtimeRootState) => state.realtime.documentsByProject[key]],
     (documentsState): RealtimeDocumentTree | null => {
       if (!documentsState?.hydrated || !documentsState.meta) return null;
       return {
