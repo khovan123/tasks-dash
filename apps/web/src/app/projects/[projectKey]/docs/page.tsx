@@ -1,11 +1,8 @@
-import { MEMBER_ROLES, type MemberRole } from "@tasks-dash/contracts";
+import Link from "next/link";
+import { MEMBER_ROLES } from "@tasks-dash/contracts";
 import { FileArchive } from "lucide-react";
-import type { JiraShellSession } from "@/components/layout/jira-app-shell";
-import { RealtimeDiscordDocumentManager } from "@/components/realtime-discord-document-manager";
-import type { DiscordDocumentTree } from "@/components/discord-document-manager";
-import { apiData } from "@/lib/server/api-data";
-import { redirectIfProjectAccessLost } from "@/lib/server/project-access";
-import { AppPage } from "@/components/layout/app-shell";
+import { RealtimeDiscordDocumentManager } from "@/components/organisms/realtime-discord-document-manager";
+import { AppPage } from "@/components/templates/app-page";
 import { Button } from "@/components/ui/button";
 import {
   Empty,
@@ -14,34 +11,15 @@ import {
   EmptyHeader,
   EmptyTitle,
 } from "@/components/ui/empty";
-import Link from "next/link";
+import type { DiscordDocumentTree } from "@/features/documents/types";
+import {
+  hasWorkspaceRole,
+  loadWorkspaceAccess,
+} from "@/features/members/server/load-workspace-access";
+import { apiData } from "@/lib/server/api-data";
+import { redirectIfProjectAccessLost } from "@/lib/server/project-access";
 
 export const dynamic = "force-dynamic";
-
-interface WorkspaceMember {
-  _id: string;
-  name: string;
-  email: string;
-  avatarUrl: string;
-  role: MemberRole;
-  status: string;
-  lastLoginAt?: string;
-}
-
-interface WorkspaceInvitation {
-  _id: string;
-  email: string;
-  role: MemberRole;
-  status: string;
-  expiresAt: string;
-  lastSentAt?: string;
-}
-
-interface WorkspaceMembersResponse {
-  workspace: { workspaceId: string; name: string; slug?: string };
-  members: WorkspaceMember[];
-  invitations: WorkspaceInvitation[];
-}
 
 export default async function ProjectDocsPage({
   params,
@@ -50,23 +28,19 @@ export default async function ProjectDocsPage({
 }) {
   const { projectKey } = await params;
   const key = projectKey.toUpperCase();
-  const [workspaceMembers, session] = await Promise.all([
-    apiData<WorkspaceMembersResponse>("/workspace/members"),
-    apiData<JiraShellSession>("/auth/me"),
+  const { currentRole } = await loadWorkspaceAccess();
+  const canManageDocuments = hasWorkspaceRole(currentRole, [
+    MEMBER_ROLES.owner,
+    MEMBER_ROLES.ba,
   ]);
-  const currentRole =
-    workspaceMembers.members.find((member) => member.email === session.email)
-      ?.role ?? null;
-  const canManageDocuments =
-    currentRole === MEMBER_ROLES.owner || currentRole === MEMBER_ROLES.ba;
+
   let tree: DiscordDocumentTree | null = null;
   let error: string | null = null;
   try {
     tree = await apiData<DiscordDocumentTree>(`/projects/${key}/documents`);
   } catch (cause) {
     redirectIfProjectAccessLost(cause);
-    error =
-      cause instanceof Error ? cause.message : "Không thể tải Discord Docs.";
+    error = cause instanceof Error ? cause.message : "Không thể tải Discord Docs.";
   }
 
   return (

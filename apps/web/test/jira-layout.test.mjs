@@ -7,10 +7,22 @@ async function source(path) {
 }
 
 test("authenticated pages keep the Jira-style application shell", async () => {
-  const [layout, shell, dashboard] = await Promise.all([
+  const [
+    layout,
+    shell,
+    dashboardPage,
+    projectProgress,
+    membersCard,
+    activityCard,
+    kpiGrid,
+  ] = await Promise.all([
     source("src/app/layout.tsx"),
     source("src/components/layout/jira-app-shell.tsx"),
     source("src/app/page.tsx"),
+    source("src/components/organisms/dashboard-project-progress.tsx"),
+    source("src/components/organisms/dashboard-members-card.tsx"),
+    source("src/components/organisms/dashboard-activity-card.tsx"),
+    source("src/components/organisms/dashboard-kpi-grid.tsx"),
   ]);
 
   assert.match(layout, /JiraAppShell/);
@@ -22,9 +34,14 @@ test("authenticated pages keep the Jira-style application shell", async () => {
   assert.match(shell, /\/backlog/);
   assert.match(shell, /\/docs/);
   assert.match(shell, /WorkspaceSwitcher/);
-  assert.match(dashboard, /Project progress/);
-  assert.match(dashboard, /Current members/);
-  assert.match(dashboard, /Daily work activity/);
-  assert.match(dashboard, /Open pull requests/);
-  assert.equal(dashboard.includes("demoData"), false);
+
+  assert.match(dashboardPage, /DashboardProjectProgress/);
+  assert.match(dashboardPage, /DashboardMembersCard/);
+  assert.match(dashboardPage, /DashboardActivityCard/);
+  assert.match(dashboardPage, /DashboardKpiGrid/);
+  assert.match(projectProgress, /Project progress/);
+  assert.match(membersCard, /Current members/);
+  assert.match(activityCard, /Daily work activity/);
+  assert.match(kpiGrid, /Open pull requests/);
+  assert.equal(dashboardPage.includes("demoData"), false);
 });

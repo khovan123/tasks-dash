@@ -1,33 +1,8 @@
-import { BacklogBoard } from "@/components/backlog-board";
-import type { GithubWorkItemView } from "@/components/github-work-item-links";
-import { apiData } from "@/lib/server/api-data";
-import { apiProjectData } from "@/lib/server/project-access";
-import { AppPage } from "@/components/layout/app-shell";
+import { BacklogBoard } from "@/components/organisms/backlog-board";
+import { AppPage } from "@/components/templates/app-page";
+import { loadProjectWorkItemsContext } from "@/features/work-items/server/load-project-work-items-context";
 
 export const dynamic = "force-dynamic";
-
-interface WorkItem {
-  key: string;
-  summary: string;
-  type: string;
-  priority: string;
-  statusId: string;
-  rank: number;
-  dueDate?: string;
-  startDate?: string;
-  startedAt?: string;
-  github?: GithubWorkItemView;
-}
-interface Workflow {
-  statuses: Array<{ id: string; name: string; color?: string }>;
-}
-
-interface WorkspaceMember {
-  _id: string;
-  name: string;
-  email: string;
-  avatarUrl?: string;
-}
 
 export default async function BacklogPage({
   params,
@@ -35,49 +10,17 @@ export default async function BacklogPage({
   params: Promise<{ projectKey: string }>;
 }) {
   const { projectKey } = await params;
-  const key = projectKey.toUpperCase();
-  const [items, workflow, membersData, session] = await Promise.all([
-    apiProjectData<WorkItem[]>(`/projects/${key}/work-items`),
-    apiProjectData<Workflow | null>(`/projects/${key}/workflow`),
-    apiProjectData<{ projectMembers: any[]; workspaceMembers: any[] }>(`/projects/${key}/members`),
-    apiData<{ email: string }>("/auth/me"),
-  ]);
-  const statusNames = Object.fromEntries(
-    (workflow?.statuses ?? []).map((status) => [status.id, status.name]),
-  );
-  const statuses = workflow?.statuses ?? [
-    { id: "TO_DO", name: "ToDo", color: "#9ca3af" },
-    { id: "IN_PROGRESS", name: "In Progress", color: "#2563eb" },
-    { id: "REVIEW", name: "Review", color: "#7c3aed" },
-    { id: "REQUEST_CHANGE", name: "Request Change", color: "#dc2626" },
-    { id: "DONE", name: "Done", color: "#16a34a" },
-  ];
-  const members = membersData.projectMembers.map((member) => ({
-    id: member._id,
-    name: member.name,
-    email: member.email,
-    avatarUrl: member.avatarUrl,
-    githubLogin: member.githubLogin,
-    discordUsername: member.discordUsername,
-  }));
-  const normalizedItems = items.map((item) => ({
-    ...item,
-    startDate: item.startDate ?? item.startedAt,
-  }));
-
-  const currentMemberRole =
-    membersData.workspaceMembers?.find((member) => member.email === session.email)?.role ?? null;
-  const canCreateWorkItem = currentMemberRole === "OWNER" || currentMemberRole === "DEV";
+  const context = await loadProjectWorkItemsContext(projectKey);
 
   return (
     <AppPage>
       <BacklogBoard
-        projectKey={key}
-        initialItems={normalizedItems}
-        statusNames={statusNames}
-        statuses={statuses}
-        members={members}
-        canManageTasks={canCreateWorkItem}
+        projectKey={context.key}
+        initialItems={context.items}
+        statusNames={context.statusNames}
+        statuses={context.statuses}
+        members={context.members}
+        canManageTasks={context.canManageTasks}
       />
     </AppPage>
   );

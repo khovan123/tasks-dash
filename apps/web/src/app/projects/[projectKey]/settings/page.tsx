@@ -1,10 +1,12 @@
-import { MEMBER_ROLES, type MemberRole } from "@tasks-dash/contracts";
-import type { JiraShellSession } from "@/components/layout/jira-app-shell";
-import { apiData } from "@/lib/server/api-data";
-import { apiProjectData } from "@/lib/server/project-access";
-import { AppPage } from "@/components/layout/app-shell";
-import { ProjectSettingsForm } from "@/components/project-settings-form";
+import { MEMBER_ROLES } from "@tasks-dash/contracts";
+import { ProjectSettingsForm } from "@/components/organisms/project-settings-form";
+import { AppPage } from "@/components/templates/app-page";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
+import {
+  hasWorkspaceRole,
+  loadWorkspaceAccess,
+} from "@/features/members/server/load-workspace-access";
+import { apiProjectData } from "@/lib/server/project-access";
 
 export const dynamic = "force-dynamic";
 
@@ -15,31 +17,6 @@ interface Project {
   color?: string;
 }
 
-interface WorkspaceMember {
-  _id: string;
-  name: string;
-  email: string;
-  avatarUrl: string;
-  role: MemberRole;
-  status: string;
-  lastLoginAt?: string;
-}
-
-interface WorkspaceInvitation {
-  _id: string;
-  email: string;
-  role: MemberRole;
-  status: string;
-  expiresAt: string;
-  lastSentAt?: string;
-}
-
-interface WorkspaceMembersResponse {
-  workspace: { workspaceId: string; name: string; slug?: string };
-  members: WorkspaceMember[];
-  invitations: WorkspaceInvitation[];
-}
-
 export default async function ProjectSettingsPage({
   params,
 }: {
@@ -47,14 +24,11 @@ export default async function ProjectSettingsPage({
 }) {
   const { projectKey } = await params;
   const key = projectKey.toUpperCase();
-  const [project, workspaceMembers, session] = await Promise.all([
+  const [project, access] = await Promise.all([
     apiProjectData<Project>(`/projects/${key}`),
-    apiData<WorkspaceMembersResponse>("/workspace/members"),
-    apiData<JiraShellSession>("/auth/me"),
+    loadWorkspaceAccess(),
   ]);
-  const canManage =
-    workspaceMembers.members.find((member) => member.email === session.email)
-      ?.role === MEMBER_ROLES.owner;
+  const canManage = hasWorkspaceRole(access.currentRole, [MEMBER_ROLES.owner]);
 
   return (
     <AppPage>
