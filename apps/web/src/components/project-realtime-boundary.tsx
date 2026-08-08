@@ -1,47 +1,11 @@
 "use client";
 
 import { useEffect, useRef, type ReactNode } from "react";
-import { usePathname, useRouter } from "next/navigation";
+import { useRouter } from "next/navigation";
 import { toast } from "sonner";
 import { apiRequest, ApiRequestError } from "@/lib/api/api-request";
 import { useAppSelector } from "@/lib/store/hooks";
-import {
-  selectProjectRevisions,
-  type ProjectRealtimeRevisions,
-} from "@/lib/store/realtime-slice";
-
-function routeNeedsServerRefresh(
-  previous: ProjectRealtimeRevisions,
-  current: ProjectRealtimeRevisions,
-  pathname: string,
-  projectKey: string,
-): boolean {
-  const projectBasePath = `/projects/${projectKey}`;
-
-  if (
-    current.project !== previous.project ||
-    current.members !== previous.members
-  ) {
-    return true;
-  }
-
-  if (current.workItems !== previous.workItems) {
-    return (
-      pathname === projectBasePath ||
-      pathname === `${projectBasePath}/development`
-    );
-  }
-
-  if (current.documents !== previous.documents) {
-    return pathname === `${projectBasePath}/docs`;
-  }
-
-  if (current.designCatalog !== previous.designCatalog) {
-    return pathname === `${projectBasePath}/designer`;
-  }
-
-  return false;
-}
+import { selectProjectRevisions } from "@/lib/store/realtime-slice";
 
 export function ProjectRealtimeBoundary({
   children,
@@ -52,49 +16,43 @@ export function ProjectRealtimeBoundary({
   projectKey: string;
   projectName: string;
 }) {
-  const pathname = usePathname();
   const router = useRouter();
-  const revisionsSelector = selectProjectRevisions(projectKey);
-  const revisions = useAppSelector(revisionsSelector);
-  const previousRevisionsRef = useRef(revisions);
+  const revisions = useAppSelector(selectProjectRevisions(projectKey));
+  const previousProjectRevisionRef = useRef(revisions.project);
+  const previousMembersRevisionRef = useRef(revisions.members);
   const removalHandledRef = useRef(false);
 
   useEffect(() => {
-    const previous = previousRevisionsRef.current;
-    previousRevisionsRef.current = revisions;
+    const projectChanged = revisions.project !== previousProjectRevisionRef.current;
+    const membersChanged = revisions.members !== previousMembersRevisionRef.current;
 
-    if (previous === revisions) return;
+    previousProjectRevisionRef.current = revisions.project;
+    previousMembersRevisionRef.current = revisions.members;
 
-    const accessMayHaveChanged =
-      revisions.project !== previous.project ||
-      revisions.members !== previous.members;
+    if (!projectChanged && !membersChanged) return;
 
-    async function applyRealtimeRevision() {
-      if (accessMayHaveChanged) {
-        try {
-          await apiRequest(`/api/projects/${projectKey}`);
-        } catch (error) {
-          if (
-            error instanceof ApiRequestError &&
-            (error.status === 403 || error.status === 404)
-          ) {
-            if (!removalHandledRef.current) {
-              removalHandledRef.current = true;
-              toast.error(`Bạn đã bị gỡ khỏi dự án ${projectName}.`);
-            }
-            router.replace("/");
-            return;
+    async function verifyAccess() {
+      try {
+        await apiRequest(`/api/projects/${projectKey}`);
+        // Permissions are still resolved by server-rendered page loaders. Refresh
+        // only when membership/role changes, never for ordinary project data.
+        if (membersChanged) router.refresh();
+      } catch (error) {
+        if (
+          error instanceof ApiRequestError &&
+          (error.status === 403 || error.status === 404)
+        ) {
+          if (!removalHandledRef.current) {
+            removalHandledRef.current = true;
+            toast.error(`Bạn đã bị gỡ khỏi dự án ${projectName}.`);
           }
+          router.replace("/");
         }
-      }
-
-      if (routeNeedsServerRefresh(previous, revisions, pathname, projectKey)) {
-        router.refresh();
       }
     }
 
-    void applyRealtimeRevision();
-  }, [pathname, projectKey, projectName, revisions, router]);
+    void verifyAccess();
+  }, [projectKey, projectName, revisions.members, revisions.project, router]);
 
   return children;
 }
