@@ -20,6 +20,11 @@ export interface DevelopmentPullRequest {
   checkState: "success" | "failure" | "pending" | null;
 }
 
+export interface DevelopmentEnvVar {
+  key: string;
+  value: string;
+}
+
 export interface DevelopmentMember {
   _id: string;
   email: string;
