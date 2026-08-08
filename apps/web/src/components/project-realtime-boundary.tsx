@@ -4,40 +4,39 @@ import { useEffect, useRef, type ReactNode } from "react";
 import { usePathname, useRouter } from "next/navigation";
 import { toast } from "sonner";
 import { apiRequest, ApiRequestError } from "@/lib/api/api-request";
+import { useAppSelector } from "@/lib/store/hooks";
+import {
+  selectProjectRevisions,
+  type ProjectRealtimeRevisions,
+} from "@/lib/store/realtime-slice";
 
-const WORK_ITEM_EVENT_TYPE = "WORK_ITEMS_CHANGED";
-const PROJECT_MEMBERS_EVENT_TYPE = "PROJECT_MEMBERS_CHANGED";
-const PROJECT_CHANGED_EVENT_TYPE = "PROJECT_CHANGED";
-const DOCUMENTS_CHANGED_EVENT_TYPE = "DOCUMENTS_CHANGED";
-const DESIGN_CATALOG_CHANGED_EVENT_TYPE = "DESIGN_CATALOG_CHANGED";
-const PRESENCE_CHANGED_EVENT_TYPE = "PRESENCE_CHANGED";
-
-function shouldRefreshProjectRoute(
-  type: string,
+function routeNeedsServerRefresh(
+  previous: ProjectRealtimeRevisions,
+  current: ProjectRealtimeRevisions,
   pathname: string,
   projectKey: string,
 ): boolean {
   const projectBasePath = `/projects/${projectKey}`;
 
   if (
-    type === PROJECT_CHANGED_EVENT_TYPE ||
-    type === PROJECT_MEMBERS_EVENT_TYPE
+    current.project !== previous.project ||
+    current.members !== previous.members
   ) {
     return true;
   }
 
-  if (type === WORK_ITEM_EVENT_TYPE) {
+  if (current.workItems !== previous.workItems) {
     return (
       pathname === projectBasePath ||
       pathname === `${projectBasePath}/development`
     );
   }
 
-  if (type === DOCUMENTS_CHANGED_EVENT_TYPE) {
+  if (current.documents !== previous.documents) {
     return pathname === `${projectBasePath}/docs`;
   }
 
-  if (type === DESIGN_CATALOG_CHANGED_EVENT_TYPE) {
+  if (current.designCatalog !== previous.designCatalog) {
     return pathname === `${projectBasePath}/designer`;
   }
 
@@ -55,94 +54,47 @@ export function ProjectRealtimeBoundary({
 }) {
   const pathname = usePathname();
   const router = useRouter();
+  const revisionsSelector = selectProjectRevisions(projectKey);
+  const revisions = useAppSelector(revisionsSelector);
+  const previousRevisionsRef = useRef(revisions);
   const removalHandledRef = useRef(false);
 
   useEffect(() => {
-    let eventSource: EventSource | null = null;
-    let reconnectTimeout: NodeJS.Timeout | null = null;
+    const previous = previousRevisionsRef.current;
+    previousRevisionsRef.current = revisions;
 
-    async function ensureProjectAccess(): Promise<boolean> {
-      try {
-        await apiRequest(`/api/projects/${projectKey}`);
-        return true;
-      } catch (error) {
-        if (
-          error instanceof ApiRequestError &&
-          (error.status === 403 || error.status === 404)
-        ) {
-          if (!removalHandledRef.current) {
-            removalHandledRef.current = true;
-            toast.error(`Bạn đã bị gỡ khỏi dự án ${projectName}.`);
+    if (previous === revisions) return;
+
+    const accessMayHaveChanged =
+      revisions.project !== previous.project ||
+      revisions.members !== previous.members;
+
+    async function applyRealtimeRevision() {
+      if (accessMayHaveChanged) {
+        try {
+          await apiRequest(`/api/projects/${projectKey}`);
+        } catch (error) {
+          if (
+            error instanceof ApiRequestError &&
+            (error.status === 403 || error.status === 404)
+          ) {
+            if (!removalHandledRef.current) {
+              removalHandledRef.current = true;
+              toast.error(`Bạn đã bị gỡ khỏi dự án ${projectName}.`);
+            }
+            router.replace("/");
+            return;
           }
-          router.replace("/");
-          router.refresh();
-          return false;
         }
-        return true;
+      }
+
+      if (routeNeedsServerRefresh(previous, revisions, pathname, projectKey)) {
+        router.refresh();
       }
     }
 
-    const refreshProject = async (type: string) => {
-      if (type === PRESENCE_CHANGED_EVENT_TYPE) {
-        return;
-      }
-
-      if (
-        type === PROJECT_MEMBERS_EVENT_TYPE ||
-        type === PROJECT_CHANGED_EVENT_TYPE
-      ) {
-        const hasAccess = await ensureProjectAccess();
-        if (!hasAccess) return;
-      }
-
-      if (!shouldRefreshProjectRoute(type, pathname, projectKey)) {
-        return;
-      }
-
-      router.refresh();
-    };
-
-    const connect = () => {
-      const apiBaseUrl = process.env.NEXT_PUBLIC_API_BASE_URL || "";
-      const sseUrl = apiBaseUrl
-        ? `${apiBaseUrl.replace(/\/$/, "")}/projects/${projectKey}/sse`
-        : `/api/projects/${projectKey}/sse`;
-
-      eventSource = new EventSource(sseUrl, { withCredentials: true });
-
-      eventSource.onmessage = (event) => {
-        try {
-          if (event.data === "ping") return;
-          const payload = JSON.parse(event.data) as { type: string };
-          void refreshProject(payload.type);
-        } catch (error) {
-          console.error("Failed to parse project SSE payload", error);
-        }
-      };
-
-      eventSource.onerror = (error) => {
-        console.warn(
-          "Project SSE connection encountered an issue. Reconnecting in 5s...",
-          error,
-        );
-        if (eventSource) {
-          eventSource.close();
-        }
-        reconnectTimeout = setTimeout(connect, 5000);
-      };
-    };
-
-    connect();
-
-    return () => {
-      if (eventSource) {
-        eventSource.close();
-      }
-      if (reconnectTimeout) {
-        clearTimeout(reconnectTimeout);
-      }
-    };
-  }, [pathname, projectKey, projectName, router]);
+    void applyRealtimeRevision();
+  }, [pathname, projectKey, projectName, revisions, router]);
 
   return children;
 }
