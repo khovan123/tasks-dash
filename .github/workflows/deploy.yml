@@ -135,12 +135,35 @@ jobs:
           VPS_HOST: ${{ secrets.VPS_HOST }}
           VPS_USER: ${{ secrets.VPS_USER }}
         run: |
-          ssh "$VPS_USER@$VPS_HOST" \
-            "mkdir -p '/srv/apps/$REPO_NAME/.fogewise'"
+          ssh "$VPS_USER@$VPS_HOST" "
+            set -eu
+            APP_DIR='/srv/apps/$REPO_NAME'
+            FOGEWISE_DIR=\"\$APP_DIR/.fogewise\"
+
+            install -d -o root -g root -m 700 \"\$APP_DIR\"
+            install -d -o root -g root -m 755 \"\$FOGEWISE_DIR\"
+          "
 
           rsync -az \
             .fogewise/deploy.yml \
             "$VPS_USER@$VPS_HOST:/srv/apps/$REPO_NAME/.fogewise/deploy.yml"
+
+          ssh "$VPS_USER@$VPS_HOST" "
+            set -eu
+            APP_DIR='/srv/apps/$REPO_NAME'
+            FOGEWISE_DIR=\"\$APP_DIR/.fogewise\"
+            MANIFEST=\"\$FOGEWISE_DIR/deploy.yml\"
+
+            chown root:root \"\$APP_DIR\" \"\$FOGEWISE_DIR\" \"\$MANIFEST\"
+            chmod 700 \"\$APP_DIR\"
+            chmod 755 \"\$FOGEWISE_DIR\"
+            chmod 644 \"\$MANIFEST\"
+
+            if [ -f \"\$APP_DIR/.env\" ]; then
+              chown root:root \"\$APP_DIR/.env\"
+              chmod 600 \"\$APP_DIR/.env\"
+            fi
+          "
 
       - name: Deploy images on VPS
         env:
@@ -152,6 +175,10 @@ jobs:
           set -eu
 
           export DOCKER_CONFIG="/run/fogewise-ghcr/$REPO_NAME"
+
+          APP_DIR="/srv/apps/$REPO_NAME"
+          FOGEWISE_DIR="$APP_DIR/.fogewise"
+          MANIFEST="$FOGEWISE_DIR/deploy.yml"
 
           LOG_DIR='/var/log/fogewise'
           LOG_FILE="$LOG_DIR/${REPO_NAME}-deploy.log"
@@ -171,18 +198,28 @@ jobs:
             -f "/var/lib/fogewise/apps/$REPO_NAME/compose.json" \
             ps
 
-          # /srv/apps/<repo> is runtime state only: keep env + deploy manifest,
-          # remove any source tree left by the previous deployment model.
-          find "/srv/apps/$REPO_NAME" \
+          # Runtime directory keeps only .env + .fogewise/deploy.yml.
+          find "$APP_DIR" \
             -mindepth 1 -maxdepth 1 \
             ! -name '.env' \
             ! -name '.fogewise' \
             -exec rm -rf -- {} +
 
-          find "/srv/apps/$REPO_NAME/.fogewise" \
+          find "$FOGEWISE_DIR" \
             -mindepth 1 -maxdepth 1 \
             ! -name 'deploy.yml' \
             -exec rm -rf -- {} +
+
+          # Normalize runtime ownership and permissions after every deployment.
+          chown root:root "$APP_DIR" "$FOGEWISE_DIR" "$MANIFEST"
+          chmod 700 "$APP_DIR"
+          chmod 755 "$FOGEWISE_DIR"
+          chmod 644 "$MANIFEST"
+
+          if [ -f "$APP_DIR/.env" ]; then
+            chown root:root "$APP_DIR/.env"
+            chmod 600 "$APP_DIR/.env"
+          fi
           REMOTE
 
       - name: Remove temporary VPS registry credentials
