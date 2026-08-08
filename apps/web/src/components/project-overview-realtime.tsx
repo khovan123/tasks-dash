@@ -12,7 +12,6 @@ import {
 } from "@/components/repository-link-form";
 import { NewWorkItemModal } from "@/components/new-work-item-modal";
 import { MemberInfoBadge } from "@/components/member-info-badge";
-import { PriorityIcon } from "@/components/priority-icon";
 import { SectionHeading } from "@/components/layout/app-shell";
 import {
   WorkItemTypeIcon,
@@ -39,6 +38,7 @@ import {
   replaceWorkItems,
   selectProject,
   selectWorkItemsByProject,
+  selectWorkItemsHydrated,
   upsertProjectDetail,
   type RealtimeProject,
   type RealtimeWorkItem,
@@ -88,6 +88,7 @@ export function ProjectOverviewRealtime({
     [projectKey],
   );
   const items = useAppSelector(workItemsSelector);
+  const workItemsHydrated = useAppSelector(selectWorkItemsHydrated(projectKey));
 
   useEffect(() => {
     dispatch(upsertProjectDetail(initialProject));
@@ -115,13 +116,13 @@ export function ProjectOverviewRealtime({
     [statuses],
   );
 
-  const renderedItems = items.length || initialItems.length === 0 ? items : initialItems;
+  const renderedItems = workItemsHydrated ? items : initialItems;
 
   return (
     <>
       <RepositoryLinkForm
         projectKey={projectKey}
-        currentRepositoryFullName={project.repositoryFullName as string | undefined}
+        currentRepositoryFullName={project.repositoryFullName}
         repositories={repositories}
         canManage={canManageRepository}
       />
@@ -266,7 +267,9 @@ export function ProjectOverviewRealtime({
                         )}
                       </TableCell>
                       <TableCell className="whitespace-normal">
-                        <GithubWorkItemLinks github={item.github as GithubWorkItemView | undefined} />
+                        <GithubWorkItemLinks
+                          github={item.github as GithubWorkItemView | undefined}
+                        />
                       </TableCell>
                     </TableRow>
                   );
