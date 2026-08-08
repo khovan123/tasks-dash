@@ -35,9 +35,14 @@ export async function loadProjectMembersPageContext(projectKey: string) {
     loadWorkspaceAccess(),
   ]);
 
+  if (!project._id) {
+    throw new Error(`Project ${key} is missing its identifier.`);
+  }
+
   return {
     key,
     project,
+    projectId: project._id,
     projectMembers: membersData.projectMembers,
     workspaceMembers: membersData.workspaceMembers,
     invitations: access.workspaceMembers.invitations ?? [],
