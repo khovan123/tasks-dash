@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
+import { GITHUB_ACCOUNT_CONFIRMATION_COOKIE } from "@/features/auth/constants";
 import { upstreamRequest } from "@/lib/server/upstream-request";
 
 export const dynamic = "force-dynamic";
@@ -8,6 +9,7 @@ const AUTH_COOKIES = [
   "tasks_dash_oauth_state",
   "tasks_dash_invitation",
   "discord_username",
+  GITHUB_ACCOUNT_CONFIRMATION_COOKIE,
 ] as const;
 
 function upstreamHeaders(request: NextRequest): Record<string, string> {
