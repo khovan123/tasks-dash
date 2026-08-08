@@ -3,27 +3,34 @@
 import { useState } from "react";
 import { useRouter } from "next/navigation";
 import {
-  Users,
-  Save,
   Check,
-  UserPlus,
   MailPlus,
   RefreshCw,
+  Save,
   Trash2,
+  UserPlus,
+  Users,
 } from "lucide-react";
-import { Button } from "@/components/ui/button";
-import { Checkbox } from "@/components/ui/checkbox";
+import {
+  MEMBER_INVITATION_STATUSES,
+  MEMBER_PRESENCE,
+  MEMBER_ROLES,
+  type MemberRole,
+} from "@tasks-dash/contracts";
+import { MemberInfoBadge } from "@/components/molecules/member-info-badge";
+import { RoleBadge } from "@/components/molecules/role-badge";
+import { useMemberInvitations } from "@/features/members/hooks/use-member-invitations";
+import type {
+  ProjectMemberView,
+  WorkspaceInvitationView,
+} from "@/features/members/types";
 import { apiRequest } from "@/lib/api/api-request";
 import { cn } from "@/lib/utils";
 import { useWorkspacePresence } from "@/components/layout/jira-app-shell";
-import { MemberAvatar } from "@/components/member-avatar";
-import { RoleBadge } from "@/components/role-badge";
-import {
-  MEMBER_PRESENCE,
-  MEMBER_INVITATION_STATUSES,
-  MEMBER_ROLES,
-  MemberRole,
-} from "@tasks-dash/contracts";
+import { Badge } from "@/components/ui/badge";
+import { Button } from "@/components/ui/button";
+import { Card, CardContent, CardHeader } from "@/components/ui/card";
+import { Checkbox } from "@/components/ui/checkbox";
 import {
   Dialog,
   DialogContent,
@@ -32,6 +39,13 @@ import {
   DialogHeader,
   DialogTitle,
 } from "@/components/ui/dialog";
+import {
+  Empty,
+  EmptyDescription,
+  EmptyHeader,
+  EmptyTitle,
+} from "@/components/ui/empty";
+import { Field, FieldLabel } from "@/components/ui/field";
 import { Input } from "@/components/ui/input";
 import {
   Select,
@@ -40,45 +54,14 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
-import { Field, FieldLabel } from "@/components/ui/field";
-import {
-  Empty,
-  EmptyDescription,
-  EmptyHeader,
-  EmptyTitle,
-} from "@/components/ui/empty";
-import { Badge } from "@/components/ui/badge";
-import { MemberInfoBadge } from "@/components/member-info-badge";
-import { Card, CardContent, CardHeader } from "@/components/ui/card";
-
-interface Member {
-  _id: string;
-  name: string;
-  email: string;
-  role: string;
-  status?: string;
-  avatarUrl?: string;
-  githubLogin?: string;
-  discordUsername?: string;
-}
-
-interface WorkspaceInvitation {
-  _id: string;
-  email: string;
-  role: MemberRole;
-  status: string;
-  expiresAt: string;
-  lastSentAt?: string;
-}
-
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 
 interface ProjectMembersManagerProps {
   projectKey: string;
   projectId: string;
-  initialProjectMembers: Member[];
-  workspaceMembers: Member[];
-  invitations: WorkspaceInvitation[];
+  initialProjectMembers: ProjectMemberView[];
+  workspaceMembers: ProjectMemberView[];
+  invitations: WorkspaceInvitationView[];
   canManage: boolean;
 }
 
@@ -93,68 +76,55 @@ export function ProjectMembersManager({
   const router = useRouter();
   const presenceByMemberId = useWorkspacePresence();
   const [selectedIds, setSelectedIds] = useState<string[]>(
-    initialProjectMembers.map((m) => m._id),
+    initialProjectMembers.map((member) => member._id),
   );
   const [saving, setSaving] = useState(false);
   const [updatingRoleId, setUpdatingRoleId] = useState<string | null>(null);
-  const [error, setError] = useState<string | null>(null);
-
-  // Invite Dialog State
+  const [projectActionError, setProjectActionError] = useState<string | null>(null);
   const [inviteOpen, setInviteOpen] = useState(false);
   const [inviteEmail, setInviteEmail] = useState("");
   const [inviteRole, setInviteRole] = useState<MemberRole>(MEMBER_ROLES.viewer);
-  const [inviting, setInviting] = useState(false);
-  const [inviteError, setInviteError] = useState<string | null>(null);
   const [inviteSuccess, setInviteSuccess] = useState<string | null>(null);
-  const [busyInvitationId, setBusyInvitationId] = useState<string | null>(null);
+  const {
+    actionError: invitationActionError,
+    busyInvitationId,
+    clearErrors: clearInvitationErrors,
+    invite,
+    inviteError,
+    inviting,
+    resend,
+    revoke,
+  } = useMemberInvitations();
 
   function toggleMember(memberId: string) {
     if (!canManage) return;
-    const member = workspaceMembers.find((m) => m._id === memberId);
-    if (member?.role === "OWNER") return; // Block toggling OWNER role.
+    const member = workspaceMembers.find((item) => item._id === memberId);
+    if (member?.role === MEMBER_ROLES.owner) return;
 
-    setSelectedIds((prev) =>
-      prev.includes(memberId)
-        ? prev.filter((id) => id !== memberId)
-        : [...prev, memberId],
+    setSelectedIds((previous) =>
+      previous.includes(memberId)
+        ? previous.filter((id) => id !== memberId)
+        : [...previous, memberId],
     );
-  }
-
-  async function runInvitationAction(
-    invitationId: string,
-    action: () => Promise<void>,
-  ): Promise<void> {
-    setBusyInvitationId(invitationId);
-    setError(null);
-    try {
-      await action();
-      router.refresh();
-    } catch (err) {
-      setError(
-        err instanceof Error ? err.message : "Không thể cập nhật lời mời.",
-      );
-    } finally {
-      setBusyInvitationId(null);
-    }
   }
 
   async function saveProjectMembers(ids: string[]) {
     const ownerIds = workspaceMembers
-      .filter((m) => m.role === "OWNER")
-      .map((m) => m._id);
+      .filter((member) => member.role === MEMBER_ROLES.owner)
+      .map((member) => member._id);
     const finalIds = Array.from(new Set([...ids, ...ownerIds]));
 
     setSaving(true);
-    setError(null);
+    setProjectActionError(null);
     try {
       await apiRequest(`/api/projects/${projectKey}/members`, {
         method: "PATCH",
         body: JSON.stringify({ memberIds: finalIds }),
       });
       router.refresh();
-    } catch (err) {
-      setError(
-        err instanceof Error ? err.message : "Không thể cập nhật thành viên.",
+    } catch (error) {
+      setProjectActionError(
+        error instanceof Error ? error.message : "Không thể cập nhật thành viên.",
       );
     } finally {
       setSaving(false);
@@ -163,17 +133,17 @@ export function ProjectMembersManager({
 
   async function handleRoleChange(memberId: string, nextRole: MemberRole) {
     setUpdatingRoleId(memberId);
-    setError(null);
+    setProjectActionError(null);
     try {
       await apiRequest(`/api/projects/${projectKey}/members/${memberId}/role`, {
         method: "PATCH",
         body: JSON.stringify({ role: nextRole }),
       });
       router.refresh();
-    } catch (err) {
-      setError(
-        err instanceof Error
-          ? err.message
+    } catch (error) {
+      setProjectActionError(
+        error instanceof Error
+          ? error.message
           : "Không thể thay đổi vai trò thành viên.",
       );
     } finally {
@@ -181,52 +151,38 @@ export function ProjectMembersManager({
     }
   }
 
-  async function handleInviteSubmit(e: React.FormEvent) {
-    e.preventDefault();
-    if (!inviteEmail.trim()) {
-      setInviteError("Email không được để trống.");
-      return;
-    }
-    setInviting(true);
-    setInviteError(null);
+  async function handleInviteSubmit(event: React.FormEvent) {
+    event.preventDefault();
+    const email = inviteEmail.trim();
+    if (!email) return;
+
     setInviteSuccess(null);
-    try {
-      await apiRequest("/api/workspace/invitations", {
-        method: "POST",
-        body: JSON.stringify({
-          email: inviteEmail.trim(),
-          role: inviteRole,
-          projectIds: [projectId],
-        }),
-      });
-      setInviteSuccess("Đã gửi lời mời thành công đến " + inviteEmail);
-      setInviteEmail("");
-      setInviteRole(MEMBER_ROLES.viewer);
-      router.refresh();
-      // Auto close after 1.5s
-      setTimeout(() => {
-        setInviteOpen(false);
-        setInviteSuccess(null);
-      }, 1500);
-    } catch (err) {
-      setInviteError(
-        err instanceof Error ? err.message : "Không thể gửi lời mời.",
-      );
-    } finally {
-      setInviting(false);
-    }
+    const created = await invite({
+      email,
+      role: inviteRole,
+      projectIds: [projectId],
+    });
+    if (!created) return;
+
+    setInviteSuccess(`Đã gửi lời mời thành công đến ${email}`);
+    setInviteEmail("");
+    setInviteRole(MEMBER_ROLES.viewer);
+    window.setTimeout(() => {
+      setInviteOpen(false);
+      setInviteSuccess(null);
+    }, 1500);
   }
 
   const projectRolesMap = new Map(
-    initialProjectMembers.map((m) => [m._id, m.role]),
+    initialProjectMembers.map((member) => [member._id, member.role]),
   );
-
   const currentProjectMembers = workspaceMembers
-    .filter((m) => selectedIds.includes(m._id))
-    .map((m) => ({
-      ...m,
-      role: projectRolesMap.get(m._id) || m.role,
+    .filter((member) => selectedIds.includes(member._id))
+    .map((member) => ({
+      ...member,
+      role: projectRolesMap.get(member._id) || member.role,
     }));
+  const error = projectActionError ?? invitationActionError;
 
   return (
     <div className="rounded-xl border border-border/70 bg-card/90 p-4 shadow-sm backdrop-blur-2xl w-full">
@@ -277,12 +233,11 @@ export function ProjectMembersManager({
               Quản lý thành viên dự án
             </h3>
             <p className="text-xs text-muted-foreground">
-              Cấu hình quyền, thêm/bớt nhân sự và theo dõi các lời mời của dự
-              án.
+              Cấu hình quyền, thêm/bớt nhân sự và theo dõi các lời mời của dự án.
             </p>
           </div>
 
-          {error && <p className="text-xs text-destructive my-2">{error}</p>}
+          {error ? <p className="text-xs text-destructive my-2">{error}</p> : null}
 
           <Tabs defaultValue="members" className="w-full mt-4">
             <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3 mb-4 border-b pb-2">
@@ -299,9 +254,8 @@ export function ProjectMembersManager({
                 variant="outline"
                 size="sm"
                 className="gap-2 shrink-0 self-start sm:self-center"
-                disabled={!canManage}
                 onClick={() => {
-                  setInviteError(null);
+                  clearInvitationErrors();
                   setInviteSuccess(null);
                   setInviteOpen(true);
                 }}
@@ -311,7 +265,6 @@ export function ProjectMembersManager({
               </Button>
             </div>
 
-            {/* TAB 1: Current Project Members (Editable Roles) */}
             <TabsContent value="members" className="outline-none py-1">
               {currentProjectMembers.length === 0 ? (
                 <Empty className="min-h-40 rounded-md border border-dashed bg-background/50">
@@ -338,8 +291,7 @@ export function ProjectMembersManager({
                           githubLogin={member.githubLogin}
                           discordUsername={member.discordUsername}
                           presence={
-                            presenceByMemberId[member._id] ??
-                            MEMBER_PRESENCE.offline
+                            presenceByMemberId[member._id] ?? MEMBER_PRESENCE.offline
                           }
                           avatarClassName="size-10"
                           textClassName="text-sm font-semibold leading-none"
@@ -355,11 +307,8 @@ export function ProjectMembersManager({
                           <Select
                             value={member.role}
                             disabled={updatingRoleId === member._id}
-                            onValueChange={(val) =>
-                              void handleRoleChange(
-                                member._id,
-                                val as MemberRole,
-                              )
+                            onValueChange={(value) =>
+                              void handleRoleChange(member._id, value as MemberRole)
                             }
                           >
                             <SelectTrigger className="w-36 h-8 bg-transparent">
@@ -408,11 +357,10 @@ export function ProjectMembersManager({
               )}
             </TabsContent>
 
-            {/* TAB 2: Add Members (Workspace Selection checkboxes) */}
             <TabsContent value="manage" className="outline-none py-1">
               <div className="grid gap-2 max-h-80 overflow-y-auto pr-1 py-1 my-3 border rounded-lg p-2 bg-muted/10">
                 {workspaceMembers.map((member) => {
-                  const isOwner = member.role === "OWNER";
+                  const isOwner = member.role === MEMBER_ROLES.owner;
                   const isChecked = isOwner || selectedIds.includes(member._id);
                   return (
                     <div
@@ -435,7 +383,7 @@ export function ProjectMembersManager({
                           onCheckedChange={() =>
                             canManage && !isOwner && toggleMember(member._id)
                           }
-                          onClick={(e) => e.stopPropagation()}
+                          onClick={(event) => event.stopPropagation()}
                         />
                         <div className="flex flex-col min-w-0">
                           <MemberInfoBadge
@@ -458,9 +406,9 @@ export function ProjectMembersManager({
                           </span>
                         </div>
                       </div>
-                      {isChecked && (
+                      {isChecked ? (
                         <Check className="size-4 text-primary shrink-0" />
-                      )}
+                      ) : null}
                     </div>
                   );
                 })}
@@ -479,7 +427,6 @@ export function ProjectMembersManager({
               </div>
             </TabsContent>
 
-            {/* TAB 3: Invitations list */}
             <TabsContent value="invitations" className="outline-none py-1">
               {invitations.length === 0 ? (
                 <Empty className="min-h-32 rounded-md border border-dashed bg-background/70">
@@ -492,63 +439,53 @@ export function ProjectMembersManager({
                 </Empty>
               ) : (
                 <div className="grid gap-2">
-                  {invitations.map((invite) => (
+                  {invitations.map((invitation) => (
                     <article
-                      key={invite._id}
+                      key={invitation._id}
                       className="grid gap-3 rounded-md border bg-background/80 p-3 md:grid-cols-[minmax(0,1fr)_auto_auto] md:items-center"
                     >
                       <div className="min-w-0">
                         <strong className="block truncate text-sm">
-                          {invite.email}
+                          {invitation.email}
                         </strong>
                         <div className="mt-1 flex flex-wrap items-center gap-2 text-xs text-muted-foreground">
                           <RoleBadge
-                            role={invite.role}
+                            role={invitation.role}
                             className="border-none shadow-none bg-transparent p-0 dark:bg-transparent"
                           />
                           <span>
                             · hết hạn{" "}
-                            {new Date(invite.expiresAt).toLocaleString("vi-VN")}
+                            {new Date(invitation.expiresAt).toLocaleString("vi-VN")}
                           </span>
                         </div>
                       </div>
                       <Badge
                         variant={
-                          invite.status === MEMBER_INVITATION_STATUSES.accepted
+                          invitation.status === MEMBER_INVITATION_STATUSES.accepted
                             ? "success"
-                            : invite.status ===
-                                MEMBER_INVITATION_STATUSES.pending
+                            : invitation.status === MEMBER_INVITATION_STATUSES.pending
                               ? "warning"
-                              : invite.status ===
-                                  MEMBER_INVITATION_STATUSES.expired
+                              : invitation.status === MEMBER_INVITATION_STATUSES.expired
                                 ? "secondary"
-                                : "destructive" // revoked
+                                : "destructive"
                         }
                       >
-                        {invite.status === MEMBER_INVITATION_STATUSES.accepted
+                        {invitation.status === MEMBER_INVITATION_STATUSES.accepted
                           ? "Đã chấp nhận"
-                          : invite.status === MEMBER_INVITATION_STATUSES.pending
+                          : invitation.status === MEMBER_INVITATION_STATUSES.pending
                             ? "Đang chờ"
-                            : invite.status ===
-                                MEMBER_INVITATION_STATUSES.expired
+                            : invitation.status === MEMBER_INVITATION_STATUSES.expired
                               ? "Hết hạn"
                               : "Đã thu hồi"}
                       </Badge>
-                      {invite.status === MEMBER_INVITATION_STATUSES.pending ? (
+                      {invitation.status === MEMBER_INVITATION_STATUSES.pending ? (
                         <div className="flex flex-wrap gap-2">
                           <Button
                             variant="outline"
                             size="sm"
                             type="button"
-                            disabled={busyInvitationId === invite._id}
-                            onClick={() =>
-                              void runInvitationAction(invite._id, async () => {
-                                await apiRequest(
-                                  `/api/workspace/invitations/${invite._id}/resend`,
-                                  { method: "POST" },
-                                );
-                              })
-                            }
+                            disabled={busyInvitationId === invitation._id}
+                            onClick={() => void resend(invitation._id)}
                           >
                             <RefreshCw data-icon="inline-start" /> Gửi lại
                           </Button>
@@ -556,15 +493,8 @@ export function ProjectMembersManager({
                             variant="destructive"
                             size="sm"
                             type="button"
-                            disabled={busyInvitationId === invite._id}
-                            onClick={() =>
-                              void runInvitationAction(invite._id, async () => {
-                                await apiRequest(
-                                  `/api/workspace/invitations/${invite._id}`,
-                                  { method: "DELETE" },
-                                );
-                              })
-                            }
+                            disabled={busyInvitationId === invitation._id}
+                            onClick={() => void revoke(invitation._id)}
                           >
                             <Trash2 data-icon="inline-start" /> Thu hồi
                           </Button>
@@ -577,10 +507,9 @@ export function ProjectMembersManager({
             </TabsContent>
           </Tabs>
 
-          {/* Invite Member Dialog */}
           <Dialog open={inviteOpen} onOpenChange={setInviteOpen}>
             <DialogContent className="sm:max-w-md">
-              <form onSubmit={(e) => void handleInviteSubmit(e)}>
+              <form onSubmit={(event) => void handleInviteSubmit(event)}>
                 <DialogHeader>
                   <DialogTitle className="flex items-center gap-2">
                     <MailPlus className="size-5 text-primary" />
@@ -600,7 +529,7 @@ export function ProjectMembersManager({
                       type="email"
                       placeholder="member@company.com"
                       value={inviteEmail}
-                      onChange={(e) => setInviteEmail(e.target.value)}
+                      onChange={(event) => setInviteEmail(event.target.value)}
                       required
                     />
                   </Field>
@@ -609,7 +538,7 @@ export function ProjectMembersManager({
                     <FieldLabel htmlFor="invite-role">Vai trò</FieldLabel>
                     <Select
                       value={inviteRole}
-                      onValueChange={(val) => setInviteRole(val as MemberRole)}
+                      onValueChange={(value) => setInviteRole(value as MemberRole)}
                     >
                       <SelectTrigger id="invite-role" className="w-full">
                         <SelectValue />
@@ -629,16 +558,16 @@ export function ProjectMembersManager({
                     </Select>
                   </Field>
 
-                  {inviteError && (
+                  {inviteError ? (
                     <p className="text-xs font-semibold text-destructive">
                       {inviteError}
                     </p>
-                  )}
-                  {inviteSuccess && (
+                  ) : null}
+                  {inviteSuccess ? (
                     <p className="text-xs font-semibold text-emerald-600 dark:text-emerald-400">
                       {inviteSuccess}
                     </p>
-                  )}
+                  ) : null}
                 </div>
 
                 <DialogFooter>
@@ -650,7 +579,7 @@ export function ProjectMembersManager({
                   >
                     Hủy
                   </Button>
-                  <Button type="submit" disabled={inviting}>
+                  <Button type="submit" disabled={inviting || !inviteEmail.trim()}>
                     {inviting ? "Đang gửi…" : "Gửi lời mời"}
                   </Button>
                 </DialogFooter>

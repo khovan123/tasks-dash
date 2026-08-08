@@ -7,15 +7,17 @@ import {
   MEMBER_ROLES,
   type MemberPresence,
 } from "@tasks-dash/contracts";
-import { useRouter } from "next/navigation";
 import { Controller, FormProvider, useForm } from "react-hook-form";
 import { useState } from "react";
 import { MailPlus, RefreshCw, Trash2, UserMinus } from "lucide-react";
 import { MemberAvatar } from "@/components/molecules/member-avatar";
 import { MemberInfoBadge } from "@/components/molecules/member-info-badge";
-import { RoleBadge } from "@/components/role-badge";
+import { RoleBadge } from "@/components/molecules/role-badge";
+import { SectionHeading } from "@/components/molecules/section-heading";
+import { FormCard } from "@/components/organisms/form-card";
+import { useMemberInvitations } from "@/features/members/hooks/use-member-invitations";
 import {
-  InviteMemberValues,
+  type InviteMemberValues,
   inviteMemberSchema,
 } from "@/features/members/schemas/invite-member.schema";
 import type {
@@ -24,12 +26,11 @@ import type {
   WorkspaceMemberView,
 } from "@/features/members/types";
 import { apiRequest } from "@/lib/api/api-request";
-import { FormCard } from "@/components/organisms/form-card";
-import { SectionHeading } from "@/components/molecules/section-heading";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader } from "@/components/ui/card";
+import { Checkbox } from "@/components/ui/checkbox";
 import {
   Empty,
   EmptyDescription,
@@ -51,7 +52,6 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
-import { Checkbox } from "@/components/ui/checkbox";
 import { useWorkspacePresence } from "@/components/layout/jira-app-shell";
 
 function roleLabel(role: WorkspaceMemberView["role"]): string {
@@ -69,10 +69,18 @@ export function WorkspaceMembersManager({
   projects: Array<MemberProjectSummary & { _id: string }>;
   canManage: boolean;
 }) {
-  const router = useRouter();
   const presenceByMemberId = useWorkspacePresence();
-  const [actionError, setActionError] = useState<string | null>(null);
-  const [busyId, setBusyId] = useState<string | null>(null);
+  const [busyMemberId, setBusyMemberId] = useState<string | null>(null);
+  const [memberActionError, setMemberActionError] = useState<string | null>(null);
+  const {
+    actionError: invitationActionError,
+    busyInvitationId,
+    invite,
+    inviteError,
+    resend,
+    revoke,
+  } = useMemberInvitations();
+
   const form = useForm<InviteMemberValues>({
     resolver: zodResolver(inviteMemberSchema),
     defaultValues: {
@@ -83,43 +91,37 @@ export function WorkspaceMembersManager({
     },
   });
 
-  async function runAction(
-    id: string,
-    action: () => Promise<void>,
-  ): Promise<void> {
-    setBusyId(id);
-    setActionError(null);
-    try {
-      await action();
-      router.refresh();
-    } catch (error) {
-      setActionError(
-        error instanceof Error ? error.message : "Thao tác thất bại.",
-      );
-    } finally {
-      setBusyId(null);
-    }
-  }
-
-  async function invite(values: InviteMemberValues): Promise<void> {
+  async function inviteMember(values: InviteMemberValues): Promise<void> {
     form.clearErrors("root");
-    try {
-      await apiRequest("/api/workspace/invitations", {
-        method: "POST",
-        body: JSON.stringify(values),
-      });
+    const created = await invite(values);
+    if (created) {
       form.reset({
         email: "",
         role: MEMBER_ROLES.viewer,
         projectIds: [],
         allProjects: false,
       });
-      router.refresh();
-    } catch (error) {
-      form.setError("root", {
-        message:
-          error instanceof Error ? error.message : "Không thể gửi lời mời.",
+      return;
+    }
+    if (inviteError) {
+      form.setError("root", { message: inviteError });
+    }
+  }
+
+  async function removeMember(memberId: string): Promise<void> {
+    setBusyMemberId(memberId);
+    setMemberActionError(null);
+    try {
+      await apiRequest(`/api/workspace/members/${memberId}`, {
+        method: "DELETE",
       });
+      window.location.reload();
+    } catch (error) {
+      setMemberActionError(
+        error instanceof Error ? error.message : "Không thể gỡ thành viên.",
+      );
+    } finally {
+      setBusyMemberId(null);
     }
   }
 
@@ -130,11 +132,13 @@ export function WorkspaceMembersManager({
     );
   }
 
+  const actionError = memberActionError ?? invitationActionError ?? inviteError;
+
   return (
     <div className="flex flex-col gap-6">
       <FormProvider {...form}>
         {canManage ? (
-          <form onSubmit={form.handleSubmit(invite)} noValidate>
+          <form onSubmit={form.handleSubmit(inviteMember)} noValidate>
             <FormCard
               eyebrow="Workspace invitation"
               title="Mời thành viên qua email"
@@ -161,10 +165,7 @@ export function WorkspaceMembersManager({
                     control={form.control}
                     name="role"
                     render={({ field }) => (
-                      <Select
-                        onValueChange={field.onChange}
-                        value={field.value}
-                      >
+                      <Select onValueChange={field.onChange} value={field.value}>
                         <SelectTrigger id="member-role" className="w-full">
                           <SelectValue placeholder="Chọn vai trò" />
                         </SelectTrigger>
@@ -218,24 +219,22 @@ export function WorkspaceMembersManager({
                             const selectedIds = form.watch("projectIds") || [];
                             const isChecked = selectedIds.includes(project._id);
                             return (
-                              <div key={project._id} className="flex items-center gap-2">
+                              <div
+                                key={project._id}
+                                className="flex items-center gap-2"
+                              >
                                 <Checkbox
                                   id={`invite-project-${project._id}`}
                                   checked={isChecked}
                                   onCheckedChange={(checked) => {
-                                    if (checked) {
-                                      form.setValue("projectIds", [
-                                        ...selectedIds,
-                                        project._id,
-                                      ]);
-                                    } else {
-                                      form.setValue(
-                                        "projectIds",
-                                        selectedIds.filter(
-                                          (id) => id !== project._id,
-                                        ),
-                                      );
-                                    }
+                                    form.setValue(
+                                      "projectIds",
+                                      checked
+                                        ? [...selectedIds, project._id]
+                                        : selectedIds.filter(
+                                            (id) => id !== project._id,
+                                          ),
+                                    );
                                   }}
                                 />
                                 <label
@@ -336,14 +335,8 @@ export function WorkspaceMembersManager({
                           <Button
                             variant="ghost"
                             size="sm"
-                            disabled={busyId === member._id}
-                            onClick={() =>
-                              void runAction(member._id, () =>
-                                apiRequest(`/api/workspace/members/${member._id}`, {
-                                  method: "DELETE",
-                                }),
-                              )
-                            }
+                            disabled={busyMemberId === member._id}
+                            onClick={() => void removeMember(member._id)}
                           >
                             <UserMinus className="size-4" />
                             Gỡ
@@ -391,19 +384,13 @@ export function WorkspaceMembersManager({
                       </div>
                       {canManage ? (
                         <div className="flex gap-2">
-                          {invitation.status === MEMBER_INVITATION_STATUSES.pending ? (
+                          {invitation.status ===
+                          MEMBER_INVITATION_STATUSES.pending ? (
                             <Button
                               variant="outline"
                               size="sm"
-                              disabled={busyId === invitation._id}
-                              onClick={() =>
-                                void runAction(invitation._id, () =>
-                                  apiRequest(
-                                    `/api/workspace/invitations/${invitation._id}/resend`,
-                                    { method: "POST" },
-                                  ),
-                                )
-                              }
+                              disabled={busyInvitationId === invitation._id}
+                              onClick={() => void resend(invitation._id)}
                             >
                               <RefreshCw className="size-4" />
                               Gửi lại
@@ -412,15 +399,8 @@ export function WorkspaceMembersManager({
                           <Button
                             variant="ghost"
                             size="sm"
-                            disabled={busyId === invitation._id}
-                            onClick={() =>
-                              void runAction(invitation._id, () =>
-                                apiRequest(
-                                  `/api/workspace/invitations/${invitation._id}`,
-                                  { method: "DELETE" },
-                                ),
-                              )
-                            }
+                            disabled={busyInvitationId === invitation._id}
+                            onClick={() => void revoke(invitation._id)}
                           >
                             <Trash2 className="size-4 text-destructive" />
                             Xóa
