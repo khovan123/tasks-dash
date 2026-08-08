@@ -3,6 +3,7 @@ import { APP_GUARD } from "@nestjs/core";
 import { MongooseModule } from "@nestjs/mongoose";
 import { MembersModule } from "../members/members.module";
 import { AuthController } from "./auth.controller";
+import { GithubAuthorizationController } from "./github-authorization.controller";
 import {
   AuthIdentityDocument,
   AuthIdentitySchema,
@@ -45,7 +46,11 @@ import { IntegrationsModule } from "../integrations/integrations.module";
       { name: WorkItemDocument.name, schema: WorkItemSchema },
     ]),
   ],
-  controllers: [AuthController, WorkspacesController],
+  controllers: [
+    AuthController,
+    GithubAuthorizationController,
+    WorkspacesController,
+  ],
   providers: [
     SessionService,
     GithubUserTokenService,
