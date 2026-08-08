@@ -1,14 +1,10 @@
 import { MEMBER_ROLES, type MemberRole } from "@tasks-dash/contracts";
 import { FileArchive } from "lucide-react";
-import {
-  DiscordDocumentManager,
-  type DiscordDocumentTree,
-} from "@/components/discord-document-manager";
 import type { JiraShellSession } from "@/components/layout/jira-app-shell";
+import { RealtimeDiscordDocumentManager } from "@/components/realtime-discord-document-manager";
+import type { DiscordDocumentTree } from "@/components/discord-document-manager";
 import { apiData } from "@/lib/server/api-data";
-import {
-  redirectIfProjectAccessLost,
-} from "@/lib/server/project-access";
+import { redirectIfProjectAccessLost } from "@/lib/server/project-access";
 import { AppPage } from "@/components/layout/app-shell";
 import { Button } from "@/components/ui/button";
 import {
@@ -76,8 +72,8 @@ export default async function ProjectDocsPage({
   return (
     <AppPage>
       {tree ? (
-        <DiscordDocumentManager
-          tree={tree}
+        <RealtimeDiscordDocumentManager
+          initialTree={tree}
           canManageDocuments={canManageDocuments}
         />
       ) : (
