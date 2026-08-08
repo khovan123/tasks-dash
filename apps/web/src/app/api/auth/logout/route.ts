@@ -10,15 +10,37 @@ const AUTH_COOKIES = [
   "discord_username",
 ] as const;
 
+function upstreamHeaders(request: NextRequest): Record<string, string> {
+  return {
+    cookie: request.headers.get("cookie") ?? "",
+    origin: request.headers.get("origin") ?? request.nextUrl.origin,
+    "x-request-id":
+      request.headers.get("x-request-id") ?? crypto.randomUUID(),
+  };
+}
+
 export async function POST(request: NextRequest): Promise<Response> {
+  const headers = upstreamHeaders(request);
+
+  // Revoke the GitHub app grant before clearing the local session. This makes
+  // the next login a real OAuth authorization instead of silently reusing the
+  // previous grant and returning straight to /workspaces.
+  const revoke = await upstreamRequest("/auth/github/revoke", {
+    method: "POST",
+    headers,
+  });
+  if (!revoke.ok && revoke.status !== 401) {
+    return new Response(await revoke.arrayBuffer(), {
+      status: revoke.status,
+      headers: {
+        "content-type": revoke.headers.get("content-type") ?? "application/json",
+      },
+    });
+  }
+
   const upstream = await upstreamRequest("/auth/logout", {
     method: "POST",
-    headers: {
-      cookie: request.headers.get("cookie") ?? "",
-      origin: request.headers.get("origin") ?? request.nextUrl.origin,
-      "x-request-id":
-        request.headers.get("x-request-id") ?? crypto.randomUUID(),
-    },
+    headers,
   });
 
   if (!upstream.ok) {

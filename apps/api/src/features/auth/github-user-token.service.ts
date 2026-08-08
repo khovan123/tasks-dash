@@ -45,11 +45,62 @@ export class GithubUserTokenService {
     private readonly encryption: CredentialEncryptionService,
   ) {}
 
+  async revokeAuthorizationForIdentity(identityId: string): Promise<void> {
+    const identity = await this.identities.findById(identityId).exec();
+    if (!identity?.encryptedGithubAccessToken) return;
+
+    const accessToken = this.encryption.decrypt(
+      identity.encryptedGithubAccessToken,
+    );
+    const clientId = this.config.getOrThrow<string>("GITHUB_OAUTH_CLIENT_ID");
+    const clientSecret = this.config.getOrThrow<string>(
+      "GITHUB_OAUTH_CLIENT_SECRET",
+    );
+    const basicAuthorization = Buffer.from(
+      `${clientId}:${clientSecret}`,
+    ).toString("base64");
+
+    const response = await fetch(
+      `https://api.github.com/applications/${encodeURIComponent(clientId)}/grant`,
+      {
+        method: "DELETE",
+        headers: {
+          accept: "application/vnd.github+json",
+          authorization: `Basic ${basicAuthorization}`,
+          "content-type": "application/json",
+          "x-github-api-version": GITHUB_API_VERSION,
+          "user-agent": "tasks-dash",
+        },
+        body: JSON.stringify({ access_token: accessToken }),
+      },
+    );
+
+    if (response.status !== 204 && response.status !== 404) {
+      throw new ServiceUnavailableException(
+        `GitHub authorization revocation failed with HTTP ${response.status}.`,
+      );
+    }
+
+    await this.identities
+      .updateOne(
+        { _id: identity._id },
+        {
+          $unset: {
+            encryptedGithubAccessToken: 1,
+            encryptedGithubRefreshToken: 1,
+            githubAccessTokenExpiresAt: 1,
+            githubRefreshTokenExpiresAt: 1,
+          },
+        },
+      )
+      .exec();
+  }
+
   async accessTokenForIdentity(identityId: string): Promise<string> {
     const identity = await this.identities.findById(identityId).exec();
-    if (!identity) {
+    if (!identity?.encryptedGithubAccessToken) {
       throw new UnauthorizedException(
-        "GitHub user authorization is missing.",
+        "GitHub user authorization is missing. Sign in with GitHub again.",
       );
     }
     const expiry = identity.githubAccessTokenExpiresAt?.getTime();

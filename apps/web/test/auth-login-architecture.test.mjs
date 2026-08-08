@@ -57,6 +57,14 @@ test("login flow keeps page layout, UI and auth state in their owning layers", a
   assert.match(githubLoginRoute, /select_account/);
   assert.match(githubLoginRoute, /getSetCookie/);
 
+  const revokeIndex = logoutRoute.indexOf('"/auth/github/revoke"');
+  const localLogoutIndex = logoutRoute.indexOf('"/auth/logout"');
+  assert.ok(revokeIndex >= 0, "logout must revoke the GitHub authorization grant");
+  assert.ok(
+    localLogoutIndex > revokeIndex,
+    "GitHub grant must be revoked before the local session is cleared",
+  );
+
   for (const cookieName of [
     "tasks_dash_session",
     "tasks_dash_oauth_state",
