@@ -1,8 +1,7 @@
 import Link from "next/link";
 import { MEMBER_ROLES } from "@tasks-dash/contracts";
 import { FileArchive } from "lucide-react";
-import type { DiscordDocumentTree } from "@/components/discord-document-manager";
-import { RealtimeDiscordDocumentManager } from "@/components/realtime-discord-document-manager";
+import { RealtimeDiscordDocumentManager } from "@/components/organisms/realtime-discord-document-manager";
 import { AppPage } from "@/components/templates/app-page";
 import { Button } from "@/components/ui/button";
 import {
@@ -12,6 +11,7 @@ import {
   EmptyHeader,
   EmptyTitle,
 } from "@/components/ui/empty";
+import type { DiscordDocumentTree } from "@/features/documents/types";
 import {
   hasWorkspaceRole,
   loadWorkspaceAccess,
