@@ -1,5 +1,5 @@
 import { MEMBER_ROLES } from "@tasks-dash/contracts";
-import { ProjectSettingsForm } from "@/components/project-settings-form";
+import { ProjectSettingsForm } from "@/components/organisms/project-settings-form";
 import { AppPage } from "@/components/templates/app-page";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import {
