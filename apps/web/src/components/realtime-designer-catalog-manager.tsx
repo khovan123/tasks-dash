@@ -6,6 +6,7 @@ import { useAppDispatch, useAppSelector } from "@/lib/store/hooks";
 import {
   replaceDesignCatalog,
   selectDesignCatalog,
+  selectDesignCatalogHydrated,
   type RealtimeDesignCatalogItem,
 } from "@/lib/store/realtime-slice";
 
@@ -21,6 +22,7 @@ export function RealtimeDesignerCatalogManager({
   const dispatch = useAppDispatch();
   const selector = useMemo(() => selectDesignCatalog(projectKey), [projectKey]);
   const realtimeItems = useAppSelector(selector);
+  const hydrated = useAppSelector(selectDesignCatalogHydrated(projectKey));
 
   useEffect(() => {
     dispatch(replaceDesignCatalog({ projectKey, items: initialItems }));
@@ -29,7 +31,7 @@ export function RealtimeDesignerCatalogManager({
   return (
     <DesignerCatalogManager
       projectKey={projectKey}
-      items={realtimeItems.length || initialItems.length === 0 ? realtimeItems : initialItems}
+      items={hydrated ? realtimeItems : initialItems}
       canManageCatalog={canManageCatalog}
     />
   );
