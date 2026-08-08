@@ -1,18 +1,12 @@
 "use client";
 
-import {
-  MEMBER_PRESENCE,
-  MEMBER_ROLES,
-  type MemberPresence,
-} from "@tasks-dash/contracts";
+import { MEMBER_ROLES, type MemberPresence } from "@tasks-dash/contracts";
 import type { ReactNode } from "react";
-import { createContext, useContext, useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import Link from "next/link";
-import { usePathname, useRouter } from "next/navigation";
+import { usePathname } from "next/navigation";
 import {
-  Boxes,
   Check,
-  ChevronRight,
   ChevronDown,
   FileArchive,
   Figma,
@@ -25,7 +19,6 @@ import {
   Scale,
   User2,
   Users,
-  Workflow,
   X,
   Zap,
   Blocks,
@@ -37,10 +30,8 @@ import type { WorkspaceOption } from "@/components/workspace-switcher";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
-import { Input } from "@/components/ui/input";
 import { toast } from "sonner";
 import { cn } from "@/lib/utils";
-import { NewWorkspaceModal } from "@/components/new-workspace-modal";
 import { NewProjectModal } from "@/components/new-project-modal";
 import { ProjectLogo } from "@/components/project-logo";
 import { WorkspaceLogo } from "@/components/workspace-logo";
@@ -64,7 +55,12 @@ import {
   CommandItem,
   CommandList,
 } from "@/components/ui/command";
-import { apiRequest } from "@/lib/api/api-request";
+import { useAppSelector } from "@/lib/store/hooks";
+import {
+  selectPresence,
+  selectProjects,
+  selectProjectsHydrated,
+} from "@/lib/store/realtime-slice";
 
 export interface JiraShellSession {
   memberId: string;
@@ -91,10 +87,8 @@ interface JiraAppShellProps {
 
 type PresenceMap = Record<string, MemberPresence>;
 
-const WorkspacePresenceContext = createContext<PresenceMap>({});
-
 export function useWorkspacePresence(): PresenceMap {
-  return useContext(WorkspacePresenceContext);
+  return useAppSelector(selectPresence);
 }
 
 const GLOBAL_LINKS = [
@@ -138,6 +132,11 @@ export function JiraAppShell({
   workspaces,
 }: JiraAppShellProps) {
   const pathname = usePathname();
+  const realtimeProjects = useAppSelector(selectProjects);
+  const projectsHydrated = useAppSelector(selectProjectsHydrated);
+  const shellProjects: JiraShellProject[] = projectsHydrated
+    ? realtimeProjects
+    : projects;
   const [mobileOpen, setMobileOpen] = useState(false);
   const [projectQuery, setProjectQuery] = useState("");
   const [projectPickerOpen, setProjectPickerOpen] = useState(false);
@@ -170,21 +169,18 @@ export function JiraAppShell({
   }, [pathname]);
 
   const [orderedProjects, setOrderedProjects] =
-    useState<JiraShellProject[]>(projects);
-  const [presenceByMemberId, setPresenceByMemberId] = useState<PresenceMap>({});
+    useState<JiraShellProject[]>(shellProjects);
   const [draggedProjectKey, setDraggedProjectKey] = useState<string | null>(
     null,
   );
-  const router = useRouter();
 
-  // Sync projects and restore ordered list from localStorage
   useEffect(() => {
     const storageKey = `tasks-dash:projects-order:${session.workspaceId}`;
     const savedOrder = localStorage.getItem(storageKey);
     if (savedOrder) {
       try {
         const orderedKeys = JSON.parse(savedOrder) as string[];
-        const sorted = [...projects].sort((a, b) => {
+        const sorted = [...shellProjects].sort((a, b) => {
           const indexA = orderedKeys.indexOf(a.key);
           const indexB = orderedKeys.indexOf(b.key);
           if (indexA === -1 && indexB === -1) return 0;
@@ -198,31 +194,10 @@ export function JiraAppShell({
         console.error("Failed to parse projects order", err);
       }
     }
-    setOrderedProjects(projects);
-  }, [projects, session.workspaceId]);
+    setOrderedProjects(shellProjects);
+  }, [shellProjects, session.workspaceId]);
 
   useEffect(() => {
-    let cancelled = false;
-
-    async function heartbeat() {
-      try {
-        const result = await apiRequest<{ presence: PresenceMap }>(
-          "/api/projects/presence",
-          { method: "POST" },
-        );
-        if (!cancelled) {
-          setPresenceByMemberId(result.presence);
-        }
-      } catch {
-        // Presence heartbeat should not block shell rendering.
-      }
-    }
-
-    void heartbeat();
-    const intervalId = window.setInterval(() => {
-      void heartbeat();
-    }, 20_000);
-
     const handleRateLimit = (e: Event) => {
       const customEvent = e as CustomEvent<string>;
       toast.error(
@@ -230,69 +205,10 @@ export function JiraAppShell({
       );
     };
     window.addEventListener("api-rate-limited", handleRateLimit);
-
     return () => {
-      cancelled = true;
-      window.clearInterval(intervalId);
       window.removeEventListener("api-rate-limited", handleRateLimit);
     };
   }, []);
-
-  useEffect(() => {
-    let eventSource: EventSource | null = null;
-    let reconnectTimeout: NodeJS.Timeout | null = null;
-
-    const connect = () => {
-      const apiBaseUrl = process.env.NEXT_PUBLIC_API_BASE_URL || "";
-      const sseUrl = apiBaseUrl
-        ? `${apiBaseUrl.replace(/\/$/, "")}/projects/sse`
-        : "/api/projects/sse";
-
-      eventSource = new EventSource(sseUrl, { withCredentials: true });
-
-      eventSource.onmessage = (event) => {
-        try {
-          if (event.data === "ping") return;
-          const payload = JSON.parse(event.data) as {
-            type: string;
-            data?: { presence?: PresenceMap };
-          };
-          if (payload.type === "PRESENCE_CHANGED" && payload.data?.presence) {
-            setPresenceByMemberId(payload.data.presence);
-            if (pathname === "/") {
-              router.refresh();
-            }
-            return;
-          }
-          router.refresh();
-        } catch (err) {
-          console.error("Failed to parse project SSE payload", err);
-        }
-      };
-
-      eventSource.onerror = (err) => {
-        console.warn(
-          "Project SSE connection encountered an issue. Reconnecting in 5s...",
-          err,
-        );
-        if (eventSource) {
-          eventSource.close();
-        }
-        reconnectTimeout = setTimeout(connect, 5000);
-      };
-    };
-
-    connect();
-
-    return () => {
-      if (eventSource) {
-        eventSource.close();
-      }
-      if (reconnectTimeout) {
-        clearTimeout(reconnectTimeout);
-      }
-    };
-  }, [router]);
 
   function persistProjectOrder(nextProjects: JiraShellProject[]) {
     setOrderedProjects(nextProjects);
@@ -351,21 +267,13 @@ export function JiraAppShell({
     return children;
   }
 
-  const activeProject = projects.find((project) =>
+  const activeProject = shellProjects.find((project) =>
     pathname.startsWith(`/projects/${project.key}`),
   );
   const footerRole =
     activeWorkspace?.role === MEMBER_ROLES.owner
       ? MEMBER_ROLES.owner
       : activeProject?.currentMemberRole ?? "MEMBER";
-  const workspacePresence = useMemo(
-    () => ({
-      ...presenceByMemberId,
-      [session.memberId]:
-        presenceByMemberId[session.memberId] ?? MEMBER_PRESENCE.online,
-    }),
-    [presenceByMemberId, session.memberId],
-  );
 
   const sidebar = (
     <aside className="flex h-full w-72 flex-col border-r bg-background text-foreground shadow-xl transition-colors duration-300">
@@ -557,7 +465,6 @@ export function JiraAppShell({
 
       <Separator />
 
-      {/* ── Settings section (Collapsible) ────────────────────────────── */}
       <Collapsible open={settingsOpen} onOpenChange={setSettingsOpen}>
         <CollapsibleTrigger asChild>
           <Button
@@ -577,73 +484,42 @@ export function JiraAppShell({
         </CollapsibleTrigger>
 
         <CollapsibleContent className="flex flex-col gap-1 px-3 pb-3">
-          {/* <NewWorkspaceModal
-            trigger={
-              <Button
-                variant="ghost"
-                size="sm"
-                className="w-full justify-start gap-2"
-              >
-                <Plus className="size-4" />
-                Workspace mới
-              </Button>
-            }
-          /> */}
-
           {(
             [
-              {
-                href: "/settings/account",
-                label: "Tài khoản",
-                icon: User2,
-              },
-              {
-                href: "/workspace/members",
-                label: "Thành viên",
-                icon: Users,
-              },
-              {
-                href: "/settings/integrations",
-                label: "Tích hợp",
-                icon: Blocks,
-              },
-              {
-                href: "/legal",
-                label: "Legal",
-                icon: Scale,
-              },
+              { href: "/settings/account", label: "Tài khoản", icon: User2 },
+              { href: "/workspace/members", label: "Thành viên", icon: Users },
+              { href: "/settings/integrations", label: "Tích hợp", icon: Blocks },
+              { href: "/legal", label: "Legal", icon: Scale },
             ] as const
-          ).filter(link => {
-            if (link.href === "/settings/integrations") {
-              return canManageWorkspace;
-            }
-            return true;
-          }).map((link) => {
-            const selected = pathname === link.href;
-            const Icon = link.icon;
-            return (
-              <Link
-                key={link.href}
-                href={link.href}
-                onClick={() => setMobileOpen(false)}
-                className={cn(
-                  "flex items-center gap-2 rounded px-3 py-1.5 text-xs transition",
-                  selected
-                    ? "bg-accent font-semibold text-accent-foreground"
-                    : "text-muted-foreground hover:bg-accent hover:text-accent-foreground",
-                )}
-              >
-                <Icon className="size-3.5" />
-                {link.label}
-              </Link>
-            );
-          })}
+          )
+            .filter((link) =>
+              link.href === "/settings/integrations" ? canManageWorkspace : true,
+            )
+            .map((link) => {
+              const selected = pathname === link.href;
+              const Icon = link.icon;
+              return (
+                <Link
+                  key={link.href}
+                  href={link.href}
+                  onClick={() => setMobileOpen(false)}
+                  className={cn(
+                    "flex items-center gap-2 rounded px-3 py-1.5 text-xs transition",
+                    selected
+                      ? "bg-accent font-semibold text-accent-foreground"
+                      : "text-muted-foreground hover:bg-accent hover:text-accent-foreground",
+                  )}
+                >
+                  <Icon className="size-3.5" />
+                  {link.label}
+                </Link>
+              );
+            })}
         </CollapsibleContent>
       </Collapsible>
 
       <Separator />
 
-      {/* ── User profile ────────────────────────────────────────────────── */}
       <div className="border-t p-4">
         <div className="flex items-center gap-3">
           <Avatar className="size-9 border">
@@ -672,25 +548,22 @@ export function JiraAppShell({
   );
 
   return (
-    <WorkspacePresenceContext.Provider value={workspacePresence}>
-      <div className="min-h-screen bg-background text-foreground">
-        <div className="fixed inset-y-0 left-0 z-40 hidden lg:block">
-          {sidebar}
-        </div>
+    <div className="min-h-screen bg-background text-foreground">
+      <div className="fixed inset-y-0 left-0 z-40 hidden lg:block">{sidebar}</div>
 
-        {mobileOpen ? (
-          <>
-            <button
-              className="fixed inset-0 z-40 bg-background/80 backdrop-blur-md lg:hidden"
-              aria-label="Đóng menu"
-              onClick={() => setMobileOpen(false)}
-            />
-            <div className="fixed inset-y-0 left-0 z-50 lg:hidden">{sidebar}</div>
-          </>
-        ) : null}
+      {mobileOpen ? (
+        <>
+          <button
+            className="fixed inset-0 z-40 bg-background/80 backdrop-blur-md lg:hidden"
+            aria-label="Đóng menu"
+            onClick={() => setMobileOpen(false)}
+          />
+          <div className="fixed inset-y-0 left-0 z-50 lg:hidden">{sidebar}</div>
+        </>
+      ) : null}
 
-        <div className="min-h-screen lg:pl-72">
-          <header className="sticky top-0 z-30 flex h-16 items-center gap-3 border-b border-border bg-background/85 px-4 backdrop-blur-xl sm:px-6 lg:px-8">
+      <div className="min-h-screen lg:pl-72">
+        <header className="sticky top-0 z-30 flex h-16 items-center gap-3 border-b border-border bg-background/85 px-4 backdrop-blur-xl sm:px-6 lg:px-8">
           <Button
             variant="ghost"
             size="icon"
@@ -773,35 +646,25 @@ export function JiraAppShell({
               {initials(session.name || session.login)}
             </AvatarFallback>
           </Avatar>
-          </header>
-          <div className="min-w-0">{children}</div>
-          <footer className="border-t border-border/70 px-4 py-5 text-sm text-muted-foreground sm:px-6 lg:px-8">
-            <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
-              <p>Tasks Dash workspace experience.</p>
-              <div className="flex flex-wrap items-center gap-x-4 gap-y-2">
-                <Link
-                  href="/verify-user"
-                  className="transition hover:text-foreground"
-                >
-                  Verify User
-                </Link>
-                <Link
-                  href="/terms-of-service"
-                  className="transition hover:text-foreground"
-                >
-                  Terms of Service
-                </Link>
-                <Link
-                  href="/privacy-policy"
-                  className="transition hover:text-foreground"
-                >
-                  Privacy Policy
-                </Link>
-              </div>
+        </header>
+        <div className="min-w-0">{children}</div>
+        <footer className="border-t border-border/70 px-4 py-5 text-sm text-muted-foreground sm:px-6 lg:px-8">
+          <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+            <p>Tasks Dash workspace experience.</p>
+            <div className="flex flex-wrap items-center gap-x-4 gap-y-2">
+              <Link href="/verify-user" className="transition hover:text-foreground">
+                Verify User
+              </Link>
+              <Link href="/terms-of-service" className="transition hover:text-foreground">
+                Terms of Service
+              </Link>
+              <Link href="/privacy-policy" className="transition hover:text-foreground">
+                Privacy Policy
+              </Link>
             </div>
-          </footer>
-        </div>
+          </div>
+        </footer>
       </div>
-    </WorkspacePresenceContext.Provider>
+    </div>
   );
 }

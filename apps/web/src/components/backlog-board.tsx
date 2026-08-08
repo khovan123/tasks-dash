@@ -1,13 +1,9 @@
 "use client";
 
-import { useRouter } from "next/navigation";
 import type { DragEvent } from "react";
-import { useState, useEffect } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { Clock, Calendar, AlertCircle, Plus } from "lucide-react";
-import {
-  WorkItemTypeIcon,
-  WORK_ITEM_TYPE_LABELS,
-} from "@/components/work-item-type-icon";
+import { WorkItemTypeIcon } from "@/components/work-item-type-icon";
 import {
   GithubWorkItemLinks,
   type GithubWorkItemView,
@@ -27,14 +23,18 @@ import {
 } from "@/components/ui/empty";
 import { SectionHeading } from "@/components/layout/app-shell";
 import { cn } from "@/lib/utils";
-
 import { NewWorkItemModal } from "@/components/new-work-item-modal";
-
 import {
   WorkItemDetailDrawer,
   type DetailWorkItem,
 } from "@/components/work-item-detail-drawer";
 import { useWorkspacePresence } from "@/components/layout/jira-app-shell";
+import { useAppDispatch, useAppSelector } from "@/lib/store/hooks";
+import {
+  replaceWorkItems,
+  selectWorkItemsByProject,
+  selectWorkItemsHydrated,
+} from "@/lib/store/realtime-slice";
 
 interface BacklogItem {
   key: string;
@@ -90,6 +90,17 @@ export function BacklogBoard({
   canManageTasks?: boolean;
 }) {
   const membersMap = new Map(members.map((member) => [member.id, member]));
+  const dispatch = useAppDispatch();
+  const workItemsSelector = useMemo(
+    () => selectWorkItemsByProject(projectKey),
+    [projectKey],
+  );
+  const hydratedSelector = useMemo(
+    () => selectWorkItemsHydrated(projectKey),
+    [projectKey],
+  );
+  const realtimeItems = useAppSelector(workItemsSelector);
+  const realtimeHydrated = useAppSelector(hydratedSelector);
 
   const [items, setItems] = useState(initialItems);
   const [draggedKey, setDraggedKey] = useState<string | null>(null);
@@ -98,65 +109,24 @@ export function BacklogBoard({
   const [detailItem, setDetailItem] = useState<DetailWorkItem | null>(null);
   const [drawerOpen, setDrawerOpen] = useState(false);
   const presenceByMemberId = useWorkspacePresence();
-  const router = useRouter();
 
   useEffect(() => {
-    setItems(initialItems);
-  }, [initialItems]);
+    if (!realtimeHydrated) {
+      dispatch(
+        replaceWorkItems({
+          projectKey,
+          items: initialItems,
+          bumpRevision: false,
+        }),
+      );
+    }
+  }, [dispatch, initialItems, projectKey, realtimeHydrated]);
 
   useEffect(() => {
-    let eventSource: EventSource | null = null;
-    let reconnectTimeout: NodeJS.Timeout | null = null;
-
-    const connect = () => {
-      const apiBaseUrl = process.env.NEXT_PUBLIC_API_BASE_URL || "";
-      const sseUrl = apiBaseUrl
-        ? `${apiBaseUrl.replace(/\/$/, "")}/projects/${projectKey}/work-items/sse`
-        : `/api/projects/${projectKey}/work-items/sse`;
-      
-      eventSource = new EventSource(sseUrl, { withCredentials: true });
-
-      eventSource.onmessage = (event) => {
-        try {
-          if (event.data === "ping") return;
-          const payload = JSON.parse(event.data);
-          const { type, data } = payload;
-
-          if (type === "created") {
-            setItems((prev) => {
-              if (prev.some((item) => item.key === data.key)) return prev;
-              return [...prev, data];
-            });
-          } else if (type === "updated") {
-            setItems((prev) => mergeItem(prev, data));
-          } else if (type === "reordered") {
-            router.refresh();
-          }
-        } catch (err) {
-          console.error("Failed to parse SSE payload", err);
-        }
-      };
-
-      eventSource.onerror = (err) => {
-        console.warn("SSE Connection encountered an issue. Reconnecting in 5s...", err);
-        if (eventSource) {
-          eventSource.close();
-        }
-        reconnectTimeout = setTimeout(connect, 5000);
-      };
-    };
-
-    connect();
-
-    return () => {
-      if (eventSource) {
-        eventSource.close();
-      }
-      if (reconnectTimeout) {
-        clearTimeout(reconnectTimeout);
-      }
-    };
-  }, [projectKey, router]);
+    if (realtimeHydrated) {
+      setItems(realtimeItems as BacklogItem[]);
+    }
+  }, [realtimeHydrated, realtimeItems]);
 
   function handleItemUpdate(updated: DetailWorkItem) {
     setItems((prev) => mergeItem(prev, updated));
@@ -361,7 +331,7 @@ export function BacklogBoard({
                         <GithubWorkItemLinks github={item.github} compact />
                       </div>
                     </div>
-                      <div className="flex items-center justify-end">
+                    <div className="flex items-center justify-end">
                       {assignee ? (
                         (() => {
                           const memberDetails = members.find((m) => m.id === assignee.id);

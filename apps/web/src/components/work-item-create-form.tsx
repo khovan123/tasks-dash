@@ -4,7 +4,6 @@ import { useState, useMemo, useEffect } from "react";
 import { type DateRange } from "react-day-picker";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { PRIORITIES, WORK_ITEM_TYPES } from "@tasks-dash/contracts";
-import { useRouter } from "next/navigation";
 import {
   Controller,
   FormProvider,
@@ -185,7 +184,6 @@ export function WorkItemCreateForm({
   onSuccess?: () => void;
   inlineMode?: boolean;
 }) {
-  const router = useRouter();
   const [myUserId, setMyUserId] = useState<string | null>(null);
 
   useEffect(() => {
@@ -246,7 +244,6 @@ export function WorkItemCreateForm({
         ...EMPTY_FORM,
         statusId: statuses[0]?.id ?? "",
       });
-      router.refresh();
       if (onSuccess) onSuccess();
     } catch (error) {
       form.setError("root", {
@@ -615,15 +612,13 @@ export function WorkItemCreateForm({
   );
 }
 
-// ── WorkItemTypeSelector ──────────────────────────────────────────────────────
-// A visual icon-button group used inside WorkItemCreateForm to pick work item type.
-
 type FormInstance = ReturnType<
   typeof useForm<WorkItemFormInput, unknown, WorkItemFormValues>
 >;
 
 function WorkItemTypeSelector({ form }: { form: FormInstance }) {
   const current = useWatch({ control: form.control, name: "type" });
+  void current;
 
   return (
     <Controller

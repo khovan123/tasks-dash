@@ -2,7 +2,6 @@
 
 import { zodResolver } from "@hookform/resolvers/zod";
 import Link from "next/link";
-import { useRouter } from "next/navigation";
 import { Controller, FormProvider, useForm } from "react-hook-form";
 import { useState } from "react";
 import { Check, ChevronsUpDown, Github, Link2Off, Save } from "lucide-react";
@@ -12,6 +11,11 @@ import {
   repositoryLinkSchema,
 } from "@/features/integrations/schemas/repository-link.schema";
 import { apiRequest } from "@/lib/api/api-request";
+import { useAppDispatch, useAppSelector } from "@/lib/store/hooks";
+import {
+  selectProject,
+  upsertProjectDetail,
+} from "@/lib/store/realtime-slice";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { Button } from "@/components/ui/button";
 import { Field, FieldError, FieldLabel } from "@/components/ui/field";
@@ -47,13 +51,21 @@ export interface RepositoryLinkFormProps {
   canManage?: boolean;
 }
 
+interface RepositoryMutationResult {
+  projectKey: string;
+  repository: null | {
+    fullName: string;
+  };
+}
+
 export function RepositoryLinkForm({
   projectKey,
   currentRepositoryFullName,
   repositories,
   canManage = false,
 }: RepositoryLinkFormProps) {
-  const router = useRouter();
+  const dispatch = useAppDispatch();
+  const currentProject = useAppSelector(selectProject(projectKey));
   const [open, setOpen] = useState(false);
   const [isEditing, setIsEditing] = useState(false);
 
@@ -71,18 +83,28 @@ export function RepositoryLinkForm({
     },
   });
 
+  function updateRepository(repositoryFullName?: string) {
+    dispatch(
+      upsertProjectDetail({
+        ...(currentProject ?? { key: projectKey, name: projectKey }),
+        key: projectKey,
+        repositoryFullName,
+      }),
+    );
+  }
+
   async function submit(values: RepositoryLinkPayload): Promise<void> {
     form.clearErrors("root");
     try {
-      await apiRequest(
+      const result = await apiRequest<RepositoryMutationResult>(
         `/api/integrations/github/projects/${projectKey}/repository`,
         {
           method: "PATCH",
           body: JSON.stringify({ repositoryId: values.repositoryId }),
         },
       );
+      updateRepository(result.repository?.fullName);
       setIsEditing(false);
-      router.refresh();
     } catch (error) {
       form.setError("root", {
         message:
@@ -96,13 +118,13 @@ export function RepositoryLinkForm({
   async function unlink(): Promise<void> {
     form.clearErrors("root");
     try {
-      await apiRequest(
+      await apiRequest<RepositoryMutationResult>(
         `/api/integrations/github/projects/${projectKey}/repository`,
         { method: "DELETE" },
       );
+      updateRepository(undefined);
       form.reset({ repositoryId: "" });
       setIsEditing(false);
-      router.refresh();
     } catch (error) {
       form.setError("root", {
         message:
@@ -162,7 +184,8 @@ export function RepositoryLinkForm({
                           >
                             {field.value
                               ? repositories.find(
-                                  (r) => String(r.id) === field.value,
+                                  (repository) =>
+                                    String(repository.id) === field.value,
                                 )?.full_name
                               : "Chọn repository..."}
                             <ChevronsUpDown className="ml-2 size-4 shrink-0 opacity-50" />
@@ -172,9 +195,7 @@ export function RepositoryLinkForm({
                           <Command>
                             <CommandInput placeholder="Tìm kiếm repository..." />
                             <CommandList>
-                              <CommandEmpty>
-                                Không tìm thấy repository.
-                              </CommandEmpty>
+                              <CommandEmpty>Không tìm thấy repository.</CommandEmpty>
                               <CommandGroup>
                                 {repositories.map((repository) => (
                                   <CommandItem
@@ -271,14 +292,13 @@ export function RepositoryLinkForm({
                     <Button
                       type="button"
                       className="w-full sm:w-auto"
-                      onClick={(e) => {
-                        e.preventDefault();
+                      onClick={(event) => {
+                        event.preventDefault();
                         setIsEditing(true);
                       }}
                       disabled={form.formState.isSubmitting}
                     >
-                      <Github />
-                      Đổi repository
+                      <Github /> Đổi repository
                     </Button>
                     <Button
                       variant="outline"

@@ -1,11 +1,9 @@
 "use client";
 
 import type { DragEvent } from "react";
-import { useRouter } from "next/navigation";
 import React, { useState, useMemo, useEffect } from "react";
 import { format } from "date-fns";
 import {
-  AlertCircle,
   Clock,
   Search,
   User,
@@ -36,6 +34,12 @@ import {
   PopoverContent,
   PopoverTrigger,
 } from "@/components/ui/popover";
+import { useAppDispatch, useAppSelector } from "@/lib/store/hooks";
+import {
+  replaceWorkItems,
+  selectWorkItemsByProject,
+  selectWorkItemsHydrated,
+} from "@/lib/store/realtime-slice";
 
 interface WorkflowStatus {
   id: string;
@@ -92,15 +96,6 @@ interface WorkspaceMember {
   discordUsername?: string;
 }
 
-function getInitials(name: string): string {
-  return name
-    .trim()
-    .split(/\s+/)
-    .slice(0, 2)
-    .map((part) => part[0]?.toUpperCase() ?? "")
-    .join("");
-}
-
 function mergeItem<T extends { key: string }>(
   items: T[],
   nextItem: Partial<T> & { key: string },
@@ -127,6 +122,17 @@ export function KanbanBoard({
   canManageTasks?: boolean;
   canCompleteSprint?: boolean;
 }) {
+  const dispatch = useAppDispatch();
+  const workItemsSelector = useMemo(
+    () => selectWorkItemsByProject(projectKey),
+    [projectKey],
+  );
+  const hydratedSelector = useMemo(
+    () => selectWorkItemsHydrated(projectKey),
+    [projectKey],
+  );
+  const realtimeItems = useAppSelector(workItemsSelector);
+  const realtimeHydrated = useAppSelector(hydratedSelector);
   const [items, setItems] = useState<KanbanItem[]>(initialItems);
   const [draggedKey, setDraggedKey] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -134,90 +140,45 @@ export function KanbanBoard({
   const [detailItem, setDetailItem] = useState<DetailWorkItem | null>(null);
   const [drawerOpen, setDrawerOpen] = useState(false);
   const presenceByMemberId = useWorkspacePresence();
-  const router = useRouter();
 
   useEffect(() => {
-    setItems(initialItems);
-  }, [initialItems]);
+    if (!realtimeHydrated) {
+      dispatch(
+        replaceWorkItems({
+          projectKey,
+          items: initialItems,
+          bumpRevision: false,
+        }),
+      );
+    }
+  }, [dispatch, initialItems, projectKey, realtimeHydrated]);
 
   useEffect(() => {
-    let eventSource: EventSource | null = null;
-    let reconnectTimeout: NodeJS.Timeout | null = null;
-
-    const connect = () => {
-      const apiBaseUrl = process.env.NEXT_PUBLIC_API_BASE_URL || "";
-      const sseUrl = apiBaseUrl
-        ? `${apiBaseUrl.replace(/\/$/, "")}/projects/${projectKey}/work-items/sse`
-        : `/api/projects/${projectKey}/work-items/sse`;
-      
-      eventSource = new EventSource(sseUrl, { withCredentials: true });
-
-      eventSource.onmessage = (event) => {
-        try {
-          if (event.data === "ping") return;
-          const payload = JSON.parse(event.data);
-          const { type, data } = payload;
-
-          if (type === "created") {
-            setItems((prev) => {
-              if (prev.some((item) => item.key === data.key)) return prev;
-              return [...prev, data];
-            });
-          } else if (type === "updated") {
-            setItems((prev) => mergeItem(prev, data));
-          } else if (type === "reordered") {
-            router.refresh();
-          }
-        } catch (err) {
-          console.error("Failed to parse SSE payload", err);
-        }
-      };
-
-      eventSource.onerror = (err) => {
-        console.warn("SSE Connection encountered an issue. Reconnecting in 5s...", err);
-        if (eventSource) {
-          eventSource.close();
-        }
-        reconnectTimeout = setTimeout(connect, 5000);
-      };
-    };
-
-    connect();
-
-    return () => {
-      if (eventSource) {
-        eventSource.close();
-      }
-      if (reconnectTimeout) {
-        clearTimeout(reconnectTimeout);
-      }
-    };
-  }, [projectKey, router]);
+    if (realtimeHydrated) {
+      setItems(realtimeItems as KanbanItem[]);
+    }
+  }, [realtimeHydrated, realtimeItems]);
 
   function handleItemUpdate(updated: DetailWorkItem) {
     setItems((prev) => mergeItem(prev, updated));
     setDetailItem(updated);
   }
 
-  // Search & Filter state
   const [searchQuery, setSearchQuery] = useState("");
   const [selectedAssigneeId, setSelectedAssigneeId] = useState<string | null>(
     null,
   );
 
-  // Map assignees by ID for easy lookup
   const membersMap = useMemo(() => {
     return new Map(members.map((m) => [m.id, m]));
   }, [members]);
 
-  // Group items by status
   const groupedItems = useMemo(() => {
     const groups: Record<string, KanbanItem[]> = {};
     for (const status of statuses) {
       groups[status.id] = [];
     }
 
-    // Filter items based on search and user selection
     const filtered = items.filter((item) => {
       const matchesSearch =
         item.summary.toLowerCase().includes(searchQuery.toLowerCase()) ||
@@ -233,7 +194,6 @@ export function KanbanBoard({
       if (groups[item.statusId]) {
         groups[item.statusId].push(item);
       } else {
-        // Fallback for items with legacy/deleted status
         const defaultStatus = statuses[0]?.id;
         if (defaultStatus) {
           groups[defaultStatus].push(item);
@@ -249,7 +209,6 @@ export function KanbanBoard({
     const itemIndex = items.findIndex((item) => item.key === itemKey);
     if (itemIndex < 0 || items[itemIndex].statusId === nextStatusId) return;
 
-    // Optimistic UI update
     const updated = [...items];
     updated[itemIndex] = { ...updated[itemIndex], statusId: nextStatusId };
     setItems(updated);
@@ -295,19 +254,8 @@ export function KanbanBoard({
     }
   }
 
-  // Get initials for avatar
-  function getInitials(name: string) {
-    return name
-      .split(" ")
-      .map((part) => part[0])
-      .join("")
-      .toUpperCase()
-      .slice(0, 2);
-  }
-
   return (
     <div className="flex flex-col gap-6 p-1">
-      {/* Search / Filter Bar */}
       <div className="flex flex-wrap items-center justify-between gap-4 border-b pb-4">
         <div className="flex flex-wrap items-center gap-3">
           <div className="relative w-64">
@@ -320,7 +268,6 @@ export function KanbanBoard({
             />
           </div>
 
-          {/* Avatar filter list */}
           <div className="flex items-center -space-x-1 overflow-hidden py-1 px-2 border-l border-r">
             <button
               onClick={() => setSelectedAssigneeId(null)}
@@ -387,7 +334,6 @@ export function KanbanBoard({
         </Alert>
       )}
 
-      {/* Kanban Columns Grid */}
       <div className="flex gap-4 overflow-x-auto pb-4 scrollbar-thin select-none">
         {statuses.map((status) => {
           const columnItems = groupedItems[status.id] || [];
@@ -399,7 +345,6 @@ export function KanbanBoard({
               onDragOver={(e) => canManageTasks && handleDragOver(e)}
               onDrop={(e) => canManageTasks && handleDrop(e, status.id)}
             >
-              {/* Column Header */}
               <div className="flex items-center justify-between mb-3 px-1">
                 <span className="text-xs font-bold uppercase tracking-wider text-muted-foreground">
                   {status.name}
@@ -409,7 +354,6 @@ export function KanbanBoard({
                 </Badge>
               </div>
 
-              {/* Cards list */}
               <div className="flex flex-1 flex-col gap-2 overflow-y-auto">
                 {columnItems.map((item) => {
                   const assignee = item.assigneeId
@@ -452,7 +396,6 @@ export function KanbanBoard({
                       }}
                     >
                       <CardContent className="p-3.5 flex flex-col gap-3">
-                        {/* Title and details */}
                         <div className="flex flex-col gap-1">
                           <span className="text-xs text-muted-foreground font-mono font-bold">
                             {item.key}
@@ -462,7 +405,6 @@ export function KanbanBoard({
                           </p>
                         </div>
 
-                        {/* Badges for tags */}
                         {item.labels && item.labels.length > 0 && (
                           <div className="flex flex-wrap gap-1">
                             {item.labels.map((label) => (
@@ -477,10 +419,8 @@ export function KanbanBoard({
                           </div>
                         )}
 
-                        {/* Footer details */}
                         <div className="flex items-center justify-between pt-1 border-t border-border/50 text-xs">
                           <div className="flex items-center gap-2">
-                            {/* Type icon */}
                             <div
                               title={
                                 WORK_ITEM_TYPE_LABELS[item.type] ?? item.type
@@ -489,7 +429,6 @@ export function KanbanBoard({
                               <WorkItemTypeIcon type={item.type} size={14} />
                             </div>
 
-                            {/* Priority Icon */}
                             <span title={`Priority: ${item.priority}`}>
                               <PriorityIcon
                                 priority={item.priority}
@@ -497,7 +436,6 @@ export function KanbanBoard({
                               />
                             </span>
 
-                            {/* GitHub Pull Request Link */}
                             {item.github?.pullRequests &&
                               item.github.pullRequests.length > 0 && (
                                 <Popover>
@@ -609,7 +547,6 @@ export function KanbanBoard({
                                 </Popover>
                               )}
 
-                            {/* Due date if exists */}
                             {formattedDate && (
                               <div
                                 className={cn(
@@ -633,7 +570,6 @@ export function KanbanBoard({
                               </div>
                             )}
 
-                            {/* Story points */}
                             {item.storyPoints !== undefined && (
                               <Badge className="text-[9px] px-1.5 py-0 h-4 bg-muted hover:bg-muted text-muted-foreground border">
                                 {item.storyPoints}
@@ -641,8 +577,7 @@ export function KanbanBoard({
                             )}
                           </div>
 
-                          {/* Assignee Avatar */}
-                           {assignee ? (
+                          {assignee ? (
                             (() => {
                               const memberDetails = members.find((m) => m.id === assignee.id);
                               return (
