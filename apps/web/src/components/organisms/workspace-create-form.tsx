@@ -1,24 +1,13 @@
 "use client";
 
 import Link from "next/link";
-import { zodResolver } from "@hookform/resolvers/zod";
-import { FormProvider, useForm } from "react-hook-form";
+import { FormProvider } from "react-hook-form";
 import { Plus } from "lucide-react";
-import { apiRequest } from "@/lib/api/api-request";
-import { Spinner } from "@/components/ui/spinner";
-import {
-  WorkspaceFormValues,
-  workspaceFormSchema,
-} from "@/features/workspaces/schemas/workspace-form.schema";
-import { FormCard } from "@/components/layout/app-shell";
+import { WorkspaceFormFields } from "@/components/molecules/workspace-form-fields";
+import { FormCard } from "@/components/organisms/form-card";
 import { Button } from "@/components/ui/button";
-import {
-  Field,
-  FieldError,
-  FieldGroup,
-  FieldLabel,
-} from "@/components/ui/field";
-import { Input } from "@/components/ui/input";
+import { Spinner } from "@/components/ui/spinner";
+import { useCreateWorkspaceForm } from "@/features/workspaces/hooks/use-create-workspace-form";
 
 export function WorkspaceCreateForm({
   setupToken,
@@ -27,30 +16,11 @@ export function WorkspaceCreateForm({
   setupToken?: string;
   firstWorkspace?: boolean;
 }) {
-  const form = useForm<WorkspaceFormValues>({
-    resolver: zodResolver(workspaceFormSchema),
-    defaultValues: { workspaceName: "", workspaceSlug: "" },
+  const { form, submit } = useCreateWorkspaceForm({
+    setupToken,
+    switchAfterCreate: !setupToken,
+    onCreated: () => window.location.assign("/"),
   });
-
-  async function submit(values: WorkspaceFormValues): Promise<void> {
-    form.clearErrors("root");
-    try {
-      await apiRequest(setupToken ? "/api/workspaces/setup" : "/api/workspaces", {
-        method: "POST",
-        body: JSON.stringify({
-          workspaceName: values.workspaceName,
-          workspaceSlug: values.workspaceSlug || undefined,
-          ...(setupToken ? { setupToken } : {}),
-        }),
-      });
-      window.location.assign("/");
-    } catch (cause) {
-      form.setError("root", {
-        message:
-          cause instanceof Error ? cause.message : "Không thể tạo workspace.",
-      });
-    }
-  }
 
   return (
     <FormProvider {...form}>
@@ -87,36 +57,7 @@ export function WorkspaceCreateForm({
             </div>
           }
         >
-          <FieldGroup>
-            <Field>
-              <FieldLabel htmlFor="workspace-name">Tên workspace *</FieldLabel>
-              <Input
-                id="workspace-name"
-                {...form.register("workspaceName")}
-                placeholder="Product Delivery"
-                autoFocus
-                aria-invalid={Boolean(form.formState.errors.workspaceName)}
-              />
-              {form.formState.errors.workspaceName?.message ? (
-                <FieldError>{form.formState.errors.workspaceName.message}</FieldError>
-              ) : null}
-            </Field>
-            <Field>
-              <FieldLabel htmlFor="workspace-slug">Slug tùy chọn</FieldLabel>
-              <Input
-                id="workspace-slug"
-                {...form.register("workspaceSlug")}
-                placeholder="product-delivery"
-                aria-invalid={Boolean(form.formState.errors.workspaceSlug)}
-              />
-              {form.formState.errors.workspaceSlug?.message ? (
-                <FieldError>{form.formState.errors.workspaceSlug.message}</FieldError>
-              ) : null}
-            </Field>
-          </FieldGroup>
-          {form.formState.errors.root?.message ? (
-            <FieldError>{form.formState.errors.root.message}</FieldError>
-          ) : null}
+          <WorkspaceFormFields idPrefix="workspace" />
         </FormCard>
       </form>
     </FormProvider>

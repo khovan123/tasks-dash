@@ -1,14 +1,9 @@
 "use client";
 
 import { useState } from "react";
-import { zodResolver } from "@hookform/resolvers/zod";
-import { FormProvider, useForm } from "react-hook-form";
+import { FormProvider } from "react-hook-form";
 import { Boxes, LoaderCircle, Plus } from "lucide-react";
-import { apiRequest } from "@/lib/api/api-request";
-import {
-  WorkspaceFormValues,
-  workspaceFormSchema,
-} from "@/features/workspaces/schemas/workspace-form.schema";
+import { WorkspaceFormFields } from "@/components/molecules/workspace-form-fields";
 import { Button } from "@/components/ui/button";
 import {
   Dialog,
@@ -19,63 +14,21 @@ import {
   DialogTitle,
   DialogTrigger,
 } from "@/components/ui/dialog";
-import {
-  Field,
-  FieldDescription,
-  FieldError,
-  FieldLabel,
-} from "@/components/ui/field";
-import { Input } from "@/components/ui/input";
-
-interface NewWorkspaceResponse {
-  workspaceId: string;
-  name: string;
-}
+import { useCreateWorkspaceForm } from "@/features/workspaces/hooks/use-create-workspace-form";
 
 interface NewWorkspaceModalProps {
-  /** Custom trigger element — defaults to a "+ Workspace" button */
   trigger?: React.ReactNode;
 }
 
 export function NewWorkspaceModal({ trigger }: NewWorkspaceModalProps) {
   const [open, setOpen] = useState(false);
-
-  const form = useForm<WorkspaceFormValues>({
-    resolver: zodResolver(workspaceFormSchema),
-    defaultValues: { workspaceName: "", workspaceSlug: "" },
+  const { form, submit, reset } = useCreateWorkspaceForm({
+    switchAfterCreate: true,
+    onCreated: () => window.location.assign("/"),
   });
 
-  async function submit(values: WorkspaceFormValues): Promise<void> {
-    form.clearErrors("root");
-    try {
-      // 1. Create the workspace
-      const res = await apiRequest<NewWorkspaceResponse>("/api/workspaces", {
-        method: "POST",
-        body: JSON.stringify({
-          workspaceName: values.workspaceName,
-          workspaceSlug: values.workspaceSlug || undefined,
-        }),
-      });
-
-      // 2. Auto-switch to the new workspace
-      if (res?.workspaceId) {
-        await apiRequest(`/api/workspaces/${res.workspaceId}/switch`, {
-          method: "POST",
-        });
-      }
-
-      // 3. Full reload to pick up new session
-      window.location.assign("/");
-    } catch (cause) {
-      form.setError("root", {
-        message:
-          cause instanceof Error ? cause.message : "Không thể tạo workspace.",
-      });
-    }
-  }
-
   function handleOpenChange(next: boolean) {
-    if (!next) form.reset();
+    if (!next) reset();
     setOpen(next);
   }
 
@@ -118,43 +71,10 @@ export function NewWorkspaceModal({ trigger }: NewWorkspaceModalProps) {
             className="flex-1 flex flex-col min-h-0 overflow-hidden"
           >
             <div className="flex-1 overflow-y-auto overflow-x-hidden px-6 py-4 space-y-4">
-              <Field>
-                <FieldLabel htmlFor="nw-name">Tên workspace *</FieldLabel>
-                <Input
-                  id="nw-name"
-                  {...form.register("workspaceName")}
-                  placeholder="Product Delivery"
-                  autoFocus
-                  aria-invalid={Boolean(form.formState.errors.workspaceName)}
-                />
-                {form.formState.errors.workspaceName?.message ? (
-                  <FieldError>
-                    {form.formState.errors.workspaceName.message}
-                  </FieldError>
-                ) : null}
-              </Field>
-
-              <Field>
-                <FieldLabel htmlFor="nw-slug">Slug tùy chọn</FieldLabel>
-                <Input
-                  id="nw-slug"
-                  {...form.register("workspaceSlug")}
-                  placeholder="product-delivery"
-                  aria-invalid={Boolean(form.formState.errors.workspaceSlug)}
-                />
-                <FieldDescription>
-                  Để trống để tự động tạo từ tên.
-                </FieldDescription>
-                {form.formState.errors.workspaceSlug?.message ? (
-                  <FieldError>
-                    {form.formState.errors.workspaceSlug.message}
-                  </FieldError>
-                ) : null}
-              </Field>
-
-              {form.formState.errors.root?.message ? (
-                <FieldError>{form.formState.errors.root.message}</FieldError>
-              ) : null}
+              <WorkspaceFormFields
+                idPrefix="nw"
+                slugDescription="Để trống để tự động tạo từ tên."
+              />
             </div>
 
             <DialogFooter className="shrink-0 border-t px-6 py-4 bg-muted/20">
@@ -166,10 +86,7 @@ export function NewWorkspaceModal({ trigger }: NewWorkspaceModalProps) {
               >
                 Hủy
               </Button>
-              <Button
-                type="submit"
-                disabled={form.formState.isSubmitting}
-              >
+              <Button type="submit" disabled={form.formState.isSubmitting}>
                 {form.formState.isSubmitting ? (
                   <>
                     <LoaderCircle className="animate-spin" />
