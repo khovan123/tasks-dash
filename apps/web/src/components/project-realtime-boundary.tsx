@@ -5,7 +5,10 @@ import { useRouter } from "next/navigation";
 import { toast } from "sonner";
 import { apiRequest, ApiRequestError } from "@/lib/api/api-request";
 import { useAppSelector } from "@/lib/store/hooks";
-import { selectProjectRevisions } from "@/lib/store/realtime-slice";
+import {
+  selectProjectDeleted,
+  selectProjectRevisions,
+} from "@/lib/store/realtime-slice";
 
 export function ProjectRealtimeBoundary({
   children,
@@ -18,25 +21,30 @@ export function ProjectRealtimeBoundary({
 }) {
   const router = useRouter();
   const revisions = useAppSelector(selectProjectRevisions(projectKey));
-  const previousProjectRevisionRef = useRef(revisions.project);
+  const projectDeleted = useAppSelector(selectProjectDeleted(projectKey));
   const previousMembersRevisionRef = useRef(revisions.members);
   const removalHandledRef = useRef(false);
 
   useEffect(() => {
-    const projectChanged = revisions.project !== previousProjectRevisionRef.current;
+    if (!projectDeleted) return;
+    if (!removalHandledRef.current) {
+      removalHandledRef.current = true;
+      toast.error(`Dự án ${projectName} không còn khả dụng.`);
+    }
+    router.replace("/");
+  }, [projectDeleted, projectName, router]);
+
+  useEffect(() => {
     const membersChanged = revisions.members !== previousMembersRevisionRef.current;
-
-    previousProjectRevisionRef.current = revisions.project;
     previousMembersRevisionRef.current = revisions.members;
+    if (!membersChanged || projectDeleted) return;
 
-    if (!projectChanged && !membersChanged) return;
-
-    async function verifyAccess() {
+    async function verifyMembership() {
       try {
         await apiRequest(`/api/projects/${projectKey}`);
-        // Permissions are still resolved by server-rendered page loaders. Refresh
-        // only when membership/role changes, never for ordinary project data.
-        if (membersChanged) router.refresh();
+        // Role-dependent controls still come from server page loaders. This is
+        // the only realtime path that still requires a server refresh.
+        router.refresh();
       } catch (error) {
         if (
           error instanceof ApiRequestError &&
@@ -51,8 +59,8 @@ export function ProjectRealtimeBoundary({
       }
     }
 
-    void verifyAccess();
-  }, [projectKey, projectName, revisions.members, revisions.project, router]);
+    void verifyMembership();
+  }, [projectDeleted, projectKey, projectName, revisions.members, router]);
 
   return children;
 }
