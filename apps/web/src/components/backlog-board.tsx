@@ -1,18 +1,17 @@
 "use client";
 
 import type { DragEvent } from "react";
-import { useEffect, useMemo, useState } from "react";
-import { Clock, Calendar, AlertCircle, Plus } from "lucide-react";
-import { WorkItemTypeIcon } from "@/components/work-item-type-icon";
+import { useMemo, useState } from "react";
+import { Plus } from "lucide-react";
+import { NewWorkItemModal } from "@/components/new-work-item-modal";
+import { WorkItemBacklogRow } from "@/components/organisms/work-item-backlog-row";
 import {
-  GithubWorkItemLinks,
-  type GithubWorkItemView,
-} from "@/components/github-work-item-links";
-import { MemberAvatar } from "@/components/member-avatar";
-import { apiRequest } from "@/lib/api/api-request";
-import { PriorityIcon } from "@/components/priority-icon";
+  WorkItemDetailDrawer,
+  type DetailWorkItem,
+} from "@/components/work-item-detail-drawer";
+import { SectionHeading } from "@/components/layout/app-shell";
+import { useWorkspacePresence } from "@/components/layout/jira-app-shell";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
-import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader } from "@/components/ui/card";
 import {
@@ -21,58 +20,16 @@ import {
   EmptyHeader,
   EmptyTitle,
 } from "@/components/ui/empty";
-import { SectionHeading } from "@/components/layout/app-shell";
-import { cn } from "@/lib/utils";
-import { NewWorkItemModal } from "@/components/new-work-item-modal";
 import {
-  WorkItemDetailDrawer,
-  type DetailWorkItem,
-} from "@/components/work-item-detail-drawer";
-import { useWorkspacePresence } from "@/components/layout/jira-app-shell";
-import { useAppDispatch, useAppSelector } from "@/lib/store/hooks";
-import {
-  replaceWorkItems,
-  selectWorkItemsByProject,
-  selectWorkItemsHydrated,
-} from "@/lib/store/realtime-slice";
-
-interface BacklogItem {
-  key: string;
-  summary: string;
-  type: string;
-  priority: string;
-  statusId: string;
-  rank: number;
-  dueDate?: string;
-  startDate?: string;
-  description?: string;
-  storyPoints?: number;
-  assigneeId?: string;
-  labels?: string[];
-  figmaLinks?: { label: string; url: string }[];
-  documentLinks?: { label: string; url: string }[];
-  github?: GithubWorkItemView;
-}
-
-interface BacklogMember {
-  id: string;
-  name: string;
-  email: string;
-  avatarUrl?: string;
-  githubLogin?: string;
-  discordUsername?: string;
-}
-
-function mergeItem<T extends { key: string }>(
-  items: T[],
-  nextItem: Partial<T> & { key: string },
-): T[] {
-  const index = items.findIndex((item) => item.key === nextItem.key);
-  if (index < 0) return [...items, nextItem as T];
-  return items.map((item, itemIndex) =>
-    itemIndex === index ? { ...item, ...nextItem } : item,
-  );
-}
+  mergeWorkItem,
+  useProjectWorkItems,
+} from "@/features/work-items/hooks/use-project-work-items";
+import type {
+  WorkflowStatusView,
+  WorkItemMember,
+  WorkItemView,
+} from "@/features/work-items/types";
+import { apiRequest } from "@/lib/api/api-request";
 
 export function BacklogBoard({
   projectKey,
@@ -83,26 +40,17 @@ export function BacklogBoard({
   canManageTasks = false,
 }: {
   projectKey: string;
-  initialItems: BacklogItem[];
+  initialItems: WorkItemView[];
   statusNames: Record<string, string>;
-  statuses: any[];
-  members: BacklogMember[];
+  statuses: WorkflowStatusView[];
+  members: WorkItemMember[];
   canManageTasks?: boolean;
 }) {
-  const membersMap = new Map(members.map((member) => [member.id, member]));
-  const dispatch = useAppDispatch();
-  const workItemsSelector = useMemo(
-    () => selectWorkItemsByProject(projectKey),
-    [projectKey],
+  const membersMap = useMemo(
+    () => new Map(members.map((member) => [member.id, member])),
+    [members],
   );
-  const hydratedSelector = useMemo(
-    () => selectWorkItemsHydrated(projectKey),
-    [projectKey],
-  );
-  const realtimeItems = useAppSelector(workItemsSelector);
-  const realtimeHydrated = useAppSelector(hydratedSelector);
-
-  const [items, setItems] = useState(initialItems);
+  const { items, setItems } = useProjectWorkItems(projectKey, initialItems);
   const [draggedKey, setDraggedKey] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [saving, setSaving] = useState(false);
@@ -110,30 +58,12 @@ export function BacklogBoard({
   const [drawerOpen, setDrawerOpen] = useState(false);
   const presenceByMemberId = useWorkspacePresence();
 
-  useEffect(() => {
-    if (!realtimeHydrated) {
-      dispatch(
-        replaceWorkItems({
-          projectKey,
-          items: initialItems,
-          bumpRevision: false,
-        }),
-      );
-    }
-  }, [dispatch, initialItems, projectKey, realtimeHydrated]);
-
-  useEffect(() => {
-    if (realtimeHydrated) {
-      setItems(realtimeItems as BacklogItem[]);
-    }
-  }, [realtimeHydrated, realtimeItems]);
-
   function handleItemUpdate(updated: DetailWorkItem) {
-    setItems((prev) => mergeItem(prev, updated));
+    setItems((current) => mergeWorkItem(current, updated));
     setDetailItem(updated);
   }
 
-  async function persist(nextItems: BacklogItem[], previous: BacklogItem[]) {
+  async function persist(nextItems: WorkItemView[], previous: WorkItemView[]) {
     setItems(nextItems);
     setSaving(true);
     setError(null);
@@ -184,13 +114,13 @@ export function BacklogBoard({
                 <span className="text-xs text-muted-foreground">
                   {saving ? "Đang lưu…" : `${items.length} items`}
                 </span>
-                {canManageTasks && (
+                {canManageTasks ? (
                   <NewWorkItemModal
                     projectKey={projectKey}
                     statuses={statuses}
                     members={members}
                   />
-                )}
+                ) : null}
               </div>
             }
           />
@@ -202,6 +132,7 @@ export function BacklogBoard({
               <AlertDescription>{error}</AlertDescription>
             </Alert>
           ) : null}
+
           {items.length === 0 ? (
             <Empty>
               <EmptyHeader>
@@ -217,145 +148,39 @@ export function BacklogBoard({
                 const assignee = item.assigneeId
                   ? membersMap.get(item.assigneeId)
                   : null;
-                const dueDate = item.dueDate ? new Date(item.dueDate) : null;
-                const now = new Date();
-                const isOverdue = dueDate !== null && dueDate < now;
-                const isDueSoon =
-                  !isOverdue &&
-                  dueDate !== null &&
-                  dueDate.getTime() - now.getTime() <= 2 * 24 * 60 * 60 * 1000;
-
                 return (
-                  <article
-                    className={cn(
-                      "grid grid-cols-[auto_minmax(0,1fr)_auto] items-center gap-3 rounded-lg border bg-card p-3 transition",
-                      canManageTasks
-                        ? "cursor-pointer active:cursor-grabbing hover:bg-muted/20"
-                        : "cursor-default",
-                      isOverdue
-                        ? "border-destructive/70 hover:border-destructive"
-                        : isDueSoon
-                          ? "border-warning/70 hover:border-warning"
-                          : "hover:border-primary/30",
-                      draggedKey === item.key && "opacity-50",
-                    )}
-                    onClick={() => {
+                  <WorkItemBacklogRow
+                    key={item.key}
+                    item={item}
+                    assignee={assignee}
+                    statusLabel={statusNames[item.statusId] ?? item.statusId}
+                    canManage={canManageTasks}
+                    dragged={draggedKey === item.key}
+                    presence={
+                      assignee ? presenceByMemberId[assignee.id] : undefined
+                    }
+                    onOpen={() => {
                       setDetailItem(item);
                       setDrawerOpen(true);
                     }}
-                    draggable={canManageTasks}
-                    key={item.key}
                     onDragStart={(event) => {
                       if (!canManageTasks) return;
                       setDraggedKey(item.key);
                       event.dataTransfer.effectAllowed = "move";
                       event.dataTransfer.setData("text/plain", item.key);
                     }}
-                    onDragEnd={() => canManageTasks && setDraggedKey(null)}
-                    onDragOver={(event) =>
-                      canManageTasks && event.preventDefault()
-                    }
-                    onDrop={(event) => canManageTasks && drop(event, index)}
-                  >
-                    <div
-                      className={cn(
-                        "p-1 rounded transition",
-                        canManageTasks
-                          ? "cursor-grab active:cursor-grabbing hover:bg-muted"
-                          : "cursor-default opacity-50",
-                      )}
-                      onClick={(e) => e.stopPropagation()}
-                    >
-                      <WorkItemTypeIcon type={item.type} size={18} />
-                    </div>
-                    <div className="flex min-w-0 flex-col gap-2">
-                      <div className="flex flex-wrap items-center gap-2">
-                        <strong className="truncate">
-                          {item.key} · {item.summary}
-                        </strong>
-
-                        <Badge variant="outline" className="gap-1.5 capitalize">
-                          <PriorityIcon
-                            priority={item.priority}
-                            className="size-3 shrink-0"
-                          />
-                          {item.priority}
-                        </Badge>
-                        <Badge variant="info">
-                          {statusNames[item.statusId] ?? item.statusId}
-                        </Badge>
-                        {dueDate && (
-                          <Badge
-                            variant="outline"
-                            className={cn(
-                              "gap-1 text-[10px]",
-                              isOverdue
-                                ? "border-destructive text-destructive"
-                                : isDueSoon
-                                  ? "border-warning text-warning"
-                                  : "text-muted-foreground",
-                            )}
-                            title={
-                              isOverdue
-                                ? "Overdue!"
-                                : isDueSoon
-                                  ? "Due soon"
-                                  : "Due date"
-                            }
-                          >
-                            {isOverdue ? (
-                              <>
-                                <AlertCircle className="size-3" />
-                                <span>Overdue</span>
-                              </>
-                            ) : isDueSoon ? (
-                              <>
-                                <Clock className="size-3" />
-                                <span>Due soon</span>
-                              </>
-                            ) : (
-                              <>
-                                <Calendar className="size-3" />
-                                <span>
-                                  {dueDate.toLocaleDateString("vi-VN", {
-                                    day: "2-digit",
-                                    month: "2-digit",
-                                  })}
-                                </span>
-                              </>
-                            )}
-                          </Badge>
-                        )}
-                      </div>
-                      <div onClick={(e) => e.stopPropagation()}>
-                        <GithubWorkItemLinks github={item.github} compact />
-                      </div>
-                    </div>
-                    <div className="flex items-center justify-end">
-                      {assignee ? (
-                        (() => {
-                          const memberDetails = members.find((m) => m.id === assignee.id);
-                          return (
-                            <MemberAvatar
-                              memberId={assignee.id}
-                              name={assignee.name}
-                              email={assignee.email || memberDetails?.email}
-                              avatarUrl={assignee.avatarUrl}
-                              githubLogin={memberDetails?.githubLogin}
-                              discordUsername={memberDetails?.discordUsername}
-                              className="size-7"
-                              fallbackClassName="text-[10px] font-black"
-                              title={`Assigned to ${assignee.name}`}
-                              presence={presenceByMemberId[assignee.id]}
-                            />
-                          );
-                        })()
-                      ) : null}
-                    </div>
-                  </article>
+                    onDragEnd={() => setDraggedKey(null)}
+                    onDragOver={(event) => {
+                      if (canManageTasks) event.preventDefault();
+                    }}
+                    onDrop={(event) => {
+                      if (canManageTasks) drop(event, index);
+                    }}
+                  />
                 );
               })}
-              {canManageTasks && (
+
+              {canManageTasks ? (
                 <div className="mt-3 flex justify-center border-t pt-3">
                   <NewWorkItemModal
                     projectKey={projectKey}
@@ -373,7 +198,7 @@ export function BacklogBoard({
                     }
                   />
                 </div>
-              )}
+              ) : null}
             </div>
           )}
         </CardContent>
