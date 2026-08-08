@@ -10,3 +10,4 @@ coverage
 .codebase-memory
 .code-review-graph
 .env.prod
+fogewise-dev-launchers/

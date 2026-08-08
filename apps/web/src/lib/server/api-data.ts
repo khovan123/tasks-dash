@@ -1,7 +1,10 @@
 import "server-only";
 import { cookies } from "next/headers";
 import { upstreamRequest } from "./upstream-request";
-interface ApiSuccess<T> { ok: true; data: T }
+interface ApiSuccess<T> {
+  ok: true;
+  data: T;
+}
 interface ApiFailure {
   ok: false;
   problem?: { detailKey?: string; titleKey?: string; status?: number };
@@ -23,11 +26,13 @@ export async function apiResponse(path: string): Promise<Response> {
 }
 export async function apiData<T>(path: string): Promise<T> {
   const response = await apiResponse(path);
-  const body = await response.json().catch(() => null) as ApiSuccess<T> | ApiFailure | null;
+  const body = (await response.json().catch(() => null)) as
+    ApiSuccess<T> | ApiFailure | null;
   if (!response.ok || !body || body.ok !== true) {
     const failure = body as ApiFailure | null;
     throw new ApiDataError(
-      failure?.problem?.detailKey ?? `API request failed with HTTP ${response.status}.`,
+      failure?.problem?.detailKey ??
+        `API request failed with HTTP ${response.status}.`,
       failure?.problem?.status ?? response.status,
     );
   }
