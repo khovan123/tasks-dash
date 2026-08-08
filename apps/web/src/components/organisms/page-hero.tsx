@@ -13,6 +13,7 @@ export function PageHero({
   aside,
   className,
 }: {
+  eyebrow?: string;
   title: ReactNode;
   description: ReactNode;
   aside?: ReactNode;
