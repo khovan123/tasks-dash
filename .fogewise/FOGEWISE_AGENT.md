@@ -99,13 +99,24 @@ After a successful deployment it may contain only:
 
 Do not keep source code, `node_modules`, build output, Dockerfiles, package manifests, Git metadata, or other repository files in this directory.
 
+Runtime ownership and permissions are normalized automatically on every deployment:
+
+```text
+/srv/apps/<repo>                     root:root 0700
+/srv/apps/<repo>/.env                root:root 0600
+/srv/apps/<repo>/.fogewise           root:root 0755
+/srv/apps/<repo>/.fogewise/deploy.yml root:root 0644
+```
+
+The `.env` rule applies when the file exists. The workflow must repair ownership and modes after uploading the manifest and again after runtime-directory cleanup, so deployment behavior does not depend on rsync ownership, previous source-checkout ownership, or shell umask.
+
 The production env file is:
 
 ```text
 /srv/apps/<repo>/.env
 ```
 
-It must be owned by the deployment administrator and mode `0600`. Fogewise automatically attaches it as `env_file` to every declared service when it exists. Applications decide which variables they consume.
+It is automatically attached as `env_file` to every declared service when it exists. Applications decide which variables they consume.
 
 Never commit production secrets or copy `.env` into an image.
 
@@ -144,7 +155,7 @@ Rules:
 
 GitHub Actions pushes images with `GITHUB_TOKEN` and requires `packages: write`.
 
-The VPS needs read access to GHCR before deployment. This may be provided by public packages or by a platform-level Docker login credential with package read permission. Registry credentials must not be stored in `.fogewise/deploy.yml` or the application `.env`.
+The VPS uses deployment-scoped GHCR credentials supplied by the calling workflow. Registry credentials must not be stored in `.fogewise/deploy.yml` or the application `.env` and should be removed after deployment.
 
 ## Runtime networking
 
@@ -202,7 +213,8 @@ For this project also verify:
 - `/api/auth/me` routes to `api`;
 - `/` and public assets route to `web`;
 - `api` resolves Redis when `requires: [redis]` is declared;
-- web server-side requests can reach `http://api:8080/api` when configured in `/srv/apps/tasks-dash/.env`.
+- web server-side requests can reach `http://api:8080/api` when configured in `/srv/apps/tasks-dash/.env`;
+- runtime directory ownership and modes match the Fogewise contract above.
 
 ## Change discipline
 
