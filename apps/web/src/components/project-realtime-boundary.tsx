@@ -28,8 +28,8 @@ function shouldRefreshProjectRoute(
 
   if (type === WORK_ITEM_EVENT_TYPE) {
     return (
-      pathname !== `${projectBasePath}/board` &&
-      pathname !== `${projectBasePath}/backlog`
+      pathname === projectBasePath ||
+      pathname === `${projectBasePath}/development`
     );
   }
 
