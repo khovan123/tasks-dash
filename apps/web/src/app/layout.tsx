@@ -6,10 +6,12 @@ import {
   type JiraShellProject,
   type JiraShellSession,
 } from "@/components/layout/jira-app-shell";
+import { GithubAccountConfirmation } from "@/components/organisms/github-account-confirmation";
 import { StoreProvider } from "@/components/providers/store-provider";
 import { WorkspaceRealtimeProvider } from "@/components/providers/workspace-realtime-provider";
 import { Toaster } from "@/components/ui/sonner";
 import type { WorkspaceOption } from "@/components/workspace-switcher";
+import { GITHUB_ACCOUNT_CONFIRMATION_COOKIE } from "@/features/auth/constants";
 import { apiData } from "@/lib/server/api-data";
 import "./globals.css";
 
@@ -68,13 +70,16 @@ export default async function RootLayout({
 }: Readonly<{ children: ReactNode }>) {
   const cookieStore = await cookies();
   const hasSessionCookie = cookieStore.has("tasks_dash_session");
+  const requiresGithubAccountConfirmation = cookieStore.has(
+    GITHUB_ACCOUNT_CONFIRMATION_COOKIE,
+  );
   const session = hasSessionCookie
     ? await apiData<JiraShellSession>("/auth/me").catch(() => null)
     : null;
   let projects: JiraShellProject[] = [];
   let workspaces: WorkspaceOption[] = [];
 
-  if (session) {
+  if (session && !requiresGithubAccountConfirmation) {
     [projects, workspaces] = await Promise.all([
       apiData<JiraShellProject[]>("/projects").catch(() => []),
       apiData<WorkspaceOption[]>("/workspaces").catch(() => []),
@@ -96,7 +101,9 @@ export default async function RootLayout({
         />
       </head>
       <body className="min-h-screen bg-background font-sans text-foreground">
-        {session ? (
+        {session && requiresGithubAccountConfirmation ? (
+          <GithubAccountConfirmation session={session} />
+        ) : session ? (
           <StoreProvider>
             <WorkspaceRealtimeProvider initialProjects={projects}>
               <JiraAppShell
