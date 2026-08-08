@@ -12,9 +12,9 @@ test("workspace lifecycle includes named onboarding, create, rename and delete",
       source("../api/src/features/auth/auth.controller.ts"),
       source("../api/src/features/auth/workspaces.controller.ts"),
       source("../api/src/features/members/members.dto.ts"),
-      source("src/components/workspace-switcher.tsx"),
-      source("src/components/workspace-create-form.tsx"),
-      source("src/components/workspace-actions.tsx"),
+      source("src/components/organisms/workspace-switcher.tsx"),
+      source("src/components/organisms/workspace-create-form.tsx"),
+      source("src/components/organisms/workspace-actions.tsx"),
       source("src/app/workspaces/new/page.tsx"),
     ]);
 
