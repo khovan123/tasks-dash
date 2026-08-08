@@ -47,7 +47,7 @@ export interface ProjectMembersResponse {
 }
 
 export interface MemberProjectSummary {
-  _id: string;
+  _id?: string;
   key: string;
   name: string;
   memberIds?: string[];
