@@ -11,8 +11,11 @@ import {
   repositoryLinkSchema,
 } from "@/features/integrations/schemas/repository-link.schema";
 import { apiRequest } from "@/lib/api/api-request";
-import { useAppDispatch } from "@/lib/store/hooks";
-import { upsertProjectDetail } from "@/lib/store/realtime-slice";
+import { useAppDispatch, useAppSelector } from "@/lib/store/hooks";
+import {
+  selectProject,
+  upsertProjectDetail,
+} from "@/lib/store/realtime-slice";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { Button } from "@/components/ui/button";
 import { Field, FieldError, FieldLabel } from "@/components/ui/field";
@@ -62,6 +65,7 @@ export function RepositoryLinkForm({
   canManage = false,
 }: RepositoryLinkFormProps) {
   const dispatch = useAppDispatch();
+  const currentProject = useAppSelector(selectProject(projectKey));
   const [open, setOpen] = useState(false);
   const [isEditing, setIsEditing] = useState(false);
 
@@ -79,6 +83,16 @@ export function RepositoryLinkForm({
     },
   });
 
+  function updateRepository(repositoryFullName?: string) {
+    dispatch(
+      upsertProjectDetail({
+        ...(currentProject ?? { key: projectKey, name: projectKey }),
+        key: projectKey,
+        repositoryFullName,
+      }),
+    );
+  }
+
   async function submit(values: RepositoryLinkPayload): Promise<void> {
     form.clearErrors("root");
     try {
@@ -89,13 +103,7 @@ export function RepositoryLinkForm({
           body: JSON.stringify({ repositoryId: values.repositoryId }),
         },
       );
-      dispatch(
-        upsertProjectDetail({
-          key: result.projectKey,
-          name: result.projectKey,
-          repositoryFullName: result.repository?.fullName,
-        }),
-      );
+      updateRepository(result.repository?.fullName);
       setIsEditing(false);
     } catch (error) {
       form.setError("root", {
@@ -110,17 +118,11 @@ export function RepositoryLinkForm({
   async function unlink(): Promise<void> {
     form.clearErrors("root");
     try {
-      const result = await apiRequest<RepositoryMutationResult>(
+      await apiRequest<RepositoryMutationResult>(
         `/api/integrations/github/projects/${projectKey}/repository`,
         { method: "DELETE" },
       );
-      dispatch(
-        upsertProjectDetail({
-          key: result.projectKey,
-          name: result.projectKey,
-          repositoryFullName: undefined,
-        }),
-      );
+      updateRepository(undefined);
       form.reset({ repositoryId: "" });
       setIsEditing(false);
     } catch (error) {
@@ -182,7 +184,8 @@ export function RepositoryLinkForm({
                           >
                             {field.value
                               ? repositories.find(
-                                  (r) => String(r.id) === field.value,
+                                  (repository) =>
+                                    String(repository.id) === field.value,
                                 )?.full_name
                               : "Chọn repository..."}
                             <ChevronsUpDown className="ml-2 size-4 shrink-0 opacity-50" />
