@@ -3,13 +3,18 @@
 import { useEffect, useRef, type ReactNode } from "react";
 import type { MemberPresence } from "@tasks-dash/contracts";
 import { apiRequest } from "@/lib/api/api-request";
-import { useAppDispatch } from "@/lib/store/hooks";
+import { useAppDispatch, useAppStore } from "@/lib/store/hooks";
 import {
   bumpProjectRevision,
+  replaceDesignCatalog,
+  replaceDocumentTree,
   replaceProjects,
   replaceWorkItems,
   setConnectionStatus,
   setPresence,
+  upsertProjectDetail,
+  type RealtimeDesignCatalogItem,
+  type RealtimeDocumentTree,
   type RealtimeProject,
   type RealtimeWorkItem,
 } from "@/lib/store/realtime-slice";
@@ -32,6 +37,8 @@ const PROJECT_LIFECYCLE_EVENT_TYPES = new Set([
   "PROJECT_MEMBERS_CHANGED",
 ]);
 
+const SYNC_DEBOUNCE_MS = 75;
+
 export function WorkspaceRealtimeProvider({
   children,
   initialProjects,
@@ -40,7 +47,17 @@ export function WorkspaceRealtimeProvider({
   initialProjects: RealtimeProject[];
 }) {
   const dispatch = useAppDispatch();
+  const store = useAppStore();
   const workItemSyncTimersRef = useRef<
+    Record<string, ReturnType<typeof setTimeout>>
+  >({});
+  const projectDetailSyncTimersRef = useRef<
+    Record<string, ReturnType<typeof setTimeout>>
+  >({});
+  const documentSyncTimersRef = useRef<
+    Record<string, ReturnType<typeof setTimeout>>
+  >({});
+  const designSyncTimersRef = useRef<
     Record<string, ReturnType<typeof setTimeout>>
   >({});
   const projectsSyncTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -60,9 +77,7 @@ export function WorkspaceRealtimeProvider({
         const result = await apiRequest<{
           presence: Record<string, MemberPresence>;
         }>("/api/projects/presence", { method: "POST" });
-        if (!cancelled) {
-          dispatch(setPresence(result.presence));
-        }
+        if (!cancelled) dispatch(setPresence(result.presence));
       } catch {
         // Presence must not interrupt the realtime transport.
       }
@@ -71,11 +86,20 @@ export function WorkspaceRealtimeProvider({
     async function syncProjects() {
       try {
         const projects = await apiRequest<RealtimeProject[]>("/api/projects");
-        if (!cancelled) {
-          dispatch(replaceProjects(projects));
-        }
+        if (!cancelled) dispatch(replaceProjects(projects));
       } catch {
         // The next lifecycle event or navigation can retry the project snapshot.
+      }
+    }
+
+    async function syncProjectDetail(projectKey: string) {
+      try {
+        const project = await apiRequest<RealtimeProject>(
+          `/api/projects/${projectKey}`,
+        );
+        if (!cancelled) dispatch(upsertProjectDetail(project));
+      } catch {
+        // Access changes are handled by ProjectRealtimeBoundary.
       }
     }
 
@@ -86,15 +110,33 @@ export function WorkspaceRealtimeProvider({
         );
         if (!cancelled) {
           dispatch(
-            replaceWorkItems({
-              projectKey,
-              items,
-              bumpRevision: false,
-            }),
+            replaceWorkItems({ projectKey, items, bumpRevision: false }),
           );
         }
       } catch {
         // Keep the last normalized snapshot when a transient sync fails.
+      }
+    }
+
+    async function syncDocuments(projectKey: string) {
+      try {
+        const tree = await apiRequest<RealtimeDocumentTree>(
+          `/api/projects/${projectKey}/documents`,
+        );
+        if (!cancelled) dispatch(replaceDocumentTree(tree));
+      } catch {
+        // Keep the last document snapshot when Discord is temporarily unavailable.
+      }
+    }
+
+    async function syncDesignCatalog(projectKey: string) {
+      try {
+        const items = await apiRequest<RealtimeDesignCatalogItem[]>(
+          `/api/projects/${projectKey}/design-catalog`,
+        );
+        if (!cancelled) dispatch(replaceDesignCatalog({ projectKey, items }));
+      } catch {
+        // Keep the last design snapshot when a transient sync fails.
       }
     }
 
@@ -105,19 +147,21 @@ export function WorkspaceRealtimeProvider({
       projectsSyncTimerRef.current = setTimeout(() => {
         projectsSyncTimerRef.current = null;
         void syncProjects();
-      }, 75);
+      }, SYNC_DEBOUNCE_MS);
     }
 
-    function scheduleWorkItemsSync(projectKey: string) {
+    function scheduleProjectScopedSync(
+      timers: React.MutableRefObject<Record<string, ReturnType<typeof setTimeout>>>,
+      projectKey: string,
+      sync: (key: string) => Promise<void>,
+    ) {
       const key = projectKey.toUpperCase();
-      const currentTimer = workItemSyncTimersRef.current[key];
-      if (currentTimer) {
-        clearTimeout(currentTimer);
-      }
-      workItemSyncTimersRef.current[key] = setTimeout(() => {
-        delete workItemSyncTimersRef.current[key];
-        void syncWorkItems(key);
-      }, 75);
+      const currentTimer = timers.current[key];
+      if (currentTimer) clearTimeout(currentTimer);
+      timers.current[key] = setTimeout(() => {
+        delete timers.current[key];
+        void sync(key);
+      }, SYNC_DEBOUNCE_MS);
     }
 
     function handleRealtimeEvent(payload: WorkspaceRealtimeEvent) {
@@ -132,30 +176,56 @@ export function WorkspaceRealtimeProvider({
         scheduleProjectsSync();
       }
 
-      if (!projectKey || projectKey === "*") {
-        return;
-      }
+      if (!projectKey || projectKey === "*") return;
+
+      const realtimeState = store.getState().realtime;
 
       switch (payload.type) {
         case "WORK_ITEMS_CHANGED":
-          dispatch(
-            bumpProjectRevision({ projectKey, resource: "workItems" }),
-          );
-          scheduleWorkItemsSync(projectKey);
+          dispatch(bumpProjectRevision({ projectKey, resource: "workItems" }));
+          if (realtimeState.workItemsByProject[projectKey]?.hydrated) {
+            scheduleProjectScopedSync(
+              workItemSyncTimersRef,
+              projectKey,
+              syncWorkItems,
+            );
+          }
           break;
         case "PROJECT_CHANGED":
           dispatch(bumpProjectRevision({ projectKey, resource: "project" }));
+          if (realtimeState.projects.detailHydrated[projectKey]) {
+            scheduleProjectScopedSync(
+              projectDetailSyncTimersRef,
+              projectKey,
+              syncProjectDetail,
+            );
+          }
           break;
         case "PROJECT_MEMBERS_CHANGED":
+        case "members_updated":
           dispatch(bumpProjectRevision({ projectKey, resource: "members" }));
           break;
         case "DOCUMENTS_CHANGED":
           dispatch(bumpProjectRevision({ projectKey, resource: "documents" }));
+          if (realtimeState.documentsByProject[projectKey]?.hydrated) {
+            scheduleProjectScopedSync(
+              documentSyncTimersRef,
+              projectKey,
+              syncDocuments,
+            );
+          }
           break;
         case "DESIGN_CATALOG_CHANGED":
           dispatch(
             bumpProjectRevision({ projectKey, resource: "designCatalog" }),
           );
+          if (realtimeState.designCatalogByProject[projectKey]?.hydrated) {
+            scheduleProjectScopedSync(
+              designSyncTimersRef,
+              projectKey,
+              syncDesignCatalog,
+            );
+          }
           break;
         default:
           break;
@@ -206,13 +276,18 @@ export function WorkspaceRealtimeProvider({
       eventSource?.close();
       if (reconnectTimer) clearTimeout(reconnectTimer);
       if (projectsSyncTimerRef.current) clearTimeout(projectsSyncTimerRef.current);
-      for (const timer of Object.values(workItemSyncTimersRef.current)) {
-        clearTimeout(timer);
+      for (const timers of [
+        workItemSyncTimersRef,
+        projectDetailSyncTimersRef,
+        documentSyncTimersRef,
+        designSyncTimersRef,
+      ]) {
+        for (const timer of Object.values(timers.current)) clearTimeout(timer);
+        timers.current = {};
       }
-      workItemSyncTimersRef.current = {};
       dispatch(setConnectionStatus("idle"));
     };
-  }, [dispatch]);
+  }, [dispatch, store]);
 
   return children;
 }
