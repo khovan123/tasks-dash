@@ -7,16 +7,27 @@ async function source(path) {
 }
 
 test("workspace lifecycle includes named onboarding, create, rename and delete", async () => {
-  const [auth, controller, dto, switcher, createForm, actions, newPage] =
-    await Promise.all([
-      source("../api/src/features/auth/auth.controller.ts"),
-      source("../api/src/features/auth/workspaces.controller.ts"),
-      source("../api/src/features/members/members.dto.ts"),
-      source("src/components/organisms/workspace-switcher.tsx"),
-      source("src/components/organisms/workspace-create-form.tsx"),
-      source("src/components/organisms/workspace-actions.tsx"),
-      source("src/app/workspaces/new/page.tsx"),
-    ]);
+  const [
+    auth,
+    controller,
+    dto,
+    switcher,
+    createForm,
+    createFields,
+    createHook,
+    actions,
+    newPage,
+  ] = await Promise.all([
+    source("../api/src/features/auth/auth.controller.ts"),
+    source("../api/src/features/auth/workspaces.controller.ts"),
+    source("../api/src/features/members/members.dto.ts"),
+    source("src/components/organisms/workspace-switcher.tsx"),
+    source("src/components/organisms/workspace-create-form.tsx"),
+    source("src/components/molecules/workspace-form-fields.tsx"),
+    source("src/features/workspaces/hooks/use-create-workspace-form.ts"),
+    source("src/components/organisms/workspace-actions.tsx"),
+    source("src/app/workspaces/new/page.tsx"),
+  ]);
 
   assert.equal(auth.includes('workspaceName: "Tasks Dash Workspace"'), false);
   assert.match(auth, /workspace_setup/);
@@ -30,7 +41,12 @@ test("workspace lifecycle includes named onboarding, create, rename and delete",
   assert.match(switcher, /href="\/workspaces\/new"/);
   assert.match(switcher, /Tạo workspace mới/);
   assert.match(createForm, /Đặt tên workspace đầu tiên/);
-  assert.match(createForm, /workspaceName/);
+  assert.match(createForm, /WorkspaceFormFields/);
+  assert.match(createFields, /workspaceName/);
+  assert.match(createFields, /workspaceSlug/);
+  assert.match(createHook, /\/api\/workspaces\/setup/);
+  assert.match(createHook, /\/api\/workspaces/);
+  assert.match(createHook, /switchAfterCreate/);
   assert.match(actions, /Đổi tên workspace/);
   assert.match(actions, /Xóa workspace/);
   assert.match(actions, /confirmWorkspaceName/);
