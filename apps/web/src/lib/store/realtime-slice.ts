@@ -6,6 +6,11 @@ export interface RealtimeProject {
   name: string;
   color?: string;
   currentMemberRole?: string;
+  description?: string;
+  repositoryFullName?: string;
+  discordDocsChannelId?: string;
+  discordDocsChannelName?: string;
+  [key: string]: unknown;
 }
 
 export interface RealtimeWorkItem {
@@ -32,6 +37,54 @@ export interface RealtimeWorkItem {
   github?: any;
 }
 
+export interface RealtimeDocumentFolder {
+  id: string;
+  name: string;
+  parentFolderId: string | null;
+  createdAt: string;
+}
+
+export interface RealtimeDocumentItem {
+  id: string;
+  name: string;
+  description: string;
+  tags: string[];
+  folderId: string | null;
+  currentVersion: number;
+  updatedAt: string;
+  latestVersion: null | {
+    version: number;
+    fileName: string;
+    mimeType: string;
+    size: number;
+    messageId: string;
+    attachmentId: string;
+    openInDiscordUrl: string;
+    downloadUrl: string;
+    createdAt: string;
+  };
+}
+
+export interface RealtimeDocumentTree {
+  projectKey: string;
+  guildId: string;
+  channelId: string;
+  channelName: string;
+  channelUrl: string;
+  maxFileSize: number;
+  folders: RealtimeDocumentFolder[];
+  documents: RealtimeDocumentItem[];
+}
+
+export interface RealtimeDesignCatalogItem {
+  _id: string;
+  name: string;
+  type: string;
+  figmaUrl: string;
+  description: string;
+  tags: string[];
+}
+
 export interface ProjectRealtimeRevisions {
   project: number;
   members: number;
@@ -44,6 +97,7 @@ interface NormalizedProjectsState {
   ids: string[];
   entities: Record<string, RealtimeProject>;
   hydrated: boolean;
+  detailHydrated: Record<string, boolean>;
 }
 
 interface NormalizedWorkItemsState {
@@ -52,9 +106,26 @@ interface NormalizedWorkItemsState {
   hydrated: boolean;
 }
 
+interface NormalizedDocumentsState {
+  folderIds: string[];
+  folders: Record<string, RealtimeDocumentFolder>;
+  documentIds: string[];
+  documents: Record<string, RealtimeDocumentItem>;
+  meta: Omit<RealtimeDocumentTree, "folders" | "documents"> | null;
+  hydrated: boolean;
+}
+
+interface NormalizedDesignCatalogState {
+  ids: string[];
+  entities: Record<string, RealtimeDesignCatalogItem>;
+  hydrated: boolean;
+}
+
 export interface RealtimeState {
   projects: NormalizedProjectsState;
   workItemsByProject: Record<string, NormalizedWorkItemsState>;
+  documentsByProject: Record<string, NormalizedDocumentsState>;
+  designCatalogByProject: Record<string, NormalizedDesignCatalogState>;
   presence: Record<string, MemberPresence>;
   revisionsByProject: Record<string, ProjectRealtimeRevisions>;
   connectionStatus: "idle" | "connecting" | "open" | "reconnecting";
@@ -69,8 +140,10 @@ const emptyRevisions: ProjectRealtimeRevisions = {
 };
 
 const initialState: RealtimeState = {
-  projects: { ids: [], entities: {}, hydrated: false },
+  projects: { ids: [], entities: {}, hydrated: false, detailHydrated: {} },
   workItemsByProject: {},
+  documentsByProject: {},
+  designCatalogByProject: {},
   presence: {},
   revisionsByProject: {},
   connectionStatus: "idle",
@@ -94,11 +167,60 @@ function replaceProjectItems(
     entities[item.key] = item;
   }
 
-  state.workItemsByProject[key] = {
-    ids,
-    entities,
+  state.workItemsByProject[key] = { ids, entities, hydrated: true };
+}
+
+function replaceProjectDocuments(
+  state: RealtimeState,
+  tree: RealtimeDocumentTree,
+): void {
+  const key = normalizeProjectKey(tree.projectKey);
+  const folders: Record<string, RealtimeDocumentFolder> = {};
+  const folderIds: string[] = [];
+  const documents: Record<string, RealtimeDocumentItem> = {};
+  const documentIds: string[] = [];
+
+  for (const folder of tree.folders) {
+    folderIds.push(folder.id);
+    folders[folder.id] = folder;
+  }
+  for (const document of tree.documents) {
+    documentIds.push(document.id);
+    documents[document.id] = document;
+  }
+
+  state.documentsByProject[key] = {
+    folderIds,
+    folders,
+    documentIds,
+    documents,
+    meta: {
+      projectKey: key,
+      guildId: tree.guildId,
+      channelId: tree.channelId,
+      channelName: tree.channelName,
+      channelUrl: tree.channelUrl,
+      maxFileSize: tree.maxFileSize,
+    },
     hydrated: true,
   };
+}
+
+function replaceProjectDesignCatalog(
+  state: RealtimeState,
+  projectKey: string,
+  items: RealtimeDesignCatalogItem[],
+): void {
+  const key = normalizeProjectKey(projectKey);
+  const ids: string[] = [];
+  const entities: Record<string, RealtimeDesignCatalogItem> = {};
+
+  for (const item of items) {
+    ids.push(item._id);
+    entities[item._id] = item;
+  }
+
+  state.designCatalogByProject[key] = { ids, entities, hydrated: true };
 }
 
 function bumpRevision(
@@ -125,10 +247,26 @@ const realtimeSlice = createSlice({
       for (const project of action.payload) {
         const key = normalizeProjectKey(project.key);
         ids.push(key);
-        entities[key] = { ...project, key };
+        entities[key] = {
+          ...(state.projects.entities[key] ?? {}),
+          ...project,
+          key,
+        } as RealtimeProject;
       }
 
-      state.projects = { ids, entities, hydrated: true };
+      state.projects.ids = ids;
+      state.projects.entities = entities;
+      state.projects.hydrated = true;
+    },
+    upsertProjectDetail(state, action: PayloadAction<RealtimeProject>) {
+      const key = normalizeProjectKey(action.payload.key);
+      state.projects.entities[key] = {
+        ...(state.projects.entities[key] ?? {}),
+        ...action.payload,
+        key,
+      } as RealtimeProject;
+      if (!state.projects.ids.includes(key)) state.projects.ids.push(key);
+      state.projects.detailHydrated[key] = true;
     },
     replaceWorkItems(
       state,
@@ -138,14 +276,26 @@ const realtimeSlice = createSlice({
         bumpRevision?: boolean;
       }>,
     ) {
-      replaceProjectItems(
+      replaceProjectItems(state, action.payload.projectKey, action.payload.items);
+      if (action.payload.bumpRevision !== false) {
+        bumpRevision(state, action.payload.projectKey, "workItems");
+      }
+    },
+    replaceDocumentTree(state, action: PayloadAction<RealtimeDocumentTree>) {
+      replaceProjectDocuments(state, action.payload);
+    },
+    replaceDesignCatalog(
+      state,
+      action: PayloadAction<{
+        projectKey: string;
+        items: RealtimeDesignCatalogItem[];
+      }>,
+    ) {
+      replaceProjectDesignCatalog(
         state,
         action.payload.projectKey,
         action.payload.items,
       );
-      if (action.payload.bumpRevision !== false) {
-        bumpRevision(state, action.payload.projectKey, "workItems");
-      }
     },
     setPresence(state, action: PayloadAction<Record<string, MemberPresence>>) {
       state.presence = action.payload;
@@ -157,11 +307,7 @@ const realtimeSlice = createSlice({
         resource: keyof ProjectRealtimeRevisions;
       }>,
     ) {
-      bumpRevision(
-        state,
-        action.payload.projectKey,
-        action.payload.resource,
-      );
+      bumpRevision(state, action.payload.projectKey, action.payload.resource);
     },
     setConnectionStatus(
       state,
@@ -174,7 +320,10 @@ const realtimeSlice = createSlice({
 
 export const {
   replaceProjects,
+  upsertProjectDetail,
   replaceWorkItems,
+  replaceDocumentTree,
+  replaceDesignCatalog,
   setPresence,
   bumpProjectRevision,
   setConnectionStatus,
@@ -186,14 +335,11 @@ export interface RealtimeRootState {
   realtime: RealtimeState;
 }
 
-export const selectPresence = (state: RealtimeRootState) =>
-  state.realtime.presence;
-
+export const selectPresence = (state: RealtimeRootState) => state.realtime.presence;
 export const selectConnectionStatus = (state: RealtimeRootState) =>
   state.realtime.connectionStatus;
 
-const selectProjectIds = (state: RealtimeRootState) =>
-  state.realtime.projects.ids;
+const selectProjectIds = (state: RealtimeRootState) => state.realtime.projects.ids;
 const selectProjectEntities = (state: RealtimeRootState) =>
   state.realtime.projects.entities;
 
@@ -206,13 +352,23 @@ export const selectProjects = createSelector(
 export const selectProjectsHydrated = (state: RealtimeRootState) =>
   state.realtime.projects.hydrated;
 
+export function selectProject(projectKey: string) {
+  const key = normalizeProjectKey(projectKey);
+  return (state: RealtimeRootState) => state.realtime.projects.entities[key];
+}
+
+export function selectProjectDetailHydrated(projectKey: string) {
+  const key = normalizeProjectKey(projectKey);
+  return (state: RealtimeRootState) =>
+    state.realtime.projects.detailHydrated[key] ?? false;
+}
+
 export function selectWorkItemsByProject(projectKey: string) {
   const key = normalizeProjectKey(projectKey);
   return createSelector(
     [
       (state: RealtimeRootState) => state.realtime.workItemsByProject[key]?.ids,
-      (state: RealtimeRootState) =>
-        state.realtime.workItemsByProject[key]?.entities,
+      (state: RealtimeRootState) => state.realtime.workItemsByProject[key]?.entities,
     ],
     (ids = [], entities = {}) =>
       ids.map((id) => entities[id]).filter(Boolean) as RealtimeWorkItem[],
@@ -223,6 +379,52 @@ export function selectWorkItemsHydrated(projectKey: string) {
   const key = normalizeProjectKey(projectKey);
   return (state: RealtimeRootState) =>
     state.realtime.workItemsByProject[key]?.hydrated ?? false;
+}
+
+export function selectDocumentTree(projectKey: string) {
+  const key = normalizeProjectKey(projectKey);
+  return createSelector(
+    [
+      (state: RealtimeRootState) => state.realtime.documentsByProject[key],
+    ],
+    (documentsState): RealtimeDocumentTree | null => {
+      if (!documentsState?.hydrated || !documentsState.meta) return null;
+      return {
+        ...documentsState.meta,
+        folders: documentsState.folderIds
+          .map((id) => documentsState.folders[id])
+          .filter(Boolean),
+        documents: documentsState.documentIds
+          .map((id) => documentsState.documents[id])
+          .filter(Boolean),
+      };
+    },
+  );
+}
+
+export function selectDocumentsHydrated(projectKey: string) {
+  const key = normalizeProjectKey(projectKey);
+  return (state: RealtimeRootState) =>
+    state.realtime.documentsByProject[key]?.hydrated ?? false;
+}
+
+export function selectDesignCatalog(projectKey: string) {
+  const key = normalizeProjectKey(projectKey);
+  return createSelector(
+    [
+      (state: RealtimeRootState) => state.realtime.designCatalogByProject[key]?.ids,
+      (state: RealtimeRootState) =>
+        state.realtime.designCatalogByProject[key]?.entities,
+    ],
+    (ids = [], entities = {}) =>
+      ids.map((id) => entities[id]).filter(Boolean) as RealtimeDesignCatalogItem[],
+  );
+}
+
+export function selectDesignCatalogHydrated(projectKey: string) {
+  const key = normalizeProjectKey(projectKey);
+  return (state: RealtimeRootState) =>
+    state.realtime.designCatalogByProject[key]?.hydrated ?? false;
 }
 
 export function selectProjectRevisions(projectKey: string) {
