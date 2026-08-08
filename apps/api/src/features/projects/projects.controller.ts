@@ -82,19 +82,6 @@ export class ProjectsController {
       map(() => ({ data: "ping" }) as MessageEvent),
     );
 
-    const projectLifecycleEvents$ = this.service.events$.pipe(
-      filter((event) => event.workspaceId === workspaceId),
-      map(
-        (event) =>
-          ({
-            data: {
-              type: event.type,
-              data: { projectKey: event.projectKey },
-            },
-          }) as MessageEvent,
-      ),
-    );
-
     const realtimeEvents$ = this.realtime.events$.pipe(
       filter((event) => event.workspaceId === workspaceId),
       map(
@@ -111,7 +98,7 @@ export class ProjectsController {
       ),
     );
 
-    return merge(projectLifecycleEvents$, realtimeEvents$, keepAlive$);
+    return merge(realtimeEvents$, keepAlive$);
   }
 
   @Post("presence")
