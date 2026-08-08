@@ -1,111 +1,26 @@
 "use client";
 
 import type { DragEvent } from "react";
-import React, { useState, useMemo, useEffect } from "react";
-import { format } from "date-fns";
-import {
-  Clock,
-  Search,
-  User,
-  GitPullRequest,
-  GitBranch,
-  GitCommit,
-} from "lucide-react";
-import {
-  WorkItemTypeIcon,
-  WORK_ITEM_TYPE_LABELS,
-} from "@/components/work-item-type-icon";
-import { MemberAvatar } from "@/components/member-avatar";
-import { apiRequest } from "@/lib/api/api-request";
-import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
-import { Badge } from "@/components/ui/badge";
-import { Button } from "@/components/ui/button";
-import { Card, CardContent } from "@/components/ui/card";
-import { Input } from "@/components/ui/input";
-import { cn } from "@/lib/utils";
-import { PriorityIcon } from "@/components/priority-icon";
+import { useMemo, useState } from "react";
+import { KanbanBoardToolbar } from "@/components/organisms/kanban-board-toolbar";
+import { WorkItemKanbanCard } from "@/components/organisms/work-item-kanban-card";
 import {
   WorkItemDetailDrawer,
   type DetailWorkItem,
 } from "@/components/work-item-detail-drawer";
 import { useWorkspacePresence } from "@/components/layout/jira-app-shell";
+import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
+import { Badge } from "@/components/ui/badge";
 import {
-  Popover,
-  PopoverContent,
-  PopoverTrigger,
-} from "@/components/ui/popover";
-import { useAppDispatch, useAppSelector } from "@/lib/store/hooks";
-import {
-  replaceWorkItems,
-  selectWorkItemsByProject,
-  selectWorkItemsHydrated,
-} from "@/lib/store/realtime-slice";
-
-interface WorkflowStatus {
-  id: string;
-  name: string;
-  category: string;
-  color?: string;
-}
-
-interface KanbanItem {
-  key: string;
-  summary: string;
-  type: string;
-  priority: string;
-  statusId: string;
-  storyPoints?: number;
-  dueDate?: string;
-  startDate?: string;
-  labels: string[];
-  assigneeId?: string;
-  description?: string;
-  figmaLinks?: { label: string; url: string }[];
-  documentLinks?: { label: string; url: string }[];
-  github?: {
-    branches: string[];
-    commits: Array<{
-      sha: string;
-      message: string;
-      url: string | null;
-      branch: string | null;
-      committedAt: string | null;
-    }>;
-    pullRequests: Array<{
-      number: number;
-      title: string;
-      url: string;
-      state: string;
-      status: string;
-      draft: boolean;
-      headBranch: string;
-      baseBranch: string;
-      headSha: string;
-      action: string;
-      authorLogin: string | null;
-    }>;
-  };
-}
-
-interface WorkspaceMember {
-  id: string;
-  name: string;
-  email: string;
-  avatarUrl?: string;
-  githubLogin?: string;
-  discordUsername?: string;
-}
-
-function mergeItem<T extends { key: string }>(
-  items: T[],
-  nextItem: Partial<T> & { key: string },
-): T[] {
-  const index = items.findIndex((item) => item.key === nextItem.key);
-  if (index < 0) return [...items, nextItem as T];
-  return items.map((item, itemIndex) =>
-    itemIndex === index ? { ...item, ...nextItem } : item,
-  );
-}
+  mergeWorkItem,
+  useProjectWorkItems,
+} from "@/features/work-items/hooks/use-project-work-items";
+import type {
+  WorkflowStatusView,
+  WorkItemMember,
+  WorkItemView,
+} from "@/features/work-items/types";
+import { apiRequest } from "@/lib/api/api-request";
 
 export function KanbanBoard({
   projectKey,
@@ -116,93 +31,56 @@ export function KanbanBoard({
   canCompleteSprint = false,
 }: {
   projectKey: string;
-  initialItems: KanbanItem[];
-  statuses: WorkflowStatus[];
-  members: WorkspaceMember[];
+  initialItems: WorkItemView[];
+  statuses: WorkflowStatusView[];
+  members: WorkItemMember[];
   canManageTasks?: boolean;
   canCompleteSprint?: boolean;
 }) {
-  const dispatch = useAppDispatch();
-  const workItemsSelector = useMemo(
-    () => selectWorkItemsByProject(projectKey),
-    [projectKey],
-  );
-  const hydratedSelector = useMemo(
-    () => selectWorkItemsHydrated(projectKey),
-    [projectKey],
-  );
-  const realtimeItems = useAppSelector(workItemsSelector);
-  const realtimeHydrated = useAppSelector(hydratedSelector);
-  const [items, setItems] = useState<KanbanItem[]>(initialItems);
+  const { items, setItems } = useProjectWorkItems(projectKey, initialItems);
   const [draggedKey, setDraggedKey] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [saving, setSaving] = useState(false);
   const [detailItem, setDetailItem] = useState<DetailWorkItem | null>(null);
   const [drawerOpen, setDrawerOpen] = useState(false);
+  const [searchQuery, setSearchQuery] = useState("");
+  const [selectedAssigneeId, setSelectedAssigneeId] = useState<string | null>(null);
   const presenceByMemberId = useWorkspacePresence();
 
-  useEffect(() => {
-    if (!realtimeHydrated) {
-      dispatch(
-        replaceWorkItems({
-          projectKey,
-          items: initialItems,
-          bumpRevision: false,
-        }),
-      );
-    }
-  }, [dispatch, initialItems, projectKey, realtimeHydrated]);
-
-  useEffect(() => {
-    if (realtimeHydrated) {
-      setItems(realtimeItems as KanbanItem[]);
-    }
-  }, [realtimeHydrated, realtimeItems]);
-
-  function handleItemUpdate(updated: DetailWorkItem) {
-    setItems((prev) => mergeItem(prev, updated));
-    setDetailItem(updated);
-  }
-
-  const [searchQuery, setSearchQuery] = useState("");
-  const [selectedAssigneeId, setSelectedAssigneeId] = useState<string | null>(
-    null,
+  const membersMap = useMemo(
+    () => new Map(members.map((member) => [member.id, member])),
+    [members],
   );
 
-  const membersMap = useMemo(() => {
-    return new Map(members.map((m) => [m.id, m]));
-  }, [members]);
-
   const groupedItems = useMemo(() => {
-    const groups: Record<string, KanbanItem[]> = {};
-    for (const status of statuses) {
-      groups[status.id] = [];
-    }
-
+    const groups: Record<string, WorkItemView[]> = Object.fromEntries(
+      statuses.map((status) => [status.id, []]),
+    );
+    const query = searchQuery.trim().toLowerCase();
     const filtered = items.filter((item) => {
       const matchesSearch =
-        item.summary.toLowerCase().includes(searchQuery.toLowerCase()) ||
-        item.key.toLowerCase().includes(searchQuery.toLowerCase());
-
+        !query ||
+        item.summary.toLowerCase().includes(query) ||
+        item.key.toLowerCase().includes(query);
       const matchesAssignee =
         selectedAssigneeId === null || item.assigneeId === selectedAssigneeId;
-
       return matchesSearch && matchesAssignee;
     });
 
     for (const item of filtered) {
       if (groups[item.statusId]) {
         groups[item.statusId].push(item);
-      } else {
-        const defaultStatus = statuses[0]?.id;
-        if (defaultStatus) {
-          groups[defaultStatus].push(item);
-        }
+      } else if (statuses[0]?.id) {
+        groups[statuses[0].id].push(item);
       }
     }
-
     return groups;
-  }, [items, statuses, searchQuery, selectedAssigneeId]);
+  }, [items, searchQuery, selectedAssigneeId, statuses]);
+
+  function handleItemUpdate(updated: DetailWorkItem) {
+    setItems((current) => mergeWorkItem(current, updated));
+    setDetailItem(updated);
+  }
 
   async function handleStatusTransition(itemKey: string, nextStatusId: string) {
     const previous = [...items];
@@ -232,390 +110,94 @@ export function KanbanBoard({
     }
   }
 
-  function handleDragStart(event: DragEvent, itemKey: string) {
+  function handleDragStart(event: DragEvent<HTMLElement>, itemKey: string) {
     if (!canManageTasks) return;
     setDraggedKey(itemKey);
     event.dataTransfer.effectAllowed = "move";
     event.dataTransfer.setData("text/plain", itemKey);
   }
 
-  function handleDragOver(event: DragEvent) {
-    if (!canManageTasks) return;
-    event.preventDefault();
-  }
-
-  function handleDrop(event: DragEvent, targetStatusId: string) {
+  function handleDrop(event: DragEvent<HTMLElement>, targetStatusId: string) {
     if (!canManageTasks) return;
     event.preventDefault();
     const itemKey = draggedKey ?? event.dataTransfer.getData("text/plain");
     setDraggedKey(null);
-    if (itemKey) {
-      void handleStatusTransition(itemKey, targetStatusId);
-    }
+    if (itemKey) void handleStatusTransition(itemKey, targetStatusId);
   }
 
   return (
     <div className="flex flex-col gap-6 p-1">
-      <div className="flex flex-wrap items-center justify-between gap-4 border-b pb-4">
-        <div className="flex flex-wrap items-center gap-3">
-          <div className="relative w-64">
-            <Search className="absolute left-3 top-2.5 size-4 text-muted-foreground" />
-            <Input
-              placeholder="Search board"
-              value={searchQuery}
-              onChange={(e) => setSearchQuery(e.target.value)}
-              className="pl-9 h-9"
-            />
-          </div>
+      <KanbanBoardToolbar
+        searchQuery={searchQuery}
+        onSearchChange={setSearchQuery}
+        members={members}
+        selectedAssigneeId={selectedAssigneeId}
+        onAssigneeChange={setSelectedAssigneeId}
+        presenceByMemberId={presenceByMemberId}
+        canCompleteSprint={canCompleteSprint}
+      />
 
-          <div className="flex items-center -space-x-1 overflow-hidden py-1 px-2 border-l border-r">
-            <button
-              onClick={() => setSelectedAssigneeId(null)}
-              className={cn(
-                "relative z-10 flex size-7 items-center justify-center rounded-full border border-background bg-muted text-xs font-semibold hover:scale-105 transition",
-                selectedAssigneeId === null &&
-                  "ring-2 ring-primary ring-offset-1",
-              )}
-              title="All Members"
-            >
-              All
-            </button>
-            {members.map((member) => {
-              const isSelected = selectedAssigneeId === member.id;
-              return (
-                <button
-                  key={member.id}
-                  onClick={() => setSelectedAssigneeId(member.id)}
-                  className={cn(
-                    "flex size-7 items-center justify-center rounded-full border border-background hover:scale-105 transition overflow-hidden",
-                    isSelected && "ring-2 ring-primary ring-offset-1 z-20",
-                  )}
-                  title={member.name}
-                >
-                  <MemberAvatar
-                    memberId={member.id}
-                    name={member.name}
-                    avatarUrl={member.avatarUrl}
-                    className="size-7 border-0"
-                    fallbackClassName="bg-primary text-[10px] font-black text-primary-foreground"
-                    presence={presenceByMemberId[member.id]}
-                  />
-                </button>
-              );
-            })}
-          </div>
-
-          <Button
-            variant="ghost"
-            size="sm"
-            onClick={() => {
-              setSearchQuery("");
-              setSelectedAssigneeId(null);
-            }}
-            className="text-xs"
-          >
-            Clear filters
-          </Button>
-        </div>
-
-        {canCompleteSprint && (
-          <div className="flex items-center gap-2">
-            <Button size="sm" variant="secondary">
-              Complete sprint
-            </Button>
-          </div>
-        )}
-      </div>
-
-      {error && (
+      {error ? (
         <Alert variant="destructive" className="max-w-2xl">
           <AlertTitle>Gặp lỗi khi cập nhật</AlertTitle>
           <AlertDescription>{error}</AlertDescription>
         </Alert>
-      )}
+      ) : null}
 
-      <div className="flex gap-4 overflow-x-auto pb-4 scrollbar-thin select-none">
+      <div className="flex select-none gap-4 overflow-x-auto pb-4 scrollbar-thin">
         {statuses.map((status) => {
-          const columnItems = groupedItems[status.id] || [];
+          const columnItems = groupedItems[status.id] ?? [];
           return (
-            <div
+            <section
               key={status.id}
-              className="flex w-72 shrink-0 flex-col rounded-xl bg-muted/40 border-t-4 border-l border-r border-b p-3 min-h-125"
+              className="flex min-h-125 w-72 shrink-0 flex-col rounded-xl border border-t-4 bg-muted/40 p-3"
               style={{ borderTopColor: status.color || "#64748b" }}
-              onDragOver={(e) => canManageTasks && handleDragOver(e)}
-              onDrop={(e) => canManageTasks && handleDrop(e, status.id)}
+              onDragOver={(event) => {
+                if (canManageTasks) event.preventDefault();
+              }}
+              onDrop={(event) => handleDrop(event, status.id)}
             >
-              <div className="flex items-center justify-between mb-3 px-1">
+              <header className="mb-3 flex items-center justify-between px-1">
                 <span className="text-xs font-bold uppercase tracking-wider text-muted-foreground">
                   {status.name}
                 </span>
                 <Badge variant="secondary" className="text-[10px] font-bold">
                   {columnItems.length}
                 </Badge>
-              </div>
+              </header>
 
               <div className="flex flex-1 flex-col gap-2 overflow-y-auto">
                 {columnItems.map((item) => {
                   const assignee = item.assigneeId
                     ? membersMap.get(item.assigneeId)
                     : null;
-                  const dueDate = item.dueDate ? new Date(item.dueDate) : null;
-                  const now = new Date();
-                  const isOverdue = dueDate !== null && dueDate < now;
-                  const isDueSoon =
-                    !isOverdue &&
-                    dueDate !== null &&
-                    dueDate.getTime() - now.getTime() <=
-                      2 * 24 * 60 * 60 * 1000;
-                  const formattedDate = dueDate
-                    ? format(dueDate, "MMM d")
-                    : null;
-
                   return (
-                    <Card
+                    <WorkItemKanbanCard
                       key={item.key}
-                      className={cn(
-                        "border bg-card transition hover:shadow-sm",
-                        canManageTasks ? "cursor-pointer active:cursor-grabbing hover:border-primary/45" : "cursor-default",
-                        isOverdue
-                          ? "border-destructive/70 hover:border-destructive"
-                          : isDueSoon
-                            ? "border-warning/70 hover:border-warning"
-                            : "",
-                        draggedKey === item.key && "opacity-40",
-                      )}
-                      draggable={canManageTasks}
-                      onDragStart={(e) => {
-                        if (!canManageTasks) return;
-                        handleDragStart(e, item.key);
-                      }}
-                      onDragEnd={() => canManageTasks && setDraggedKey(null)}
-                      onClick={() => {
+                      item={item}
+                      assignee={assignee}
+                      canManage={canManageTasks}
+                      dragged={draggedKey === item.key}
+                      presence={
+                        assignee ? presenceByMemberId[assignee.id] : undefined
+                      }
+                      onOpen={() => {
                         setDetailItem(item);
                         setDrawerOpen(true);
                       }}
-                    >
-                      <CardContent className="p-3.5 flex flex-col gap-3">
-                        <div className="flex flex-col gap-1">
-                          <span className="text-xs text-muted-foreground font-mono font-bold">
-                            {item.key}
-                          </span>
-                          <p className="text-sm font-medium text-foreground leading-snug">
-                            {item.summary}
-                          </p>
-                        </div>
-
-                        {item.labels && item.labels.length > 0 && (
-                          <div className="flex flex-wrap gap-1">
-                            {item.labels.map((label) => (
-                              <Badge
-                                key={label}
-                                variant="outline"
-                                className="text-[9px] px-1 py-0 border bg-muted/10 text-muted-foreground"
-                              >
-                                {label}
-                              </Badge>
-                            ))}
-                          </div>
-                        )}
-
-                        <div className="flex items-center justify-between pt-1 border-t border-border/50 text-xs">
-                          <div className="flex items-center gap-2">
-                            <div
-                              title={
-                                WORK_ITEM_TYPE_LABELS[item.type] ?? item.type
-                              }
-                            >
-                              <WorkItemTypeIcon type={item.type} size={14} />
-                            </div>
-
-                            <span title={`Priority: ${item.priority}`}>
-                              <PriorityIcon
-                                priority={item.priority}
-                                className="size-3.5 shrink-0"
-                              />
-                            </span>
-
-                            {item.github?.pullRequests &&
-                              item.github.pullRequests.length > 0 && (
-                                <Popover>
-                                  <PopoverTrigger asChild>
-                                    <button
-                                      type="button"
-                                      onClick={(e) => e.stopPropagation()}
-                                      className="flex items-center justify-center p-0.5 rounded hover:bg-muted text-muted-foreground hover:text-primary transition shrink-0"
-                                      title="GitHub Pull Requests"
-                                    >
-                                      <GitPullRequest className="size-3.5 text-blue-500" />
-                                    </button>
-                                  </PopoverTrigger>
-                                  <PopoverContent
-                                    className="w-80 p-4 shadow-xl"
-                                    align="start"
-                                    onClick={(e) => e.stopPropagation()}
-                                  >
-                                    <div className="flex flex-col gap-3.5 text-xs text-foreground">
-                                      {item.github.pullRequests.map((pr) => {
-                                        const latestCommit =
-                                          item.github?.commits?.find(
-                                            (c) => c.sha === pr.headSha,
-                                          ) ||
-                                          item.github?.commits?.find(
-                                            (c) => c.branch === pr.headBranch,
-                                          ) ||
-                                          item.github?.commits?.[0];
-                                        const stateColor =
-                                          pr.state === "MERGED"
-                                            ? "bg-purple-50 text-purple-700 border-purple-200 dark:bg-purple-950/30 dark:text-purple-400 dark:border-purple-900/50"
-                                            : pr.state === "CLOSED"
-                                              ? "bg-rose-50 text-rose-700 border-rose-200 dark:bg-rose-950/30 dark:text-rose-400 dark:border-rose-900/50"
-                                              : "bg-emerald-50 text-emerald-700 border-emerald-200 dark:bg-emerald-950/30 dark:text-emerald-400 dark:border-emerald-900/50";
-
-                                        return (
-                                          <div
-                                            key={pr.number}
-                                            className="flex flex-col gap-2.5 pb-2.5 last:pb-0 last:border-b-0 border-b border-border/50"
-                                          >
-                                            <div className="flex flex-col gap-1.5">
-                                              <a
-                                                href={pr.url}
-                                                target="_blank"
-                                                rel="noreferrer"
-                                                className="font-semibold text-primary hover:underline leading-snug text-[13px] flex items-start gap-1"
-                                              >
-                                                <span className="shrink-0 text-muted-foreground font-normal">
-                                                  #{pr.number}
-                                                </span>
-                                                <span>·</span>
-                                                <span>{pr.title}</span>
-                                              </a>
-                                              <div className="flex flex-wrap items-center gap-2">
-                                                <span
-                                                  className={cn(
-                                                    "px-2 py-0.5 text-[10px] font-semibold rounded border",
-                                                    stateColor,
-                                                  )}
-                                                >
-                                                  {pr.state === "MERGED"
-                                                    ? "Merged"
-                                                    : pr.state === "CLOSED"
-                                                      ? "Closed"
-                                                      : "Open"}
-                                                </span>
-                                                <span className="text-[11px] text-muted-foreground">
-                                                  {pr.headBranch} →{" "}
-                                                  {pr.baseBranch}{" "}
-                                                  {pr.authorLogin
-                                                    ? `· @${pr.authorLogin}`
-                                                    : ""}
-                                                </span>
-                                              </div>
-                                            </div>
-
-                                            <div className="flex flex-col gap-1.5 pt-1.5 border-t border-border/40">
-                                              <div className="flex items-center gap-1.5 font-semibold text-foreground text-[11px]">
-                                                <GitBranch className="size-3.5 text-muted-foreground" />
-                                                <span>Branch</span>
-                                              </div>
-                                              <code className="px-1.5 py-0.5 rounded bg-muted/65 text-[11px] font-mono text-muted-foreground break-all">
-                                                {pr.headBranch}
-                                              </code>
-                                            </div>
-
-                                            {latestCommit && (
-                                              <div className="flex flex-col gap-1.5">
-                                                <div className="flex items-center gap-1.5 font-semibold text-foreground text-[11px]">
-                                                  <GitCommit className="size-3.5 text-muted-foreground" />
-                                                  <span>Commit gần nhất</span>
-                                                </div>
-                                                <p className="text-[11px] text-muted-foreground leading-relaxed pl-1">
-                                                  <span className="font-mono font-semibold text-foreground bg-muted/50 px-1 py-0.5 rounded mr-1">
-                                                    {latestCommit.sha.slice(
-                                                      0,
-                                                      7,
-                                                    )}
-                                                  </span>
-                                                  · {latestCommit.message}
-                                                </p>
-                                              </div>
-                                            )}
-                                          </div>
-                                        );
-                                      })}
-                                    </div>
-                                  </PopoverContent>
-                                </Popover>
-                              )}
-
-                            {formattedDate && (
-                              <div
-                                className={cn(
-                                  "flex items-center gap-1 text-[10px]",
-                                  isOverdue
-                                    ? "text-destructive font-semibold"
-                                    : isDueSoon
-                                      ? "text-warning font-semibold"
-                                      : "text-muted-foreground",
-                                )}
-                                title={
-                                  isOverdue
-                                    ? "Overdue!"
-                                    : isDueSoon
-                                      ? "Due soon"
-                                      : "Due date"
-                                }
-                              >
-                                <Clock className="size-3" />
-                                <span>{formattedDate}</span>
-                              </div>
-                            )}
-
-                            {item.storyPoints !== undefined && (
-                              <Badge className="text-[9px] px-1.5 py-0 h-4 bg-muted hover:bg-muted text-muted-foreground border">
-                                {item.storyPoints}
-                              </Badge>
-                            )}
-                          </div>
-
-                          {assignee ? (
-                            (() => {
-                              const memberDetails = members.find((m) => m.id === assignee.id);
-                              return (
-                                <MemberAvatar
-                                  memberId={assignee.id}
-                                  name={assignee.name}
-                                  email={assignee.email || memberDetails?.email}
-                                  avatarUrl={assignee.avatarUrl}
-                                  githubLogin={memberDetails?.githubLogin}
-                                  discordUsername={memberDetails?.discordUsername}
-                                  className="size-5"
-                                  fallbackClassName="bg-primary text-[8px] font-black text-primary-foreground"
-                                  title={`Assigned to ${assignee.name}`}
-                                  presence={presenceByMemberId[assignee.id]}
-                                />
-                              );
-                            })()
-                          ) : (
-                            <div
-                              className="flex size-5 items-center justify-center rounded-full bg-muted text-[8px] text-muted-foreground border"
-                              title="Unassigned"
-                            >
-                              <User className="size-3" />
-                            </div>
-                          )}
-                        </div>
-                      </CardContent>
-                    </Card>
+                      onDragStart={(event) => handleDragStart(event, item.key)}
+                      onDragEnd={() => setDraggedKey(null)}
+                    />
                   );
                 })}
 
-                {columnItems.length === 0 && (
-                  <div className="flex flex-1 flex-col items-center justify-center border border-dashed rounded-lg py-8 text-muted-foreground text-xs">
+                {columnItems.length === 0 ? (
+                  <div className="flex flex-1 flex-col items-center justify-center rounded-lg border border-dashed py-8 text-xs text-muted-foreground">
                     No items here
                   </div>
-                )}
+                ) : null}
               </div>
-            </div>
+            </section>
           );
         })}
       </div>
@@ -630,6 +212,9 @@ export function KanbanBoard({
         onUpdate={handleItemUpdate}
         canEdit={canManageTasks}
       />
+      <span className="sr-only" aria-live="polite">
+        {saving ? "Đang lưu thay đổi" : ""}
+      </span>
     </div>
   );
 }
