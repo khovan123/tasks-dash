@@ -1,9 +1,9 @@
 import { WorkItemTypeIcon, WORK_ITEM_TYPE_LABELS } from "@/components/atoms/work-item-type-icon";
 import { ExternalLinkList } from "@/components/molecules/external-link-list";
+import { MemberInfoBadge } from "@/components/molecules/member-info-badge";
 import { ResourceEmptyState } from "@/components/molecules/resource-empty-state";
 import { WorkItemStatusBadge } from "@/components/molecules/work-item-status-badge";
-import { GithubWorkItemLinks } from "@/components/github-work-item-links";
-import { MemberInfoBadge } from "@/components/member-info-badge";
+import { GithubWorkItemLinks } from "@/components/organisms/github-work-item-links";
 import { Badge } from "@/components/ui/badge";
 import {
   Table,

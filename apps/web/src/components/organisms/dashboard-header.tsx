@@ -1,5 +1,5 @@
 import { Button } from "@/components/ui/button";
-import { NewProjectModal } from "@/components/new-project-modal";
+import { NewProjectModal } from "@/components/organisms/new-project-modal";
 import type { DashboardSession } from "@/features/dashboard/types";
 
 export function DashboardHeader({

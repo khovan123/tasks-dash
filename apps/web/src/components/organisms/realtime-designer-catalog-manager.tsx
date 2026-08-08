@@ -1,6 +1,6 @@
 "use client";
 
-import { DesignerCatalogManager } from "@/components/designer-catalog-manager";
+import { DesignerCatalogManager } from "@/components/organisms/designer-catalog-manager";
 import { useRealtimeDesignCatalog } from "@/features/design-catalog/hooks/use-realtime-design-catalog";
 import type { RealtimeDesignCatalogItem } from "@/lib/store/realtime-slice";
 

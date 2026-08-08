@@ -1,9 +1,9 @@
 import Link from "next/link";
 import { FolderKanban, GitPullRequest, TrendingUp } from "lucide-react";
-import { NewProjectModal } from "@/components/new-project-modal";
-import { ProjectLogo } from "@/components/project-logo";
+import { ProjectLogo } from "@/components/atoms/project-logo";
 import { ResourceEmptyState } from "@/components/molecules/resource-empty-state";
 import { SectionHeading } from "@/components/molecules/section-heading";
+import { NewProjectModal } from "@/components/organisms/new-project-modal";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader } from "@/components/ui/card";
 import { Progress } from "@/components/ui/progress";

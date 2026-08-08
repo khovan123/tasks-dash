@@ -1,10 +1,10 @@
 import type { DragEvent } from "react";
-import { WorkItemTypeIcon, WORK_ITEM_TYPE_LABELS } from "@/components/atoms/work-item-type-icon";
 import { PriorityIcon } from "@/components/atoms/priority-icon";
-import { GithubWorkItemLinks } from "@/components/github-work-item-links";
+import { WorkItemTypeIcon, WORK_ITEM_TYPE_LABELS } from "@/components/atoms/work-item-type-icon";
 import { WorkItemAssigneeAvatar } from "@/components/molecules/work-item-assignee-avatar";
 import { WorkItemDueIndicator } from "@/components/molecules/work-item-due-indicator";
 import { WorkItemLabels } from "@/components/molecules/work-item-labels";
+import { GithubWorkItemLinks } from "@/components/organisms/github-work-item-links";
 import { Badge } from "@/components/ui/badge";
 import { Card, CardContent } from "@/components/ui/card";
 import { getWorkItemDueState } from "@/features/work-items/lib/due-state";

@@ -1,1 +1,1 @@
-export * from "@/components/organisms/public-info-page";
+export * from "@/components/templates/public-info-page";

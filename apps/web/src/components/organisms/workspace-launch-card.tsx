@@ -2,8 +2,9 @@
 
 import { useState } from "react";
 import { ArrowRight, LoaderCircle } from "lucide-react";
+import { WorkspaceLogo } from "@/components/atoms/workspace-logo";
 import { apiRequest } from "@/lib/api/api-request";
-import { WorkspaceLogo } from "@/components/workspace-logo";
+import { mutationErrorMessage } from "@/lib/api/mutation-result";
 import { cn } from "@/lib/utils";
 
 export function WorkspaceLaunchCard({
@@ -20,6 +21,7 @@ export function WorkspaceLaunchCard({
   workspaceRole: string;
 }) {
   const [busy, setBusy] = useState(false);
+  const [error, setError] = useState<string | null>(null);
 
   async function openWorkspace() {
     if (busy) return;
@@ -28,13 +30,15 @@ export function WorkspaceLaunchCard({
       return;
     }
     setBusy(true);
+    setError(null);
     try {
       await apiRequest(`/api/workspaces/${workspaceId}/switch`, {
         method: "POST",
       });
       window.location.assign("/");
-    } catch {
+    } catch (cause) {
       setBusy(false);
+      setError(mutationErrorMessage(cause, "Không thể mở workspace."));
     }
   }
 
@@ -66,6 +70,10 @@ export function WorkspaceLaunchCard({
             </span>
           ) : null}
         </div>
+        <p className="mt-1 truncate text-xs text-muted-foreground">
+          {workspaceSlug} · {workspaceRole}
+        </p>
+        {error ? <p className="mt-1 text-xs text-destructive">{error}</p> : null}
       </div>
 
       <div className="flex size-12 shrink-0 items-center justify-center text-slate-700">
