@@ -2,20 +2,6 @@
   "name": "@tasks-dash/web",
   "version": "0.1.0",
   "private": true,
-  "fogewise": {
-    "type": "http",
-    "route": "/",
-    "port": 3000,
-    "portEnv": "PORT",
-    "priority": 0,
-    "upstreams": {
-      "api": {
-        "package": "@tasks-dash/api",
-        "env": "INTERNAL_API_BASE_URL",
-        "buildEnv": "NEXT_PUBLIC_API_BASE_URL"
-      }
-    }
-  },
   "scripts": {
     "dev": "next dev --turbopack",
     "build": "next build",
