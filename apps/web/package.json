@@ -2,20 +2,6 @@
   "name": "@tasks-dash/web",
   "version": "0.1.0",
   "private": true,
-  "fogewise": {
-    "type": "http",
-    "route": "/",
-    "port": 3000,
-    "portEnv": "PORT",
-    "priority": 0,
-    "upstreams": {
-      "api": {
-        "package": "@tasks-dash/api",
-        "env": "INTERNAL_API_BASE_URL",
-        "buildEnv": "NEXT_PUBLIC_API_BASE_URL"
-      }
-    }
-  },
   "scripts": {
     "dev": "next dev --turbopack",
     "build": "next build",
@@ -42,11 +28,11 @@
     "radix-ui": "^1.6.7",
     "react": "^19.0.0",
     "react-day-picker": "^10.0.1",
-    "react-dom": "^19.0.0",
+    "react-dom": "^19.0.4",
     "react-hook-form": "^7.54.2",
     "recharts": "^3.8.0",
     "sonner": "^2.0.7",
-    "tailwind-merge": "^3.0.2",
+    "tailwind-merge": "^3.4.0",
     "vaul": "^1.1.2",
     "zod": "^3.24.2"
   },
