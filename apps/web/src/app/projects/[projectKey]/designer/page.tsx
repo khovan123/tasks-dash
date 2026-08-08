@@ -1,20 +1,12 @@
 import { MEMBER_ROLES, type MemberRole } from "@tasks-dash/contracts";
-import { DesignerCatalogManager } from "@/components/designer-catalog-manager";
+import { RealtimeDesignerCatalogManager } from "@/components/realtime-designer-catalog-manager";
 import type { JiraShellSession } from "@/components/layout/jira-app-shell";
 import { apiData } from "@/lib/server/api-data";
 import { apiProjectData } from "@/lib/server/project-access";
 import { AppPage } from "@/components/layout/app-shell";
+import type { RealtimeDesignCatalogItem } from "@/lib/store/realtime-slice";
 
 export const dynamic = "force-dynamic";
-
-interface DesignCatalogItem {
-  _id: string;
-  name: string;
-  type: string;
-  figmaUrl: string;
-  description: string;
-  tags: string[];
-}
 
 interface WorkspaceMember {
   _id: string;
@@ -49,7 +41,7 @@ export default async function DesignerPage({
   const { projectKey } = await params;
   const key = projectKey.toUpperCase();
   const [items, workspaceMembers, session] = await Promise.all([
-    apiProjectData<DesignCatalogItem[]>(`/projects/${key}/design-catalog`),
+    apiProjectData<RealtimeDesignCatalogItem[]>(`/projects/${key}/design-catalog`),
     apiData<WorkspaceMembersResponse>("/workspace/members"),
     apiData<JiraShellSession>("/auth/me"),
   ]);
@@ -59,11 +51,12 @@ export default async function DesignerPage({
   const canManageCatalog =
     currentRole === MEMBER_ROLES.owner ||
     currentRole === MEMBER_ROLES.designer;
+
   return (
     <AppPage>
-      <DesignerCatalogManager
+      <RealtimeDesignerCatalogManager
         projectKey={key}
-        items={items}
+        initialItems={items}
         canManageCatalog={canManageCatalog}
       />
     </AppPage>
