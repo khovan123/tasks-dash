@@ -52,6 +52,8 @@ export class ProjectRealtimeService {
   ): Record<string, MemberPresence> {
     const workspacePresence = this.ensureWorkspacePresence(workspaceId);
     const current = workspacePresence.get(memberId);
+    const statusChanged = current?.status !== MEMBER_PRESENCE.online;
+
     if (current?.timeout) {
       clearTimeout(current.timeout);
     }
@@ -65,7 +67,9 @@ export class ProjectRealtimeService {
     };
 
     workspacePresence.set(memberId, entry);
-    this.emitPresence(workspaceId);
+    if (statusChanged) {
+      this.emitPresence(workspaceId);
+    }
     return this.getPresenceSnapshot(workspaceId, "");
   }
 
