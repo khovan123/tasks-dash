@@ -1,9 +1,9 @@
 import { MEMBER_ROLES } from "@tasks-dash/contracts";
-import { AutomationCreateForm } from "@/components/automation-create-form";
+import { AutomationCreateForm } from "@/components/organisms/automation-create-form";
 import {
   AutomationRuleManager,
   type AutomationRule,
-} from "@/components/automation-rule-manager";
+} from "@/components/organisms/automation-rule-manager";
 import { SectionHeading } from "@/components/molecules/section-heading";
 import { AppPage } from "@/components/templates/app-page";
 import { Card, CardContent, CardHeader } from "@/components/ui/card";
