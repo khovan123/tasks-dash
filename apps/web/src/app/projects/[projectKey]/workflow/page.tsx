@@ -1,17 +1,13 @@
-import { MEMBER_ROLES, type MemberRole } from "@tasks-dash/contracts";
-import type { JiraShellSession } from "@/components/layout/jira-app-shell";
-import { apiData } from "@/lib/server/api-data";
-import { apiProjectData } from "@/lib/server/project-access";
-import { AppPage } from "@/components/layout/app-shell";
+import { MEMBER_ROLES } from "@tasks-dash/contracts";
 import { WorkflowEditorForm } from "@/components/workflow-editor-form";
-import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
+import { AppPage } from "@/components/templates/app-page";
+import {
+  hasWorkspaceRole,
+  loadWorkspaceAccess,
+} from "@/features/members/server/load-workspace-access";
+import { apiProjectData } from "@/lib/server/project-access";
 
 export const dynamic = "force-dynamic";
-
-interface Project {
-  key: string;
-  name: string;
-}
 
 interface WorkflowStatus {
   id: string;
@@ -27,31 +23,6 @@ interface Workflow {
   statuses: WorkflowStatus[];
 }
 
-interface WorkspaceMember {
-  _id: string;
-  name: string;
-  email: string;
-  avatarUrl: string;
-  role: MemberRole;
-  status: string;
-  lastLoginAt?: string;
-}
-
-interface WorkspaceInvitation {
-  _id: string;
-  email: string;
-  role: MemberRole;
-  status: string;
-  expiresAt: string;
-  lastSentAt?: string;
-}
-
-interface WorkspaceMembersResponse {
-  workspace: { workspaceId: string; name: string; slug?: string };
-  members: WorkspaceMember[];
-  invitations: WorkspaceInvitation[];
-}
-
 export default async function WorkflowSettingsPage({
   params,
 }: {
@@ -59,16 +30,11 @@ export default async function WorkflowSettingsPage({
 }) {
   const { projectKey } = await params;
   const key = projectKey.toUpperCase();
-
-  const [project, workflow, workspaceMembers, session] = await Promise.all([
-    apiProjectData<Project>(`/projects/${key}`),
+  const [workflow, access] = await Promise.all([
     apiProjectData<Workflow | null>(`/projects/${key}/workflow`),
-    apiData<WorkspaceMembersResponse>("/workspace/members"),
-    apiData<JiraShellSession>("/auth/me"),
+    loadWorkspaceAccess(),
   ]);
-  const canManage =
-    workspaceMembers.members.find((member) => member.email === session.email)
-      ?.role === MEMBER_ROLES.owner;
+  const canManage = hasWorkspaceRole(access.currentRole, [MEMBER_ROLES.owner]);
 
   return (
     <AppPage>
