@@ -7,98 +7,13 @@ on:
 
 permissions:
   contents: read
+  packages: write
 
 jobs:
   deploy:
-    runs-on: ubuntu-latest
-
-    steps:
-      - name: Checkout
-        uses: actions/checkout@v4
-
-      - name: Resolve repository name
-        shell: bash
-        run: |
-          REPO_NAME="${GITHUB_REPOSITORY##*/}"
-
-          echo "REPO_NAME=$REPO_NAME" >> "$GITHUB_ENV"
-
-          echo "Repository : $REPO_NAME"
-          echo "Directory  : /srv/apps/$REPO_NAME"
-          echo "Domain     : https://$REPO_NAME.fogewise.io.vn"
-
-      - name: Configure SSH
-        env:
-          VPS_SSH_KEY: ${{ secrets.VPS_SSH_KEY }}
-          VPS_KNOWN_HOSTS: ${{ secrets.VPS_KNOWN_HOSTS }}
-        run: |
-          mkdir -p ~/.ssh
-
-          printf '%s\n' "$VPS_SSH_KEY" > ~/.ssh/id_ed25519
-          printf '%s\n' "$VPS_KNOWN_HOSTS" > ~/.ssh/known_hosts
-
-          chmod 700 ~/.ssh
-          chmod 600 ~/.ssh/id_ed25519
-          chmod 600 ~/.ssh/known_hosts
-
-      - name: Prepare server directory
-        env:
-          VPS_HOST: ${{ secrets.VPS_HOST }}
-          VPS_USER: ${{ secrets.VPS_USER }}
-        run: |
-          ssh "$VPS_USER@$VPS_HOST" \
-            "mkdir -p /srv/apps/$REPO_NAME"
-
-      - name: Upload source
-        env:
-          VPS_HOST: ${{ secrets.VPS_HOST }}
-          VPS_USER: ${{ secrets.VPS_USER }}
-        run: |
-          rsync -az \
-            --delete \
-            --exclude='.git' \
-            --exclude='.env' \
-            --exclude='.env.*' \
-            ./ \
-            "$VPS_USER@$VPS_HOST:/srv/apps/$REPO_NAME/"
-
-      - name: Deploy
-        env:
-          VPS_HOST: ${{ secrets.VPS_HOST }}
-          VPS_USER: ${{ secrets.VPS_USER }}
-        run: |
-          ssh "$VPS_USER@$VPS_HOST" "
-            set -eu
-
-            LOG_DIR='/var/log/fogewise'
-            LOG_FILE=\"\$LOG_DIR/${REPO_NAME}-deploy.log\"
-
-            install -d -m 700 \"\$LOG_DIR\"
-            install -m 600 /dev/null \"\$LOG_FILE\"
-
-            if (umask 022; /usr/local/sbin/fogewise-deploy '$REPO_NAME') >\"\$LOG_FILE\" 2>&1; then
-              echo 'Fogewise deploy succeeded.'
-            else
-              echo 'Fogewise deploy failed. Inspect server-side log:' \"\$LOG_FILE\" >&2
-              exit 1
-            fi
-
-            docker compose \
-              -p '$REPO_NAME' \
-              -f '/var/lib/fogewise/apps/$REPO_NAME/compose.json' \
-              ps
-          "
-
-      - name: Health check
-        run: |
-          curl \
-            --fail \
-            --silent \
-            --show-error \
-            --output /dev/null \
-            --retry 10 \
-            --retry-delay 3 \
-            --retry-all-errors \
-            "https://${REPO_NAME}.fogewise.io.vn"
-
-          echo "Health check passed."
+    uses: ./.github/workflows/fogewise-deploy.yml
+    secrets:
+      VPS_HOST: ${{ secrets.VPS_HOST }}
+      VPS_USER: ${{ secrets.VPS_USER }}
+      VPS_SSH_KEY: ${{ secrets.VPS_SSH_KEY }}
+      VPS_KNOWN_HOSTS: ${{ secrets.VPS_KNOWN_HOSTS }}
