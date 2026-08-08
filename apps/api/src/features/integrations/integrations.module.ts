@@ -6,6 +6,7 @@ import { WorkItemsModule } from "../work-items/work-items.module";
 import { MemberDocument, MemberSchema } from "../members/member.schema";
 import { DiscordAdapter } from "./discord.adapter";
 import { DiscordInlineReplyAdapter } from "./discord-inline-reply.adapter";
+import { DiscordGatewaySyncService } from "./discord-gateway-sync.service";
 import { DiscordDefaultAutomationsService } from "./discord-default-automations.service";
 import { DiscordProjectLogService } from "./discord-project-log.service";
 import { GithubAppService, IntegrationStateService } from "./github-app.service";
@@ -63,6 +64,7 @@ import { forwardRef } from "@nestjs/common";
   providers: [
     IntegrationStateService,
     { provide: DiscordAdapter, useClass: DiscordInlineReplyAdapter },
+    DiscordGatewaySyncService,
     DiscordDefaultAutomationsService,
     DiscordProjectLogService,
     GithubAppService,
