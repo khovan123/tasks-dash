@@ -2,7 +2,6 @@
 
 import { zodResolver } from "@hookform/resolvers/zod";
 import { DESIGN_CATALOG_TYPES } from "@tasks-dash/contracts";
-import { useRouter } from "next/navigation";
 import { Controller, FormProvider, useForm } from "react-hook-form";
 import { ExternalLink, Figma, Plus, Trash2 } from "lucide-react";
 import {
@@ -10,6 +9,11 @@ import {
   designCatalogSchema,
 } from "@/features/design-catalog/schemas/design-catalog.schema";
 import { apiRequest } from "@/lib/api/api-request";
+import { useAppDispatch } from "@/lib/store/hooks";
+import {
+  replaceDesignCatalog,
+  type RealtimeDesignCatalogItem,
+} from "@/lib/store/realtime-slice";
 import { FormCard } from "@/components/layout/app-shell";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -61,7 +65,7 @@ export function DesignerCatalogManager({
   items: DesignCatalogItem[];
   canManageCatalog: boolean;
 }) {
-  const router = useRouter();
+  const dispatch = useAppDispatch();
   const form = useForm<DesignCatalogFormValues>({
     resolver: zodResolver(designCatalogSchema),
     defaultValues: {
@@ -72,6 +76,13 @@ export function DesignerCatalogManager({
       tags: "",
     },
   });
+
+  async function syncCatalog(): Promise<void> {
+    const nextItems = await apiRequest<RealtimeDesignCatalogItem[]>(
+      `/api/projects/${projectKey}/design-catalog`,
+    );
+    dispatch(replaceDesignCatalog({ projectKey, items: nextItems }));
+  }
 
   async function submit(values: DesignCatalogFormValues): Promise<void> {
     form.clearErrors("root");
@@ -96,7 +107,7 @@ export function DesignerCatalogManager({
         description: "",
         tags: "",
       });
-      router.refresh();
+      await syncCatalog();
     } catch (error) {
       form.setError("root", {
         message:
@@ -111,7 +122,7 @@ export function DesignerCatalogManager({
     await apiRequest(`/api/projects/${projectKey}/design-catalog/${itemId}`, {
       method: "DELETE",
     });
-    router.refresh();
+    await syncCatalog();
   }
 
   return (
