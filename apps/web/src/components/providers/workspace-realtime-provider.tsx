@@ -1,6 +1,11 @@
 "use client";
 
-import { useEffect, useRef, type ReactNode } from "react";
+import {
+  useEffect,
+  useRef,
+  type MutableRefObject,
+  type ReactNode,
+} from "react";
 import type { MemberPresence } from "@tasks-dash/contracts";
 import { apiRequest } from "@/lib/api/api-request";
 import { useAppDispatch, useAppStore } from "@/lib/store/hooks";
@@ -38,6 +43,10 @@ const PROJECT_LIFECYCLE_EVENT_TYPES = new Set([
 ]);
 
 const SYNC_DEBOUNCE_MS = 75;
+
+type TimerMapRef = MutableRefObject<
+  Record<string, ReturnType<typeof setTimeout>>
+>;
 
 export function WorkspaceRealtimeProvider({
   children,
@@ -151,7 +160,7 @@ export function WorkspaceRealtimeProvider({
     }
 
     function scheduleProjectScopedSync(
-      timers: React.MutableRefObject<Record<string, ReturnType<typeof setTimeout>>>,
+      timers: TimerMapRef,
       projectKey: string,
       sync: (key: string) => Promise<void>,
     ) {
