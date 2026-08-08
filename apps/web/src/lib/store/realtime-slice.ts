@@ -97,6 +97,7 @@ interface NormalizedProjectsState {
   entities: Record<string, RealtimeProject>;
   hydrated: boolean;
   detailHydrated: Record<string, boolean>;
+  deleted: Record<string, boolean>;
 }
 
 interface NormalizedWorkItemsState {
@@ -139,7 +140,13 @@ const emptyRevisions: ProjectRealtimeRevisions = {
 };
 
 const initialState: RealtimeState = {
-  projects: { ids: [], entities: {}, hydrated: false, detailHydrated: {} },
+  projects: {
+    ids: [],
+    entities: {},
+    hydrated: false,
+    detailHydrated: {},
+    deleted: {},
+  },
   workItemsByProject: {},
   documentsByProject: {},
   designCatalogByProject: {},
@@ -251,6 +258,7 @@ const realtimeSlice = createSlice({
           ...project,
           key,
         } as RealtimeProject;
+        state.projects.deleted[key] = false;
       }
 
       state.projects.ids = ids;
@@ -266,6 +274,17 @@ const realtimeSlice = createSlice({
       } as RealtimeProject;
       if (!state.projects.ids.includes(key)) state.projects.ids.push(key);
       state.projects.detailHydrated[key] = true;
+      state.projects.deleted[key] = false;
+    },
+    markProjectDeleted(state, action: PayloadAction<string>) {
+      const key = normalizeProjectKey(action.payload);
+      state.projects.deleted[key] = true;
+      state.projects.ids = state.projects.ids.filter((id) => id !== key);
+      delete state.projects.entities[key];
+      delete state.projects.detailHydrated[key];
+      delete state.workItemsByProject[key];
+      delete state.documentsByProject[key];
+      delete state.designCatalogByProject[key];
     },
     replaceWorkItems(
       state,
@@ -324,6 +343,7 @@ const realtimeSlice = createSlice({
 export const {
   replaceProjects,
   upsertProjectDetail,
+  markProjectDeleted,
   replaceWorkItems,
   replaceDocumentTree,
   replaceDesignCatalog,
@@ -358,6 +378,11 @@ export const selectProjectsHydrated = (state: RealtimeRootState) =>
 export function selectProject(projectKey: string) {
   const key = normalizeProjectKey(projectKey);
   return (state: RealtimeRootState) => state.realtime.projects.entities[key];
+}
+
+export function selectProjectDeleted(projectKey: string) {
+  const key = normalizeProjectKey(projectKey);
+  return (state: RealtimeRootState) => state.realtime.projects.deleted[key] ?? false;
 }
 
 export function selectProjectDetailHydrated(projectKey: string) {
