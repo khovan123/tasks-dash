@@ -110,7 +110,7 @@ export function EnvironmentEditor({
                 </div>
               ) : (
                 environment.rows.map((row, index) => (
-                  <div key={`${index}-${row.key}`} className="flex items-center gap-2">
+                  <div key={index} className="flex items-center gap-2">
                     {canUpdate ? (
                       <>
                         <Input
