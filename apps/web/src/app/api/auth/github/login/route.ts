@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
+import { GITHUB_ACCOUNT_CONFIRMATION_COOKIE } from "@/features/auth/constants";
 import { upstreamRequest } from "@/lib/server/upstream-request";
 
 export const dynamic = "force-dynamic";
@@ -36,8 +37,6 @@ export async function GET(request: NextRequest): Promise<Response> {
     target.hostname === "github.com" &&
     target.pathname === "/login/oauth/authorize"
   ) {
-    // GitHub otherwise auto-completes OAuth for an already-authorized account.
-    // Force an explicit account choice after every Tasks Dash logout/login cycle.
     target.searchParams.set("prompt", "select_account");
   }
 
@@ -45,5 +44,19 @@ export async function GET(request: NextRequest): Promise<Response> {
   for (const cookie of upstream.headers.getSetCookie()) {
     response.headers.append("set-cookie", cookie);
   }
+
+  // Regular sign-in must never drop straight into a workspace after GitHub
+  // returns. The selected account is explicitly confirmed in the app first.
+  // Invitation flows keep their existing GitHub -> Discord onboarding flow.
+  if (!request.nextUrl.searchParams.has("invite")) {
+    response.cookies.set(GITHUB_ACCOUNT_CONFIRMATION_COOKIE, "1", {
+      httpOnly: true,
+      secure: request.nextUrl.protocol === "https:",
+      sameSite: "lax",
+      maxAge: 10 * 60,
+      path: "/",
+    });
+  }
+
   return response;
 }
