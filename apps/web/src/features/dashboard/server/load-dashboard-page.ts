@@ -8,6 +8,7 @@ import type {
   DashboardOverviewData,
   DashboardSession,
 } from "@/features/dashboard/types";
+import { loadPublicAuthLinks } from "@/features/auth/server/load-public-auth-links";
 import { apiData, apiResponse } from "@/lib/server/api-data";
 
 interface WorkspaceAccessOption {
@@ -63,16 +64,11 @@ function buildMetrics(dashboard: DashboardOverviewData): DashboardMetrics {
 
 export async function loadDashboardPage() {
   const sessionResponse = await apiResponse("/auth/me");
-  const browserApi =
-    process.env.NEXT_PUBLIC_API_BASE_URL ||
-    process.env.TASKS_DASH_API_BASE_URL ||
-    "/api";
 
   if (sessionResponse.status === 401) {
     return {
       authenticated: false as const,
-      loginUrl: `${browserApi.replace(/\/$/, "")}/auth/github/login`,
-      deviceLoginHref: "/login/code",
+      ...loadPublicAuthLinks(),
     };
   }
 

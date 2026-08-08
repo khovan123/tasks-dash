@@ -3,8 +3,9 @@ import { DashboardHeader } from "@/components/organisms/dashboard-header";
 import { DashboardKpiGrid } from "@/components/organisms/dashboard-kpi-grid";
 import { DashboardMembersCard } from "@/components/organisms/dashboard-members-card";
 import { DashboardProjectProgress } from "@/components/organisms/dashboard-project-progress";
+import { UnauthenticatedHome } from "@/components/organisms/unauthenticated-home";
 import { AppPage } from "@/components/templates/app-page";
-import { UnauthenticatedHome } from "@/components/unauthenticated-home";
+import { PublicPageShell } from "@/components/templates/public-page-shell";
 import { loadDashboardPage } from "@/features/dashboard/server/load-dashboard-page";
 
 export const dynamic = "force-dynamic";
@@ -14,10 +15,12 @@ export default async function HomePage() {
 
   if (!context.authenticated) {
     return (
-      <UnauthenticatedHome
-        loginUrl={context.loginUrl}
-        deviceLoginHref={context.deviceLoginHref}
-      />
+      <PublicPageShell>
+        <UnauthenticatedHome
+          loginUrl={context.loginUrl}
+          deviceLoginHref={context.deviceLoginHref}
+        />
+      </PublicPageShell>
     );
   }
 
