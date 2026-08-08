@@ -1,13 +1,13 @@
 import "server-only";
 
-import { apiData } from "@/lib/server/api-data";
-import { apiProjectData } from "@/lib/server/project-access";
 import type {
   ProjectMembersResponse,
   WorkflowStatusView,
   WorkItemMember,
   WorkItemView,
 } from "@/features/work-items/types";
+import { apiData } from "@/lib/server/api-data";
+import { apiProjectData } from "@/lib/server/project-access";
 
 interface WorkflowResponse {
   name?: string;
@@ -37,6 +37,19 @@ const DEFAULT_STATUSES: WorkflowStatusView[] = [
   { id: "DONE", name: "Done", category: "DONE", color: "#16a34a" },
 ];
 
+function toWorkItemMember(
+  member: ProjectMembersResponse["workspaceMembers"][number],
+): WorkItemMember {
+  return {
+    id: member._id,
+    name: member.name,
+    email: member.email,
+    avatarUrl: member.avatarUrl,
+    githubLogin: member.githubLogin,
+    discordUsername: member.discordUsername,
+  };
+}
+
 export async function loadProjectWorkItemsContext(projectKey: string) {
   const key = projectKey.toUpperCase();
   const [items, workflow, membersData, session] = await Promise.all([
@@ -53,14 +66,8 @@ export async function loadProjectWorkItemsContext(projectKey: string) {
   const statusNames = Object.fromEntries(
     statuses.map((status) => [status.id, status.name]),
   );
-  const members: WorkItemMember[] = membersData.projectMembers.map((member) => ({
-    id: member._id,
-    name: member.name,
-    email: member.email,
-    avatarUrl: member.avatarUrl,
-    githubLogin: member.githubLogin,
-    discordUsername: member.discordUsername,
-  }));
+  const members = membersData.projectMembers.map(toWorkItemMember);
+  const workspaceMembers = membersData.workspaceMembers.map(toWorkItemMember);
   const normalizedItems = items.map((item) => ({
     ...item,
     startDate: item.startDate ?? item.startedAt,
@@ -75,6 +82,7 @@ export async function loadProjectWorkItemsContext(projectKey: string) {
     statuses,
     statusNames,
     members,
+    workspaceMembers,
     membersData,
     currentMemberRole,
     canManageTasks:
