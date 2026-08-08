@@ -30,3 +30,25 @@ export interface WorkspaceMembersResponse {
   members: WorkspaceMemberView[];
   invitations?: WorkspaceInvitationView[];
 }
+
+export interface ProjectMemberView {
+  _id: string;
+  name: string;
+  email: string;
+  role: string;
+  avatarUrl?: string;
+  githubLogin?: string;
+  discordUsername?: string;
+}
+
+export interface ProjectMembersResponse {
+  projectMembers: ProjectMemberView[];
+  workspaceMembers: ProjectMemberView[];
+}
+
+export interface MemberProjectSummary {
+  _id: string;
+  key: string;
+  name: string;
+  memberIds?: string[];
+}
