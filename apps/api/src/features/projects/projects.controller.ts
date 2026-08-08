@@ -63,9 +63,11 @@ export class ProjectsController {
                 : project.memberRoles?.[session.memberId];
 
           return {
+            _id: String(project._id),
             key: project.key,
             name: project.name,
             color: project.color,
+            memberIds: project.memberIds ?? [],
             currentMemberRole: currentMemberRole ?? MEMBER_ROLES.viewer,
           };
         }),
