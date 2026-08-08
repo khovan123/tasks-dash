@@ -30,7 +30,6 @@ export interface RealtimeWorkItem {
   figmaLinks?: Array<{ label: string; url: string }>;
   documentLinks?: Array<{ label: string; url: string }>;
   github?: any;
-  [key: string]: unknown;
 }
 
 export interface ProjectRealtimeRevisions {
