@@ -6,21 +6,26 @@ import {
   MEMBER_INVITATION_STATUSES,
   MEMBER_ROLES,
   type MemberPresence,
-  type MemberRole,
 } from "@tasks-dash/contracts";
 import { useRouter } from "next/navigation";
 import { Controller, FormProvider, useForm } from "react-hook-form";
 import { useState } from "react";
 import { MailPlus, RefreshCw, Trash2, UserMinus } from "lucide-react";
-import { MemberAvatar } from "@/components/member-avatar";
-import { MemberInfoBadge } from "@/components/member-info-badge";
+import { MemberAvatar } from "@/components/molecules/member-avatar";
+import { MemberInfoBadge } from "@/components/molecules/member-info-badge";
 import { RoleBadge } from "@/components/role-badge";
 import {
   InviteMemberValues,
   inviteMemberSchema,
 } from "@/features/members/schemas/invite-member.schema";
+import type {
+  MemberProjectSummary,
+  WorkspaceInvitationView,
+  WorkspaceMemberView,
+} from "@/features/members/types";
 import { apiRequest } from "@/lib/api/api-request";
-import { FormCard, SectionHeading } from "@/components/layout/app-shell";
+import { FormCard } from "@/components/organisms/form-card";
+import { SectionHeading } from "@/components/molecules/section-heading";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -49,33 +54,7 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Checkbox } from "@/components/ui/checkbox";
 import { useWorkspacePresence } from "@/components/layout/jira-app-shell";
 
-interface WorkspaceMember {
-  _id: string;
-  name: string;
-  email: string;
-  avatarUrl: string;
-  role: MemberRole;
-  status: string;
-  githubLogin?: string;
-  discordUsername?: string;
-  lastLoginAt?: string;
-}
-interface WorkspaceInvitation {
-  _id: string;
-  email: string;
-  role: MemberRole;
-  status: string;
-  expiresAt: string;
-  lastSentAt?: string;
-}
-
-interface Project {
-  _id: string;
-  key: string;
-  name: string;
-}
-
-function roleLabel(role: MemberRole): string {
+function roleLabel(role: WorkspaceMemberView["role"]): string {
   return role.replaceAll("_", " ");
 }
 
@@ -85,9 +64,9 @@ export function WorkspaceMembersManager({
   projects,
   canManage,
 }: {
-  members: WorkspaceMember[];
-  invitations: WorkspaceInvitation[];
-  projects: Project[];
+  members: WorkspaceMemberView[];
+  invitations: WorkspaceInvitationView[];
+  projects: Array<MemberProjectSummary & { _id: string }>;
   canManage: boolean;
 }) {
   const router = useRouter();
@@ -144,7 +123,7 @@ export function WorkspaceMembersManager({
     }
   }
 
-  function memberPresence(member: WorkspaceMember): MemberPresence {
+  function memberPresence(member: WorkspaceMemberView): MemberPresence {
     return (
       (presenceByMemberId[member._id] as MemberPresence | undefined) ??
       MEMBER_PRESENCE.offline
@@ -205,7 +184,7 @@ export function WorkspaceMembersManager({
 
                 <Field className="sm:col-span-2">
                   <FieldLabel>Dự án tham gia</FieldLabel>
-                  <div className="flex flex-col gap-3 rounded-lg border p-4 bg-muted/10 mt-1.5">
+                  <div className="mt-1.5 flex flex-col gap-3 rounded-lg border bg-muted/10 p-4">
                     <div className="flex items-center gap-2">
                       <Controller
                         control={form.control}
@@ -216,35 +195,30 @@ export function WorkspaceMembersManager({
                             checked={field.value}
                             onCheckedChange={(checked) => {
                               field.onChange(checked);
-                              if (checked) {
-                                form.setValue("projectIds", []);
-                              }
+                              if (checked) form.setValue("projectIds", []);
                             }}
                           />
                         )}
                       />
                       <label
                         htmlFor="invite-all-projects"
-                        className="text-sm font-medium leading-none cursor-pointer"
+                        className="cursor-pointer text-sm font-medium leading-none"
                       >
                         Tất cả dự án hiện tại đang có
                       </label>
                     </div>
 
-                    {!form.watch("allProjects") && (
-                      <div className="border-t pt-3 mt-1">
-                        <span className="text-xs font-semibold text-muted-foreground block mb-2">
+                    {!form.watch("allProjects") ? (
+                      <div className="mt-1 border-t pt-3">
+                        <span className="mb-2 block text-xs font-semibold text-muted-foreground">
                           Chọn cụ thể dự án:
                         </span>
-                        <div className="grid gap-3 sm:grid-cols-2 max-h-40 overflow-y-auto">
+                        <div className="grid max-h-40 gap-3 overflow-y-auto sm:grid-cols-2">
                           {projects.map((project) => {
                             const selectedIds = form.watch("projectIds") || [];
                             const isChecked = selectedIds.includes(project._id);
                             return (
-                              <div
-                                key={project._id}
-                                className="flex items-center gap-2"
-                              >
+                              <div key={project._id} className="flex items-center gap-2">
                                 <Checkbox
                                   id={`invite-project-${project._id}`}
                                   checked={isChecked}
@@ -266,7 +240,7 @@ export function WorkspaceMembersManager({
                                 />
                                 <label
                                   htmlFor={`invite-project-${project._id}`}
-                                  className="text-xs font-medium cursor-pointer truncate"
+                                  className="cursor-pointer truncate text-xs font-medium"
                                 >
                                   {project.name} ({project.key})
                                 </label>
@@ -275,10 +249,11 @@ export function WorkspaceMembersManager({
                           })}
                         </div>
                       </div>
-                    )}
+                    ) : null}
                   </div>
                 </Field>
               </FieldGroup>
+
               {form.formState.errors.root?.message ? (
                 <FieldError>{form.formState.errors.root.message}</FieldError>
               ) : null}
@@ -294,205 +269,172 @@ export function WorkspaceMembersManager({
         </Alert>
       ) : null}
 
-      <Card>
-        <CardHeader>
-          <SectionHeading
-            eyebrow="Workspace directory"
-            title={canManage ? "Quản lý thành viên" : "Danh sách thành viên"}
-            meta={`${members.length + invitations.length} records`}
-          />
-        </CardHeader>
-        <CardContent>
-          {!canManage ? (
-            <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
-              {members.map((member) => (
-                <Card
-                  key={member._id}
-                  className="overflow-hidden shadow-sm border bg-card text-card-foreground gap-0"
-                >
-                  <CardHeader className="flex flex-row items-center gap-4 pb-4">
-                    <MemberInfoBadge
-                      memberId={member._id}
-                      name={member.name}
-                      avatarUrl={member.avatarUrl}
-                      email={member.email}
-                      githubLogin={member.githubLogin}
-                      discordUsername={member.discordUsername}
-                      presence={memberPresence(member)}
-                      avatarClassName="size-12"
-                      textClassName="text-base font-semibold leading-none"
-                    />
-                  </CardHeader>
-                  <CardContent className="flex items-center justify-between pt-0">
-                    <Badge
-                      variant="outline"
-                      className="font-semibold text-[10px] tracking-wider"
-                    >
-                      {member.role === "OWNER" ? "OWNER" : "MEMBER"}
-                    </Badge>
-                  </CardContent>
-                </Card>
-              ))}
-            </div>
-          ) : (
-            <Tabs defaultValue="members">
-              <TabsList>
-                <TabsTrigger value="members">Members</TabsTrigger>
-                <TabsTrigger value="invitations">Invitations</TabsTrigger>
-              </TabsList>
-              <TabsContent value="members">
+      <Tabs defaultValue="members">
+        <TabsList>
+          <TabsTrigger value="members">Thành viên</TabsTrigger>
+          <TabsTrigger value="invitations">Lời mời</TabsTrigger>
+        </TabsList>
+
+        <TabsContent value="members" className="mt-4">
+          <Card>
+            <CardHeader>
+              <SectionHeading
+                title="Workspace members"
+                meta={`${members.length} members`}
+              />
+            </CardHeader>
+            <CardContent>
+              {members.length === 0 ? (
+                <Empty>
+                  <EmptyHeader>
+                    <EmptyTitle>Chưa có thành viên</EmptyTitle>
+                    <EmptyDescription>
+                      Mời thành viên đầu tiên vào workspace.
+                    </EmptyDescription>
+                  </EmptyHeader>
+                </Empty>
+              ) : (
                 <div className="grid gap-3">
                   {members.map((member) => (
                     <article
-                      className="grid gap-3 rounded-lg border p-3 md:grid-cols-[minmax(240px,1fr)_auto_auto] md:items-center"
                       key={member._id}
+                      className="flex flex-col gap-3 rounded-xl border p-4 sm:flex-row sm:items-center sm:justify-between"
                     >
                       <div className="flex min-w-0 items-center gap-3">
-                        <MemberInfoBadge
+                        <MemberAvatar
                           memberId={member._id}
                           name={member.name}
-                          avatarUrl={member.avatarUrl}
                           email={member.email}
+                          avatarUrl={member.avatarUrl}
                           githubLogin={member.githubLogin}
                           discordUsername={member.discordUsername}
                           presence={memberPresence(member)}
-                          avatarClassName="size-10"
-                          textClassName="text-sm font-semibold leading-none"
+                          className="size-10"
                         />
+                        <div className="min-w-0">
+                          <MemberInfoBadge
+                            memberId={member._id}
+                            name={member.name}
+                            email={member.email}
+                            avatarUrl={member.avatarUrl}
+                            githubLogin={member.githubLogin}
+                            discordUsername={member.discordUsername}
+                            presence={memberPresence(member)}
+                            className="hidden"
+                          />
+                          <p className="truncate font-semibold">{member.name}</p>
+                          <p className="truncate text-sm text-muted-foreground">
+                            {member.email}
+                          </p>
+                        </div>
                       </div>
-                      <div className="flex items-center justify-end">
-                        <Badge
-                          variant="outline"
-                          className="font-semibold text-[10px] tracking-wider"
-                        >
-                          {member.role === "OWNER" ? "OWNER" : "MEMBER"}
-                        </Badge>
-                      </div>
-                      <div className="flex items-center justify-end">
-                        <Button
-                          variant="destructive"
-                          size="sm"
-                          type="button"
-                          disabled={
-                            !canManage ||
-                            busyId === member._id ||
-                            member.role === MEMBER_ROLES.owner
-                          }
-                          onClick={() =>
-                            void runAction(member._id, async () => {
-                              await apiRequest(
-                                `/api/workspace/members/${member._id}`,
-                                { method: "DELETE" },
-                              );
-                            })
-                          }
-                        >
-                          <UserMinus data-icon="inline-start" /> Xóa
-                        </Button>
+
+                      <div className="flex flex-wrap items-center gap-2">
+                        <RoleBadge role={member.role} />
+                        <Badge variant="outline">{member.status}</Badge>
+                        {canManage && member.role !== MEMBER_ROLES.owner ? (
+                          <Button
+                            variant="ghost"
+                            size="sm"
+                            disabled={busyId === member._id}
+                            onClick={() =>
+                              void runAction(member._id, () =>
+                                apiRequest(`/api/workspace/members/${member._id}`, {
+                                  method: "DELETE",
+                                }),
+                              )
+                            }
+                          >
+                            <UserMinus className="size-4" />
+                            Gỡ
+                          </Button>
+                        ) : null}
                       </div>
                     </article>
                   ))}
                 </div>
-              </TabsContent>
-              {canManage ? (
-                <TabsContent value="invitations">
-                  {invitations.length === 0 ? (
-                    <Empty>
-                      <EmptyHeader>
-                        <EmptyTitle>Chưa có lời mời</EmptyTitle>
-                        <EmptyDescription>
-                          Invitation mới sẽ xuất hiện tại đây.
-                        </EmptyDescription>
-                      </EmptyHeader>
-                    </Empty>
-                  ) : (
-                    <div className="grid gap-3">
-                      {invitations.map((invite) => (
-                        <article
-                          className="grid gap-3 rounded-lg border p-3 md:grid-cols-[minmax(240px,1fr)_auto_auto] md:items-center"
-                          key={invite._id}
-                        >
-                          <div className="flex flex-col gap-1">
-                            <strong className="block">{invite.email}</strong>
-                            <span className="text-xs text-muted-foreground mt-1">
-                              Hết hạn{" "}
-                              {new Date(invite.expiresAt).toLocaleString(
-                                "vi-VN",
-                              )}
-                            </span>
-                          </div>
-                          <Badge
-                            variant={
-                              invite.status ===
-                              MEMBER_INVITATION_STATUSES.accepted
-                                ? "success"
-                                : invite.status ===
-                                    MEMBER_INVITATION_STATUSES.pending
-                                  ? "warning"
-                                  : invite.status ===
-                                      MEMBER_INVITATION_STATUSES.expired
-                                    ? "secondary"
-                                    : "destructive" // revoked
+              )}
+            </CardContent>
+          </Card>
+        </TabsContent>
+
+        <TabsContent value="invitations" className="mt-4">
+          <Card>
+            <CardHeader>
+              <SectionHeading
+                title="Pending invitations"
+                meta={`${invitations.length} invitations`}
+              />
+            </CardHeader>
+            <CardContent>
+              {invitations.length === 0 ? (
+                <Empty>
+                  <EmptyHeader>
+                    <EmptyTitle>Không có lời mời</EmptyTitle>
+                    <EmptyDescription>
+                      Các lời mời workspace sẽ hiển thị tại đây.
+                    </EmptyDescription>
+                  </EmptyHeader>
+                </Empty>
+              ) : (
+                <div className="grid gap-3">
+                  {invitations.map((invitation) => (
+                    <article
+                      key={invitation._id}
+                      className="flex flex-col gap-3 rounded-xl border p-4 sm:flex-row sm:items-center sm:justify-between"
+                    >
+                      <div>
+                        <p className="font-semibold">{invitation.email}</p>
+                        <p className="text-sm text-muted-foreground">
+                          {roleLabel(invitation.role)} · {invitation.status}
+                        </p>
+                      </div>
+                      {canManage ? (
+                        <div className="flex gap-2">
+                          {invitation.status === MEMBER_INVITATION_STATUSES.pending ? (
+                            <Button
+                              variant="outline"
+                              size="sm"
+                              disabled={busyId === invitation._id}
+                              onClick={() =>
+                                void runAction(invitation._id, () =>
+                                  apiRequest(
+                                    `/api/workspace/invitations/${invitation._id}/resend`,
+                                    { method: "POST" },
+                                  ),
+                                )
+                              }
+                            >
+                              <RefreshCw className="size-4" />
+                              Gửi lại
+                            </Button>
+                          ) : null}
+                          <Button
+                            variant="ghost"
+                            size="sm"
+                            disabled={busyId === invitation._id}
+                            onClick={() =>
+                              void runAction(invitation._id, () =>
+                                apiRequest(
+                                  `/api/workspace/invitations/${invitation._id}`,
+                                  { method: "DELETE" },
+                                ),
+                              )
                             }
                           >
-                            {invite.status ===
-                            MEMBER_INVITATION_STATUSES.accepted
-                              ? "Đã chấp nhận"
-                              : invite.status ===
-                                  MEMBER_INVITATION_STATUSES.pending
-                                ? "Đang chờ"
-                                : invite.status ===
-                                    MEMBER_INVITATION_STATUSES.expired
-                                  ? "Hết hạn"
-                                  : "Đã thu hồi"}
-                          </Badge>
-                          {invite.status ===
-                          MEMBER_INVITATION_STATUSES.pending ? (
-                            <div className="flex flex-wrap gap-2">
-                              <Button
-                                variant="outline"
-                                size="sm"
-                                type="button"
-                                disabled={busyId === invite._id}
-                                onClick={() =>
-                                  void runAction(invite._id, async () => {
-                                    await apiRequest(
-                                      `/api/workspace/invitations/${invite._id}/resend`,
-                                      { method: "POST" },
-                                    );
-                                  })
-                                }
-                              >
-                                <RefreshCw data-icon="inline-start" /> Gửi lại
-                              </Button>
-                              <Button
-                                variant="destructive"
-                                size="sm"
-                                type="button"
-                                disabled={busyId === invite._id}
-                                onClick={() =>
-                                  void runAction(invite._id, async () => {
-                                    await apiRequest(
-                                      `/api/workspace/invitations/${invite._id}`,
-                                      { method: "DELETE" },
-                                    );
-                                  })
-                                }
-                              >
-                                <Trash2 data-icon="inline-start" /> Thu hồi
-                              </Button>
-                            </div>
-                          ) : null}
-                        </article>
-                      ))}
-                    </div>
-                  )}
-                </TabsContent>
-              ) : null}
-            </Tabs>
-          )}
-        </CardContent>
-      </Card>
+                            <Trash2 className="size-4 text-destructive" />
+                            Xóa
+                          </Button>
+                        </div>
+                      ) : null}
+                    </article>
+                  ))}
+                </div>
+              )}
+            </CardContent>
+          </Card>
+        </TabsContent>
+      </Tabs>
     </div>
   );
 }
