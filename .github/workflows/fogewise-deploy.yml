@@ -237,15 +237,22 @@ jobs:
             "rm -rf '/run/fogewise-ghcr/$REPO_NAME'" || true
 
       - name: Health check
+        env:
+          VPS_HOST: ${{ secrets.VPS_HOST }}
+          VPS_USER: ${{ secrets.VPS_USER }}
         run: |
-          curl \
-            --fail \
-            --silent \
-            --show-error \
-            --output /dev/null \
-            --retry 10 \
-            --retry-delay 3 \
-            --retry-all-errors \
-            "https://${REPO_NAME}.fogewise.io.vn"
+          ssh "$VPS_USER@$VPS_HOST" "
+            curl \
+              --fail \
+              --silent \
+              --show-error \
+              --insecure \
+              --output /dev/null \
+              --retry 10 \
+              --retry-delay 3 \
+              --retry-all-errors \
+              --resolve '${REPO_NAME}.fogewise.io.vn:443:127.0.0.1' \
+              'https://${REPO_NAME}.fogewise.io.vn/'
+          "
 
-          echo "Health check passed."
+          echo "Origin health check passed."
