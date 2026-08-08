@@ -5,23 +5,10 @@ import {
   hasWorkspaceRole,
   loadWorkspaceAccess,
 } from "@/features/members/server/load-workspace-access";
+import type { WorkflowDefinition } from "@/features/workflow/types";
 import { apiProjectData } from "@/lib/server/project-access";
 
 export const dynamic = "force-dynamic";
-
-interface WorkflowStatus {
-  id: string;
-  name: string;
-  category: "TODO" | "IN_PROGRESS" | "DONE";
-  color?: string;
-  order: number;
-}
-
-interface Workflow {
-  name: string;
-  defaultStatusId: string;
-  statuses: WorkflowStatus[];
-}
 
 export default async function WorkflowSettingsPage({
   params,
@@ -31,7 +18,7 @@ export default async function WorkflowSettingsPage({
   const { projectKey } = await params;
   const key = projectKey.toUpperCase();
   const [workflow, access] = await Promise.all([
-    apiProjectData<Workflow | null>(`/projects/${key}/workflow`),
+    apiProjectData<WorkflowDefinition | null>(`/projects/${key}/workflow`),
     loadWorkspaceAccess(),
   ]);
   const canManage = hasWorkspaceRole(access.currentRole, [MEMBER_ROLES.owner]);

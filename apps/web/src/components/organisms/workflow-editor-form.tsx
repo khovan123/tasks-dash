@@ -3,8 +3,7 @@
 import React, { useState, type DragEvent } from "react";
 import { Check, GitPullRequest, Info, Plus, Save, Trash2 } from "lucide-react";
 import { DEFAULT_WORKFLOW_STATUS_IDS } from "@tasks-dash/contracts";
-import { apiRequest } from "@/lib/api/api-request";
-import { SectionHeading } from "@/components/layout/app-shell";
+import { SectionHeading } from "@/components/molecules/section-heading";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -17,135 +16,24 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
+import {
+  GITHUB_WORKFLOW_AUTOMATION_NOTES,
+  SYSTEM_WORKFLOW_STATUSES,
+  WORKFLOW_PRESET_COLORS,
+} from "@/features/workflow/constants";
+import {
+  generateWorkflowStatusId,
+  isSystemWorkflowStatus,
+  isSystemWorkflowTransition,
+} from "@/features/workflow/lib/workflow";
+import type {
+  WorkflowDefinition,
+  WorkflowStatus,
+  WorkflowStatusCategory,
+  WorkflowTransition,
+} from "@/features/workflow/types";
+import { apiRequest } from "@/lib/api/api-request";
 import { cn } from "@/lib/utils";
-
-const PRESET_COLORS = [
-  "#64748b",
-  "#94a3b8",
-  "#3b82f6",
-  "#2563eb",
-  "#1d4ed8",
-  "#0ea5e9",
-  "#6366f1",
-  "#8b5cf6",
-  "#7c3aed",
-  "#a855f7",
-  "#10b981",
-  "#22c55e",
-  "#16a34a",
-  "#14b8a6",
-  "#f59e0b",
-  "#f97316",
-  "#fb923c",
-  "#fbbf24",
-  "#ef4444",
-  "#dc2626",
-  "#ec4899",
-  "#f43f5e",
-  "#06b6d4",
-  "#38bdf8",
-] as const;
-
-interface WorkflowStatus {
-  id: string;
-  name: string;
-  category: "TODO" | "IN_PROGRESS" | "DONE";
-  color?: string;
-  order: number;
-}
-
-interface WorkflowTransition {
-  id: string;
-  name: string;
-  fromStatusId: string;
-  toStatusId: string;
-  allowedRoleIds?: string[];
-}
-
-interface Workflow {
-  name: string;
-  defaultStatusId: string;
-  statuses: WorkflowStatus[];
-  transitions?: WorkflowTransition[];
-}
-
-const SYSTEM_STATUSES: WorkflowStatus[] = [
-  {
-    id: DEFAULT_WORKFLOW_STATUS_IDS.toDo,
-    name: "ToDo",
-    category: "TODO",
-    color: "#9ca3af",
-    order: 0,
-  },
-  {
-    id: DEFAULT_WORKFLOW_STATUS_IDS.inProgress,
-    name: "In Progress",
-    category: "IN_PROGRESS",
-    color: "#2563eb",
-    order: 1,
-  },
-  {
-    id: DEFAULT_WORKFLOW_STATUS_IDS.review,
-    name: "Review",
-    category: "IN_PROGRESS",
-    color: "#7c3aed",
-    order: 2,
-  },
-  {
-    id: DEFAULT_WORKFLOW_STATUS_IDS.requestChange,
-    name: "Request Change",
-    category: "IN_PROGRESS",
-    color: "#dc2626",
-    order: 3,
-  },
-  {
-    id: DEFAULT_WORKFLOW_STATUS_IDS.done,
-    name: "Done",
-    category: "DONE",
-    color: "#16a34a",
-    order: 4,
-  },
-];
-
-const SYSTEM_STATUS_IDS = new Set(SYSTEM_STATUSES.map((status) => status.id));
-
-const SYSTEM_TRANSITION_PAIRS = new Set([
-  `${DEFAULT_WORKFLOW_STATUS_IDS.toDo}:${DEFAULT_WORKFLOW_STATUS_IDS.inProgress}`,
-  `${DEFAULT_WORKFLOW_STATUS_IDS.inProgress}:${DEFAULT_WORKFLOW_STATUS_IDS.review}`,
-  `${DEFAULT_WORKFLOW_STATUS_IDS.review}:${DEFAULT_WORKFLOW_STATUS_IDS.requestChange}`,
-  `${DEFAULT_WORKFLOW_STATUS_IDS.requestChange}:${DEFAULT_WORKFLOW_STATUS_IDS.inProgress}`,
-  `${DEFAULT_WORKFLOW_STATUS_IDS.inProgress}:${DEFAULT_WORKFLOW_STATUS_IDS.done}`,
-  `${DEFAULT_WORKFLOW_STATUS_IDS.review}:${DEFAULT_WORKFLOW_STATUS_IDS.done}`,
-  `${DEFAULT_WORKFLOW_STATUS_IDS.requestChange}:${DEFAULT_WORKFLOW_STATUS_IDS.done}`,
-  `${DEFAULT_WORKFLOW_STATUS_IDS.done}:${DEFAULT_WORKFLOW_STATUS_IDS.inProgress}`,
-]);
-
-const GITHUB_AUTOMATION_NOTES = [
-  {
-    label: "PR hoặc branch mới",
-    result: "Tự chuyển sang In Progress",
-  },
-  {
-    label: "Request review / ready for review",
-    result: "Tự chuyển sang Review",
-  },
-  {
-    label: "Review = changes requested",
-    result: "Tự chuyển sang Request Change",
-  },
-  {
-    label: "Push commit mới",
-    result: "Tự chuyển lại In Progress",
-  },
-  {
-    label: "Merge hoặc close PR",
-    result: "Tự chuyển sang Done",
-  },
-  {
-    label: "Reopen PR",
-    result: "Tự chuyển lại In Progress",
-  },
-] as const;
 
 export function WorkflowEditorForm({
   projectKey,
@@ -153,7 +41,7 @@ export function WorkflowEditorForm({
   canManage = false,
 }: {
   projectKey: string;
-  initialWorkflow: Workflow | null;
+  initialWorkflow: WorkflowDefinition | null;
   canManage?: boolean;
 }) {
   const workflowName = initialWorkflow?.name || `${projectKey} Workflow`;
@@ -161,46 +49,25 @@ export function WorkflowEditorForm({
   const [statuses, setStatuses] = useState<WorkflowStatus[]>(
     initialWorkflow?.statuses?.length
       ? [...initialWorkflow.statuses].sort((a, b) => a.order - b.order)
-      : SYSTEM_STATUSES,
+      : SYSTEM_WORKFLOW_STATUSES,
   );
   const [transitions, setTransitions] = useState<WorkflowTransition[]>(
     initialWorkflow?.transitions || [],
   );
   const [newStatusName, setNewStatusName] = useState("");
-  const [newStatusCategory, setNewStatusCategory] = useState<
-    "TODO" | "IN_PROGRESS" | "DONE"
-  >("TODO");
+  const [newStatusCategory, setNewStatusCategory] =
+    useState<WorkflowStatusCategory>("TODO");
   const [newStatusColor, setNewStatusColor] = useState("#6366f1");
   const [draggedIndex, setDraggedIndex] = useState<number | null>(null);
   const [saving, setSaving] = useState(false);
   const [success, setSuccess] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
-  function isSystemStatus(statusId: string): boolean {
-    return SYSTEM_STATUS_IDS.has(statusId);
-  }
-
-  function isSystemTransition(
-    fromStatusId: string,
-    toStatusId: string,
-  ): boolean {
-    return SYSTEM_TRANSITION_PAIRS.has(`${fromStatusId}:${toStatusId}`);
-  }
-
-  function generateId(name: string): string {
-    return name
-      .toLowerCase()
-      .trim()
-      .replace(/[^a-z0-9]+/g, "_")
-      .replace(/^_+|_+$/g, "")
-      .toUpperCase();
-  }
-
-  function handleAddStatus(e: React.FormEvent) {
-    e.preventDefault();
+  function handleAddStatus(event: React.FormEvent) {
+    event.preventDefault();
     if (!newStatusName.trim()) return;
 
-    const id = generateId(newStatusName);
+    const id = generateWorkflowStatusId(newStatusName);
     if (statuses.some((status) => status.id === id)) {
       setError(`Trạng thái "${newStatusName}" đã tồn tại.`);
       return;
@@ -221,7 +88,7 @@ export function WorkflowEditorForm({
   }
 
   function handleRemoveStatus(statusId: string) {
-    if (isSystemStatus(statusId)) {
+    if (isSystemWorkflowStatus(statusId)) {
       setError("Không thể xóa trạng thái hệ thống của workflow GitHub.");
       return;
     }
@@ -230,8 +97,8 @@ export function WorkflowEditorForm({
       .filter((status) => status.id !== statusId)
       .map((status, index) => ({ ...status, order: index }));
     setStatuses(filtered);
-    setTransitions((prev) =>
-      prev.filter(
+    setTransitions((previous) =>
+      previous.filter(
         (transition) =>
           transition.fromStatusId !== statusId &&
           transition.toStatusId !== statusId,
@@ -241,9 +108,9 @@ export function WorkflowEditorForm({
   }
 
   function handleUpdateStatusColor(statusId: string, color: string) {
-    if (isSystemStatus(statusId)) return;
-    setStatuses((prev) =>
-      prev.map((status) =>
+    if (isSystemWorkflowStatus(statusId)) return;
+    setStatuses((previous) =>
+      previous.map((status) =>
         status.id === statusId ? { ...status, color } : status,
       ),
     );
@@ -251,19 +118,19 @@ export function WorkflowEditorForm({
 
   function toggleTransition(fromStatusId: string, toStatusId: string) {
     if (!canManage) return;
-    if (isSystemTransition(fromStatusId, toStatusId)) {
+    if (isSystemWorkflowTransition(fromStatusId, toStatusId)) {
       setError("Không thể chỉnh sửa transition hệ thống tự động từ GitHub.");
       return;
     }
 
-    setTransitions((prev) => {
-      const exists = prev.some(
+    setTransitions((previous) => {
+      const exists = previous.some(
         (transition) =>
           transition.fromStatusId === fromStatusId &&
           transition.toStatusId === toStatusId,
       );
       if (exists) {
-        return prev.filter(
+        return previous.filter(
           (transition) =>
             !(
               transition.fromStatusId === fromStatusId &&
@@ -272,7 +139,7 @@ export function WorkflowEditorForm({
         );
       }
       return [
-        ...prev,
+        ...previous,
         {
           id: `${fromStatusId}_TO_${toStatusId}`,
           name: `Go to ${toStatusId}`,
@@ -284,13 +151,13 @@ export function WorkflowEditorForm({
     });
   }
 
-  function handleStatusDrop(e: DragEvent<HTMLDivElement>, targetIndex: number) {
-    e.preventDefault();
+  function handleStatusDrop(event: DragEvent<HTMLDivElement>, targetIndex: number) {
+    event.preventDefault();
     if (!canManage) return;
     if (draggedIndex === null || draggedIndex === targetIndex) return;
     if (
-      isSystemStatus(statuses[draggedIndex]?.id) ||
-      isSystemStatus(statuses[targetIndex]?.id)
+      isSystemWorkflowStatus(statuses[draggedIndex]?.id) ||
+      isSystemWorkflowStatus(statuses[targetIndex]?.id)
     ) {
       return;
     }
@@ -298,12 +165,12 @@ export function WorkflowEditorForm({
     const nextStatuses = [...statuses];
     const [moved] = nextStatuses.splice(draggedIndex, 1);
     nextStatuses.splice(targetIndex, 0, moved);
-
-    const ordered = nextStatuses.map((status, index) => ({
-      ...status,
-      order: index,
-    }));
-    setStatuses(ordered);
+    setStatuses(
+      nextStatuses.map((status, index) => ({
+        ...status,
+        order: index,
+      })),
+    );
     setDraggedIndex(null);
   }
 
@@ -334,9 +201,11 @@ export function WorkflowEditorForm({
         }),
       });
       setSuccess(true);
-    } catch (err) {
+    } catch (saveError) {
       setError(
-        err instanceof Error ? err.message : "Có lỗi xảy ra khi lưu workflow.",
+        saveError instanceof Error
+          ? saveError.message
+          : "Có lỗi xảy ra khi lưu workflow.",
       );
     } finally {
       setSaving(false);
@@ -394,7 +263,7 @@ export function WorkflowEditorForm({
                 transition GitHub tương ứng không thể sửa hoặc xóa.
               </p>
               <div className="grid gap-1.5 sm:grid-cols-2">
-                {GITHUB_AUTOMATION_NOTES.map((item) => (
+                {GITHUB_WORKFLOW_AUTOMATION_NOTES.map((item) => (
                   <div
                     key={item.label}
                     className="rounded-md border border-border/60 bg-background/80 px-3 py-2"
@@ -443,21 +312,21 @@ export function WorkflowEditorForm({
               {statuses.map((status, index) => (
                 <div
                   key={status.id}
-                  draggable={canManage && !isSystemStatus(status.id)}
-                  onDragStart={(e) => {
-                    if (!canManage || isSystemStatus(status.id)) {
-                      e.preventDefault();
+                  draggable={canManage && !isSystemWorkflowStatus(status.id)}
+                  onDragStart={(event) => {
+                    if (!canManage || isSystemWorkflowStatus(status.id)) {
+                      event.preventDefault();
                       return;
                     }
                     setDraggedIndex(index);
-                    e.dataTransfer.effectAllowed = "move";
+                    event.dataTransfer.effectAllowed = "move";
                   }}
                   onDragEnd={() => canManage && setDraggedIndex(null)}
-                  onDragOver={(e) => canManage && e.preventDefault()}
-                  onDrop={(e) => canManage && handleStatusDrop(e, index)}
+                  onDragOver={(event) => canManage && event.preventDefault()}
+                  onDrop={(event) => canManage && handleStatusDrop(event, index)}
                   className={cn(
                     "flex flex-col gap-3 rounded-md border bg-card p-3 text-sm transition-opacity",
-                    !canManage || isSystemStatus(status.id)
+                    !canManage || isSystemWorkflowStatus(status.id)
                       ? "cursor-default"
                       : "cursor-grab",
                     draggedIndex === index && "opacity-40",
@@ -470,7 +339,7 @@ export function WorkflowEditorForm({
                     <div
                       className={cn(
                         "flex items-center gap-3 select-none",
-                        !canManage || isSystemStatus(status.id)
+                        !canManage || isSystemWorkflowStatus(status.id)
                           ? "cursor-default"
                           : "cursor-grab active:cursor-grabbing",
                       )}
@@ -479,13 +348,13 @@ export function WorkflowEditorForm({
                         title={
                           !canManage
                             ? "Bạn không có quyền đổi màu"
-                            : isSystemStatus(status.id)
+                            : isSystemWorkflowStatus(status.id)
                               ? "Màu trạng thái hệ thống được cố định"
                               : "Đổi màu trạng thái"
                         }
                         className={cn(
                           "relative group",
-                          !canManage || isSystemStatus(status.id)
+                          !canManage || isSystemWorkflowStatus(status.id)
                             ? "cursor-not-allowed opacity-80"
                             : "cursor-pointer",
                         )}
@@ -497,17 +366,17 @@ export function WorkflowEditorForm({
                         <input
                           type="color"
                           value={status.color || "#64748b"}
-                          onChange={(e) =>
-                            handleUpdateStatusColor(status.id, e.target.value)
+                          onChange={(event) =>
+                            handleUpdateStatusColor(status.id, event.target.value)
                           }
-                          disabled={!canManage || isSystemStatus(status.id)}
+                          disabled={!canManage || isSystemWorkflowStatus(status.id)}
                           className="absolute inset-0 size-5 cursor-pointer opacity-0"
                         />
                       </label>
                       <span className="font-semibold text-foreground">
                         {status.name}
                       </span>
-                      {isSystemStatus(status.id) ? (
+                      {isSystemWorkflowStatus(status.id) ? (
                         <Badge
                           variant="secondary"
                           className="text-[10px]"
@@ -527,18 +396,18 @@ export function WorkflowEditorForm({
                       ) : null}
                     </div>
 
-                    {canManage && (
+                    {canManage ? (
                       <Button
                         variant="ghost"
                         size="icon-sm"
                         onClick={() => handleRemoveStatus(status.id)}
-                        disabled={isSystemStatus(status.id)}
+                        disabled={isSystemWorkflowStatus(status.id)}
                         className="text-destructive hover:bg-destructive/10"
                         title="Xóa trạng thái"
                       >
                         <Trash2 className="size-4" />
                       </Button>
-                    )}
+                    ) : null}
                   </div>
 
                   <div className="mt-1 rounded border-t bg-muted/5 p-2 pt-2">
@@ -554,8 +423,12 @@ export function WorkflowEditorForm({
                               (transition) =>
                                 transition.fromStatusId === status.id &&
                                 transition.toStatusId === otherStatus.id,
-                            ) || isSystemTransition(status.id, otherStatus.id);
-                          const locked = isSystemTransition(
+                            ) ||
+                            isSystemWorkflowTransition(
+                              status.id,
+                              otherStatus.id,
+                            );
+                          const locked = isSystemWorkflowTransition(
                             status.id,
                             otherStatus.id,
                           );
@@ -611,7 +484,7 @@ export function WorkflowEditorForm({
             </div>
           </div>
 
-          {canManage && (
+          {canManage ? (
             <form
               onSubmit={handleAddStatus}
               className="flex flex-col gap-3 border-t pt-4"
@@ -623,11 +496,11 @@ export function WorkflowEditorForm({
                 <Input
                   placeholder="Tên trạng thái"
                   value={newStatusName}
-                  onChange={(e) => setNewStatusName(e.target.value)}
+                  onChange={(event) => setNewStatusName(event.target.value)}
                 />
                 <Select
                   value={newStatusCategory}
-                  onValueChange={(value: "TODO" | "IN_PROGRESS" | "DONE") =>
+                  onValueChange={(value: WorkflowStatusCategory) =>
                     setNewStatusCategory(value)
                   }
                 >
@@ -670,7 +543,7 @@ export function WorkflowEditorForm({
                     <input
                       type="color"
                       value={newStatusColor}
-                      onChange={(e) => setNewStatusColor(e.target.value)}
+                      onChange={(event) => setNewStatusColor(event.target.value)}
                       className="absolute inset-0 size-full cursor-pointer opacity-0"
                     />
                   </label>
@@ -683,7 +556,7 @@ export function WorkflowEditorForm({
                 </div>
 
                 <div className="flex flex-wrap gap-1.5">
-                  {PRESET_COLORS.map((color) => (
+                  {WORKFLOW_PRESET_COLORS.map((color) => (
                     <button
                       key={color}
                       type="button"
@@ -709,9 +582,9 @@ export function WorkflowEditorForm({
                 <Plus className="mr-1.5 size-4" /> Thêm trạng thái
               </Button>
             </form>
-          )}
+          ) : null}
 
-          {canManage && (
+          {canManage ? (
             <div className="flex justify-end border-t pt-4">
               <Button
                 onClick={handleSave}
@@ -722,7 +595,7 @@ export function WorkflowEditorForm({
                 {saving ? "Đang lưu..." : "Lưu thay đổi"}
               </Button>
             </div>
-          )}
+          ) : null}
         </CardContent>
       </Card>
     </div>
