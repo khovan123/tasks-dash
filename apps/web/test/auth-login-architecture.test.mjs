@@ -16,6 +16,9 @@ test("login flow keeps page layout, UI and auth state in their owning layers", a
     redeemHook,
     issueHook,
     dashboardLoader,
+    publicAuthLinks,
+    githubLoginRoute,
+    logoutRoute,
   ] = await Promise.all([
     source("src/app/page.tsx"),
     source("src/app/login/code/page.tsx"),
@@ -25,6 +28,9 @@ test("login flow keeps page layout, UI and auth state in their owning layers", a
     source("src/features/auth/hooks/use-login-code-redeem.ts"),
     source("src/features/auth/hooks/use-login-code-issue.ts"),
     source("src/features/dashboard/server/load-dashboard-page.ts"),
+    source("src/features/auth/server/load-public-auth-links.ts"),
+    source("src/app/api/auth/github/login/route.ts"),
+    source("src/app/api/auth/logout/route.ts"),
   ]);
 
   assert.match(homePage, /components\/templates\/public-page-shell/);
@@ -45,4 +51,18 @@ test("login flow keeps page layout, UI and auth state in their owning layers", a
 
   assert.match(dashboardLoader, /loadPublicAuthLinks/);
   assert.equal(dashboardLoader.includes("auth\/github\/login"), false);
+  assert.match(publicAuthLinks, /loginUrl:\s*"\/api\/auth\/github\/login"/);
+
+  assert.match(githubLoginRoute, /prompt/);
+  assert.match(githubLoginRoute, /select_account/);
+  assert.match(githubLoginRoute, /getSetCookie/);
+
+  for (const cookieName of [
+    "tasks_dash_session",
+    "tasks_dash_oauth_state",
+    "tasks_dash_invitation",
+    "discord_username",
+  ]) {
+    assert.match(logoutRoute, new RegExp(cookieName));
+  }
 });

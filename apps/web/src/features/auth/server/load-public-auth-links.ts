@@ -6,13 +6,10 @@ export interface PublicAuthLinks {
 }
 
 export function loadPublicAuthLinks(): PublicAuthLinks {
-  const browserApi =
-    process.env.NEXT_PUBLIC_API_BASE_URL ||
-    process.env.TASKS_DASH_API_BASE_URL ||
-    "/api";
-
   return {
-    loginUrl: `${browserApi.replace(/\/$/, "")}/auth/github/login`,
+    // Keep browser OAuth on the web origin so logout/login behavior and auth
+    // cookies are handled consistently even when a public API base URL exists.
+    loginUrl: "/api/auth/github/login",
     deviceLoginHref: "/login/code",
   };
 }
