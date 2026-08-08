@@ -11,6 +11,7 @@ import { apiRequest } from "@/lib/api/api-request";
 import { useAppDispatch, useAppStore } from "@/lib/store/hooks";
 import {
   bumpProjectRevision,
+  markProjectDeleted,
   replaceDesignCatalog,
   replaceDocumentTree,
   replaceProjects,
@@ -29,15 +30,12 @@ interface WorkspaceRealtimeEvent {
   data?: {
     projectKey?: string;
     presence?: Record<string, MemberPresence>;
+    deleted?: boolean;
     [key: string]: unknown;
   };
 }
 
 const PROJECT_LIFECYCLE_EVENT_TYPES = new Set([
-  "created",
-  "updated",
-  "deleted",
-  "members_updated",
   "PROJECT_CHANGED",
   "PROJECT_MEMBERS_CHANGED",
 ]);
@@ -202,6 +200,10 @@ export function WorkspaceRealtimeProvider({
           break;
         case "PROJECT_CHANGED":
           dispatch(bumpProjectRevision({ projectKey, resource: "project" }));
+          if (payload.data?.deleted === true) {
+            dispatch(markProjectDeleted(projectKey));
+            break;
+          }
           if (realtimeState.projects.detailHydrated[projectKey]) {
             scheduleProjectScopedSync(
               projectDetailSyncTimersRef,
@@ -211,7 +213,6 @@ export function WorkspaceRealtimeProvider({
           }
           break;
         case "PROJECT_MEMBERS_CHANGED":
-        case "members_updated":
           dispatch(bumpProjectRevision({ projectKey, resource: "members" }));
           break;
         case "DOCUMENTS_CHANGED":
