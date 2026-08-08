@@ -115,6 +115,21 @@ jobs:
           chmod 600 ~/.ssh/id_ed25519
           chmod 600 ~/.ssh/known_hosts
 
+      - name: Authorize VPS to pull GHCR images
+        env:
+          GHCR_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          VPS_HOST: ${{ secrets.VPS_HOST }}
+          VPS_USER: ${{ secrets.VPS_USER }}
+        run: |
+          REMOTE_DOCKER_CONFIG="/run/fogewise-ghcr/$REPO_NAME"
+
+          ssh "$VPS_USER@$VPS_HOST" \
+            "install -d -m 700 '$REMOTE_DOCKER_CONFIG'"
+
+          printf '%s' "$GHCR_TOKEN" | \
+            ssh "$VPS_USER@$VPS_HOST" \
+              "DOCKER_CONFIG='$REMOTE_DOCKER_CONFIG' docker login ghcr.io -u '$GITHUB_ACTOR' --password-stdin >/dev/null"
+
       - name: Upload deployment manifest
         env:
           VPS_HOST: ${{ secrets.VPS_HOST }}
@@ -135,6 +150,8 @@ jobs:
           ssh "$VPS_USER@$VPS_HOST" \
             "REPO_SLUG='$GITHUB_REPOSITORY' IMAGE_TAG='$GITHUB_SHA' REPO_NAME='$REPO_NAME' bash -s" <<'REMOTE'
           set -eu
+
+          export DOCKER_CONFIG="/run/fogewise-ghcr/$REPO_NAME"
 
           LOG_DIR='/var/log/fogewise'
           LOG_FILE="$LOG_DIR/${REPO_NAME}-deploy.log"
@@ -167,6 +184,15 @@ jobs:
             ! -name 'deploy.yml' \
             -exec rm -rf -- {} +
           REMOTE
+
+      - name: Remove temporary VPS registry credentials
+        if: always()
+        env:
+          VPS_HOST: ${{ secrets.VPS_HOST }}
+          VPS_USER: ${{ secrets.VPS_USER }}
+        run: |
+          ssh "$VPS_USER@$VPS_HOST" \
+            "rm -rf '/run/fogewise-ghcr/$REPO_NAME'" || true
 
       - name: Health check
         run: |
