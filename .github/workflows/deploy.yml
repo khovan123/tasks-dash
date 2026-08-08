@@ -7,6 +7,7 @@ on:
 
 permissions:
   contents: read
+  packages: write
 
 jobs:
   deploy:
@@ -16,16 +17,89 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v4
 
-      - name: Resolve repository name
+      - name: Resolve deployment metadata
         shell: bash
         run: |
           REPO_NAME="${GITHUB_REPOSITORY##*/}"
+          REPO_NAME="${REPO_NAME,,}"
+          GHCR_OWNER="${GITHUB_REPOSITORY_OWNER,,}"
 
           echo "REPO_NAME=$REPO_NAME" >> "$GITHUB_ENV"
+          echo "GHCR_OWNER=$GHCR_OWNER" >> "$GITHUB_ENV"
 
-          echo "Repository : $REPO_NAME"
-          echo "Directory  : /srv/apps/$REPO_NAME"
+          echo "Repository : $GITHUB_REPOSITORY"
+          echo "Runtime dir: /srv/apps/$REPO_NAME"
           echo "Domain     : https://$REPO_NAME.fogewise.io.vn"
+          echo "Image tag  : $GITHUB_SHA"
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Log in to GHCR
+        uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Build and push service images
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          python3 -m venv /tmp/fogewise-venv
+          /tmp/fogewise-venv/bin/pip install --quiet PyYAML
+
+          /tmp/fogewise-venv/bin/python - <<'PY' > /tmp/fogewise-services.tsv
+          from pathlib import Path
+          import yaml
+
+          manifest = Path('.fogewise/deploy.yml')
+          if not manifest.is_file():
+              raise SystemExit(f'missing deploy manifest: {manifest}')
+
+          data = yaml.safe_load(manifest.read_text())
+          services = data.get('services') if isinstance(data, dict) else None
+          if not isinstance(services, dict) or not services:
+              raise SystemExit('deploy.yml services must be a non-empty mapping')
+
+          for service_id, config in services.items():
+              if not isinstance(service_id, str) or not service_id:
+                  raise SystemExit('service id must be a non-empty string')
+              if not isinstance(config, dict):
+                  raise SystemExit(f'{service_id}: service config must be a mapping')
+
+              raw_path = config.get('path')
+              if not isinstance(raw_path, str) or not raw_path:
+                  raise SystemExit(f'{service_id}: path must be a non-empty string')
+
+              path = Path(raw_path)
+              if path.is_absolute() or '..' in path.parts:
+                  raise SystemExit(f'{service_id}: path must stay inside the repository')
+
+              dockerfile = path / 'Dockerfile'
+              if not dockerfile.is_file():
+                  raise SystemExit(f'{service_id}: Dockerfile not found: {dockerfile}')
+
+              print(f'{service_id}\t{path.as_posix()}')
+          PY
+
+          while IFS=$'\t' read -r SERVICE SERVICE_PATH; do
+            IMAGE="ghcr.io/${GHCR_OWNER}/${REPO_NAME}-${SERVICE}"
+            DOCKERFILE="${SERVICE_PATH%/}/Dockerfile"
+
+            echo "Building $SERVICE -> $IMAGE:$GITHUB_SHA"
+
+            docker buildx build \
+              --platform linux/amd64 \
+              --file "$DOCKERFILE" \
+              --tag "$IMAGE:$GITHUB_SHA" \
+              --tag "$IMAGE:latest" \
+              --label "org.opencontainers.image.source=https://github.com/$GITHUB_REPOSITORY" \
+              --label "org.opencontainers.image.revision=$GITHUB_SHA" \
+              --push \
+              .
+          done < /tmp/fogewise-services.tsv
 
       - name: Configure SSH
         env:
@@ -41,53 +115,58 @@ jobs:
           chmod 600 ~/.ssh/id_ed25519
           chmod 600 ~/.ssh/known_hosts
 
-      - name: Prepare server directory
+      - name: Upload deployment manifest
         env:
           VPS_HOST: ${{ secrets.VPS_HOST }}
           VPS_USER: ${{ secrets.VPS_USER }}
         run: |
           ssh "$VPS_USER@$VPS_HOST" \
-            "mkdir -p /srv/apps/$REPO_NAME"
+            "mkdir -p '/srv/apps/$REPO_NAME/.fogewise'"
 
-      - name: Upload source
-        env:
-          VPS_HOST: ${{ secrets.VPS_HOST }}
-          VPS_USER: ${{ secrets.VPS_USER }}
-        run: |
           rsync -az \
-            --delete \
-            --exclude='.git' \
-            --exclude='.env' \
-            --exclude='.env.*' \
-            ./ \
-            "$VPS_USER@$VPS_HOST:/srv/apps/$REPO_NAME/"
+            .fogewise/deploy.yml \
+            "$VPS_USER@$VPS_HOST:/srv/apps/$REPO_NAME/.fogewise/deploy.yml"
 
-      - name: Deploy
+      - name: Deploy images on VPS
         env:
           VPS_HOST: ${{ secrets.VPS_HOST }}
           VPS_USER: ${{ secrets.VPS_USER }}
         run: |
-          ssh "$VPS_USER@$VPS_HOST" "
-            set -eu
+          ssh "$VPS_USER@$VPS_HOST" \
+            "REPO_SLUG='$GITHUB_REPOSITORY' IMAGE_TAG='$GITHUB_SHA' REPO_NAME='$REPO_NAME' bash -s" <<'REMOTE'
+          set -eu
 
-            LOG_DIR='/var/log/fogewise'
-            LOG_FILE=\"\$LOG_DIR/${REPO_NAME}-deploy.log\"
+          LOG_DIR='/var/log/fogewise'
+          LOG_FILE="$LOG_DIR/${REPO_NAME}-deploy.log"
 
-            install -d -m 700 \"\$LOG_DIR\"
-            install -m 600 /dev/null \"\$LOG_FILE\"
+          install -d -m 700 "$LOG_DIR"
+          install -m 600 /dev/null "$LOG_FILE"
 
-            if (umask 022; /usr/local/sbin/fogewise-deploy '$REPO_NAME') >\"\$LOG_FILE\" 2>&1; then
-              echo 'Fogewise deploy succeeded.'
-            else
-              echo 'Fogewise deploy failed. Inspect server-side log:' \"\$LOG_FILE\" >&2
-              exit 1
-            fi
+          if (umask 022; /usr/local/sbin/fogewise-deploy "$REPO_SLUG" "$IMAGE_TAG") >"$LOG_FILE" 2>&1; then
+            echo 'Fogewise deploy succeeded.'
+          else
+            echo 'Fogewise deploy failed. Inspect server-side log:' "$LOG_FILE" >&2
+            exit 1
+          fi
 
-            docker compose \
-              -p '$REPO_NAME' \
-              -f '/var/lib/fogewise/apps/$REPO_NAME/compose.json' \
-              ps
-          "
+          docker compose \
+            -p "$REPO_NAME" \
+            -f "/var/lib/fogewise/apps/$REPO_NAME/compose.json" \
+            ps
+
+          # /srv/apps/<repo> is runtime state only: keep env + deploy manifest,
+          # remove any source tree left by the previous deployment model.
+          find "/srv/apps/$REPO_NAME" \
+            -mindepth 1 -maxdepth 1 \
+            ! -name '.env' \
+            ! -name '.fogewise' \
+            -exec rm -rf -- {} +
+
+          find "/srv/apps/$REPO_NAME/.fogewise" \
+            -mindepth 1 -maxdepth 1 \
+            ! -name 'deploy.yml' \
+            -exec rm -rf -- {} +
+          REMOTE
 
       - name: Health check
         run: |
