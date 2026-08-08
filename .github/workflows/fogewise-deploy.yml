@@ -117,10 +117,20 @@ jobs:
 
           printf '%s\n' "$VPS_SSH_KEY" > ~/.ssh/id_ed25519
           printf '%s\n' "$VPS_KNOWN_HOSTS" > ~/.ssh/known_hosts
+          cat > ~/.ssh/config <<'SSH_CONFIG'
+          Host *
+            IdentitiesOnly yes
+            ServerAliveInterval 20
+            ServerAliveCountMax 15
+            TCPKeepAlive yes
+            ConnectTimeout 20
+            ConnectionAttempts 3
+          SSH_CONFIG
 
           chmod 700 ~/.ssh
           chmod 600 ~/.ssh/id_ed25519
           chmod 600 ~/.ssh/known_hosts
+          chmod 600 ~/.ssh/config
 
       - name: Authorize VPS to pull GHCR images
         env:
@@ -193,12 +203,22 @@ jobs:
           install -d -m 700 "$LOG_DIR"
           install -m 600 /dev/null "$LOG_FILE"
 
-          if (umask 022; /usr/local/sbin/fogewise-deploy "$REPO_SLUG" "$IMAGE_TAG") >"$LOG_FILE" 2>&1; then
+          (umask 022; /usr/local/sbin/fogewise-deploy "$REPO_SLUG" "$IMAGE_TAG") >"$LOG_FILE" 2>&1 &
+          DEPLOY_PID=$!
+          trap 'kill "$DEPLOY_PID" 2>/dev/null || true' HUP INT TERM
+
+          while kill -0 "$DEPLOY_PID" 2>/dev/null; do
+            echo 'Fogewise deploy still running...'
+            sleep 30
+          done
+
+          if wait "$DEPLOY_PID"; then
             echo 'Fogewise deploy succeeded.'
           else
             echo 'Fogewise deploy failed. Inspect server-side log:' "$LOG_FILE" >&2
             exit 1
           fi
+          trap - HUP INT TERM
 
           docker compose \
             -p "$REPO_NAME" \
@@ -233,8 +253,12 @@ jobs:
           VPS_HOST: ${{ secrets.VPS_HOST }}
           VPS_USER: ${{ secrets.VPS_USER }}
         run: |
-          ssh "$VPS_USER@$VPS_HOST" \
-            "rm -rf '/run/fogewise-ghcr/$REPO_NAME'" || true
+          if [ -s ~/.ssh/id_ed25519 ] && [ -s ~/.ssh/known_hosts ]; then
+            ssh "$VPS_USER@$VPS_HOST" \
+              "rm -rf '/run/fogewise-ghcr/$REPO_NAME'" || true
+          else
+            echo 'SSH was not configured before this job failed; skipping remote cleanup.'
+          fi
 
       - name: Health check
         env:
