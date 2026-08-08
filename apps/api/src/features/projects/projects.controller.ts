@@ -23,7 +23,6 @@ import {
   RequireProjectAccess,
   RequireRoles,
   WorkspaceId,
-  PublicRoute,
 } from "../../common/auth-context";
 import { MEMBER_ROLES, MemberRole } from "@tasks-dash/contracts";
 import { CreateProjectCommand, ListProjectsQuery } from "./projects.cqrs";
@@ -53,9 +52,7 @@ export class ProjectsController {
     @CurrentMemberRole() role: MemberRole,
   ) {
     return this.queries
-      .execute(
-        new ListProjectsQuery(workspaceId, session.memberId, role),
-      )
+      .execute(new ListProjectsQuery(workspaceId, session.memberId, role))
       .then((projects: any[]) =>
         projects.map((project) => {
           const currentMemberRole =
@@ -82,13 +79,10 @@ export class ProjectsController {
   @Header("X-Accel-Buffering", "no")
   sse(@WorkspaceId() workspaceId: string): Observable<MessageEvent> {
     const keepAlive$ = interval(15000).pipe(
-      map(() => ({ data: "ping" } as MessageEvent)),
+      map(() => ({ data: "ping" }) as MessageEvent),
     );
 
-    // The workspace stream is consumed by the global app shell. Keep it scoped
-    // to project-list lifecycle events only; project-level realtime updates have
-    // their own per-project streams and must not trigger a global route refresh.
-    const realEvents$ = this.service.events$.pipe(
+    const projectLifecycleEvents$ = this.service.events$.pipe(
       filter((event) => event.workspaceId === workspaceId),
       map(
         (event) =>
@@ -101,7 +95,23 @@ export class ProjectsController {
       ),
     );
 
-    return merge(realEvents$, keepAlive$);
+    const realtimeEvents$ = this.realtime.events$.pipe(
+      filter((event) => event.workspaceId === workspaceId),
+      map(
+        (event) =>
+          ({
+            data: {
+              type: event.type,
+              data: {
+                projectKey: event.projectKey,
+                ...(event.data ?? {}),
+              },
+            },
+          }) as MessageEvent,
+      ),
+    );
+
+    return merge(projectLifecycleEvents$, realtimeEvents$, keepAlive$);
   }
 
   @Post("presence")
@@ -126,7 +136,7 @@ export class ProjectsController {
   ): Observable<MessageEvent> {
     const projectKey = key.toUpperCase();
     const keepAlive$ = interval(15000).pipe(
-      map(() => ({ data: "ping" } as MessageEvent)),
+      map(() => ({ data: "ping" }) as MessageEvent),
     );
     const initial$ = of({
       data: {
@@ -142,7 +152,10 @@ export class ProjectsController {
           event.workspaceId === workspaceId &&
           event.projectKey.toUpperCase() === projectKey,
       ),
-      map((event) => ({ data: { type: event.type, data: event.data } }) as MessageEvent),
+      map(
+        (event) =>
+          ({ data: { type: event.type, data: event.data } }) as MessageEvent,
+      ),
     );
 
     return merge(initial$, realEvents$, keepAlive$);
@@ -176,19 +189,20 @@ export class ProjectsController {
     const project = await this.service.getByKey(workspaceId, key);
     const workspaceData = await this.membersService.list(workspaceId);
     const workspaceMembers = (workspaceData.members as any[]) || [];
-    
-    // Filter members that belong to the project, mapping to their project role
+
     const projectMembers = (project.memberIds && project.memberIds.length > 0
       ? workspaceMembers.filter((m) => project.memberIds.includes(String(m._id)))
-      : workspaceMembers).map((m) => {
-        const projectRole = project.memberRoles instanceof Map
+      : workspaceMembers
+    ).map((m) => {
+      const projectRole =
+        project.memberRoles instanceof Map
           ? project.memberRoles.get(String(m._id))
           : (project.memberRoles as any)?.[String(m._id)];
-        return {
-          ...m,
-          role: projectRole || m.role,
-        };
-      });
+      return {
+        ...m,
+        role: projectRole || m.role,
+      };
+    });
 
     return {
       projectMembers,
@@ -257,15 +271,16 @@ export class ProjectsController {
     @WorkspaceId() workspaceId: string,
   ) {
     const bypassCache = force === "true";
-    return this.githubAppService.listDetailedPullRequests(workspaceId, key, bypassCache);
+    return this.githubAppService.listDetailedPullRequests(
+      workspaceId,
+      key,
+      bypassCache,
+    );
   }
 
   @Get(":key/env")
   @RequireProjectAccess("key")
-  getEnv(
-    @Param("key") key: string,
-    @WorkspaceId() workspaceId: string,
-  ) {
+  getEnv(@Param("key") key: string, @WorkspaceId() workspaceId: string) {
     return this.service.getEnv(workspaceId, key);
   }
 
