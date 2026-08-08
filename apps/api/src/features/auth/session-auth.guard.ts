@@ -61,7 +61,11 @@ export class SessionAuthGuard implements CanActivate {
     workspaceId: string,
     requirement: ProjectAccessRequirement,
     request: Request & AuthenticatedRequest,
-  ): Promise<Pick<ProjectDocument, "memberIds" | "leadId"> & { memberRoles?: Record<string, string> }> {
+  ): Promise<
+    Pick<ProjectDocument, "memberIds" | "leadId"> & {
+      memberRoles?: Record<string, string>;
+    }
+  > {
     const paramValue = request.params[requirement.param];
     const rawParam =
       typeof paramValue === "string" ? paramValue : paramValue?.[0];
@@ -103,21 +107,33 @@ export class SessionAuthGuard implements CanActivate {
   }
 
   async canActivate(context: ExecutionContext): Promise<boolean> {
-    const isPublic = this.reflector.getAllAndOverride<boolean>(PUBLIC_ROUTE_KEY, [
-      context.getHandler(),
-      context.getClass(),
-    ]);
+    const isPublic = this.reflector.getAllAndOverride<boolean>(
+      PUBLIC_ROUTE_KEY,
+      [context.getHandler(), context.getClass()],
+    );
     if (isPublic) return true;
 
     const request = context
       .switchToHttp()
       .getRequest<Request & AuthenticatedRequest>();
     const session = this.sessions.read(request);
-    if (["POST", "PUT", "PATCH", "DELETE"].includes(request.method.toUpperCase())) {
+    if (
+      ["POST", "PUT", "PATCH", "DELETE"].includes(request.method.toUpperCase())
+    ) {
       const expectedOrigin = new URL(
         this.config.getOrThrow<string>("WEB_APP_URL"),
       ).origin;
-      if (request.headers.origin !== expectedOrigin) {
+      const protocol =
+        request.headers["x-forwarded-proto"] === "https" || request.secure
+          ? "https"
+          : "http";
+      const host = request.headers["x-forwarded-host"] || request.headers.host;
+      const selfOrigin = host ? `${protocol}://${host}` : null;
+
+      if (
+        request.headers.origin !== expectedOrigin &&
+        (!selfOrigin || request.headers.origin !== selfOrigin)
+      ) {
         throw new ForbiddenException("Invalid request origin.");
       }
     }
@@ -155,9 +171,10 @@ export class SessionAuthGuard implements CanActivate {
           );
         }
       }
-      const projectRole = project.memberRoles instanceof Map
-        ? project.memberRoles.get(session.memberId)
-        : (project.memberRoles as any)?.[session.memberId];
+      const projectRole =
+        project.memberRoles instanceof Map
+          ? project.memberRoles.get(session.memberId)
+          : (project.memberRoles as any)?.[session.memberId];
       if (projectRole && member.role !== MEMBER_ROLES.owner) {
         effectiveRole = projectRole as MemberRole;
       }
@@ -169,9 +186,7 @@ export class SessionAuthGuard implements CanActivate {
     );
     const requiredRoles =
       configuredRoles ??
-      (["POST", "PUT", "PATCH", "DELETE"].includes(
-        request.method.toUpperCase(),
-      )
+      (["POST", "PUT", "PATCH", "DELETE"].includes(request.method.toUpperCase())
         ? [
             MEMBER_ROLES.owner,
             MEMBER_ROLES.designer,

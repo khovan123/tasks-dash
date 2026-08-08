@@ -11,13 +11,17 @@ async function proxy(
   const pathStr = path.join("/");
   if (pathStr === "auth/logout") {
     // Intercept logout to clear NextJS-side cookie
-    await upstreamRequest("/auth/logout", {
+    const upstreamRes = await upstreamRequest("/auth/logout", {
       method: "POST",
       headers: {
         cookie: request.headers.get("cookie") ?? "",
       },
     });
     const redirectResponse = NextResponse.json({ ok: true });
+    const setCookies = upstreamRes.headers.getSetCookie();
+    for (const cookie of setCookies) {
+      redirectResponse.headers.append("set-cookie", cookie);
+    }
     redirectResponse.cookies.delete("tasks_dash_session");
     return redirectResponse;
   }
@@ -47,7 +51,11 @@ async function proxy(
   let newCookiesToSet: string[] = [];
 
   // Check for expired session (401) and attempt to silent refresh
-  if (response.status === 401 && pathStr !== "auth/login" && pathStr !== "auth/refresh") {
+  if (
+    response.status === 401 &&
+    pathStr !== "auth/login" &&
+    pathStr !== "auth/refresh"
+  ) {
     try {
       const refreshResponse = await upstreamRequest("/auth/refresh", {
         method: "POST",
@@ -62,10 +70,14 @@ async function proxy(
         newCookiesToSet = [...cookies];
 
         // Parse cookie header to append new session cookie for retry request
-        const sessionCookie = cookies.find((c) => c.startsWith("tasks_dash_session="));
+        const sessionCookie = cookies.find((c) =>
+          c.startsWith("tasks_dash_session="),
+        );
         if (sessionCookie) {
           const cookieVal = sessionCookie.split(";")[0];
-          const existingCookies = headers.cookie.split(";").filter((c) => !c.trim().startsWith("tasks_dash_session="));
+          const existingCookies = headers.cookie
+            .split(";")
+            .filter((c) => !c.trim().startsWith("tasks_dash_session="));
           existingCookies.push(cookieVal);
           headers.cookie = existingCookies.join("; ");
         }
@@ -83,8 +95,14 @@ async function proxy(
       } else {
         // Refresh failed (expired too long / invalid) -> Force logout
         const logoutResponse = NextResponse.json(
-          { ok: false, problem: { status: 401, detailKey: "Session expired. Please log in again." } },
-          { status: 401 }
+          {
+            ok: false,
+            problem: {
+              status: 401,
+              detailKey: "Session expired. Please log in again.",
+            },
+          },
+          { status: 401 },
         );
         logoutResponse.cookies.delete("tasks_dash_session");
         return logoutResponse;

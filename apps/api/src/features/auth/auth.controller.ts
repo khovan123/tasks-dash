@@ -699,13 +699,7 @@ export class AuthController {
     response.status(200).json({ ok: true });
   }
 
-  @RequireRoles(
-    MEMBER_ROLES.owner,
-    MEMBER_ROLES.designer,
-    MEMBER_ROLES.ba,
-    MEMBER_ROLES.dev,
-    MEMBER_ROLES.viewer,
-  )
+  @PublicRoute()
   @Post("logout")
   logout(@Res() response: Response): void {
     response.clearCookie(SESSION_COOKIE, this.sessions.cookieOptions());
