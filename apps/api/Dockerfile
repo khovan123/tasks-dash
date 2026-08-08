@@ -22,5 +22,5 @@ COPY --from=build --chown=tasksdash:nodejs /app/apps/api/public ./apps/api/publi
 COPY --from=build --chown=tasksdash:nodejs /app/packages/contracts/package.json ./packages/contracts/package.json
 COPY --from=build --chown=tasksdash:nodejs /app/packages/contracts/dist ./packages/contracts/dist
 USER tasksdash
-EXPOSE 4000
+EXPOSE 8080
 CMD ["node", "apps/api/dist/main.js"]
