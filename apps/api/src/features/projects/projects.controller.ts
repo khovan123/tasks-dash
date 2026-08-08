@@ -85,6 +85,9 @@ export class ProjectsController {
       map(() => ({ data: "ping" } as MessageEvent)),
     );
 
+    // The workspace stream is consumed by the global app shell. Keep it scoped
+    // to project-list lifecycle events only; project-level realtime updates have
+    // their own per-project streams and must not trigger a global route refresh.
     const realEvents$ = this.service.events$.pipe(
       filter((event) => event.workspaceId === workspaceId),
       map(
@@ -97,20 +100,8 @@ export class ProjectsController {
           }) as MessageEvent,
       ),
     );
-    const realtimeEvents$ = this.realtime.events$.pipe(
-      filter((event) => event.workspaceId === workspaceId),
-      map(
-        (event) =>
-          ({
-            data: {
-              type: event.type,
-              data: event.data ?? { projectKey: event.projectKey },
-            },
-          }) as MessageEvent,
-      ),
-    );
 
-    return merge(realEvents$, realtimeEvents$, keepAlive$);
+    return merge(realEvents$, keepAlive$);
   }
 
   @Post("presence")
