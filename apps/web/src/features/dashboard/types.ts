@@ -1,3 +1,5 @@
+import type { MemberPresence } from "@tasks-dash/contracts";
+
 export interface DashboardSession {
   login: string;
   name: string;
@@ -9,7 +11,7 @@ export interface DashboardMember {
   email: string;
   avatarUrl?: string;
   role: string;
-  status: string;
+  status: MemberPresence;
   githubLogin?: string;
   discordUsername?: string;
 }
