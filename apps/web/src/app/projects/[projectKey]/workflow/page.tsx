@@ -1,5 +1,5 @@
 import { MEMBER_ROLES } from "@tasks-dash/contracts";
-import { WorkflowEditorForm } from "@/components/workflow-editor-form";
+import { WorkflowEditorForm } from "@/components/organisms/workflow-editor-form";
 import { AppPage } from "@/components/templates/app-page";
 import {
   hasWorkspaceRole,
