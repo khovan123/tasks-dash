@@ -1,4 +1,4 @@
-import { ProjectOverviewRealtime } from "@/components/project-overview-realtime";
+import { ProjectOverview } from "@/components/organisms/project-overview";
 import type { GithubRepositoryOption } from "@/components/repository-link-form";
 import { AppPage } from "@/components/templates/app-page";
 import { loadProjectWorkItemsContext } from "@/features/work-items/server/load-project-work-items-context";
@@ -25,13 +25,13 @@ export default async function ProjectPage({
 
   return (
     <AppPage>
-      <ProjectOverviewRealtime
+      <ProjectOverview
         projectKey={context.key}
         initialProject={project}
         initialItems={context.items}
         statuses={context.statuses}
-        projectMembers={context.membersData.projectMembers}
-        workspaceMembers={context.membersData.workspaceMembers}
+        projectMembers={context.members}
+        workspaceMembers={context.workspaceMembers}
         repositories={repositories}
         canManageRepository={context.currentMemberRole === "OWNER"}
         canCreateWorkItem={context.canManageTasks}
