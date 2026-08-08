@@ -1,6 +1,5 @@
 "use client";
 
-import { useRouter } from "next/navigation";
 import { useMemo, useState } from "react";
 import {
   Download,
@@ -15,6 +14,11 @@ import {
   Upload,
 } from "lucide-react";
 import { apiRequest } from "@/lib/api/api-request";
+import { useAppDispatch } from "@/lib/store/hooks";
+import {
+  replaceDocumentTree,
+  type RealtimeDocumentTree,
+} from "@/lib/store/realtime-slice";
 import { PageHero, SectionHeading } from "@/components/layout/app-shell";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { Badge } from "@/components/ui/badge";
@@ -138,7 +142,7 @@ export function DiscordDocumentManager({
   tree: DiscordDocumentTree;
   canManageDocuments: boolean;
 }) {
-  const router = useRouter();
+  const dispatch = useAppDispatch();
   const folderOptions = useMemo(
     () => flattenFolders(tree.folders),
     [tree.folders],
@@ -166,12 +170,19 @@ export function DiscordDocumentManager({
     (document) => (document.folderId ?? "") === selectedFolderId,
   );
 
+  async function syncTree(): Promise<void> {
+    const nextTree = await apiRequest<RealtimeDocumentTree>(
+      `/api/projects/${tree.projectKey}/documents`,
+    );
+    dispatch(replaceDocumentTree(nextTree));
+  }
+
   async function run(action: () => Promise<void>): Promise<void> {
     setBusy(true);
     setError(null);
     try {
       await action();
-      router.refresh();
+      await syncTree();
     } catch (cause) {
       setError(
         cause instanceof Error ? cause.message : "Thao tác tài liệu thất bại.",
@@ -532,9 +543,7 @@ export function DiscordDocumentManager({
                                 <SelectValue placeholder="Root" />
                               </SelectTrigger>
                               <SelectContent>
-                                <SelectItem value="root_folder">
-                                  Root
-                                </SelectItem>
+                                <SelectItem value="root_folder">Root</SelectItem>
                                 {folderOptions.map((folder) => (
                                   <SelectItem key={folder.id} value={folder.id}>
                                     {"—".repeat(folder.depth)} {folder.name}
@@ -611,9 +620,7 @@ export function DiscordDocumentManager({
                                 </Badge>
                                 {documentItem.latestVersion ? (
                                   <Badge variant="outline">
-                                    {formatBytes(
-                                      documentItem.latestVersion.size,
-                                    )}
+                                    {formatBytes(documentItem.latestVersion.size)}
                                   </Badge>
                                 ) : null}
                               </div>
@@ -623,20 +630,16 @@ export function DiscordDocumentManager({
                                 <>
                                   <Button asChild variant="outline" size="sm">
                                     <a
-                                      href={
-                                        documentItem.latestVersion.downloadUrl
-                                      }
+                                      href={documentItem.latestVersion.downloadUrl}
                                       target="_blank"
                                     >
-                                      <Download data-icon="inline-start" /> Tải
-                                      file
+                                      <Download data-icon="inline-start" /> Tải file
                                     </a>
                                   </Button>
                                   <Button asChild variant="outline" size="sm">
                                     <a
                                       href={
-                                        documentItem.latestVersion
-                                          .openInDiscordUrl
+                                        documentItem.latestVersion.openInDiscordUrl
                                       }
                                       target="_blank"
                                       rel="noreferrer"
@@ -697,8 +700,7 @@ export function DiscordDocumentManager({
                                   void uploadVersion(documentItem.id)
                                 }
                               >
-                                <FilePlus2 data-icon="inline-start" /> Upload
-                                version mới
+                                <FilePlus2 data-icon="inline-start" /> Upload version mới
                               </Button>
                             </div>
                           )}
