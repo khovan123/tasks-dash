@@ -6,6 +6,8 @@ import {
   type JiraShellProject,
   type JiraShellSession,
 } from "@/components/layout/jira-app-shell";
+import { StoreProvider } from "@/components/providers/store-provider";
+import { WorkspaceRealtimeProvider } from "@/components/providers/workspace-realtime-provider";
 import { Toaster } from "@/components/ui/sonner";
 import type { WorkspaceOption } from "@/components/workspace-switcher";
 import { apiData } from "@/lib/server/api-data";
@@ -95,13 +97,17 @@ export default async function RootLayout({
       </head>
       <body className="min-h-screen bg-background font-sans text-foreground">
         {session ? (
-          <JiraAppShell
-            session={session}
-            projects={projects}
-            workspaces={workspaces}
-          >
-            {children}
-          </JiraAppShell>
+          <StoreProvider>
+            <WorkspaceRealtimeProvider initialProjects={projects}>
+              <JiraAppShell
+                session={session}
+                projects={projects}
+                workspaces={workspaces}
+              >
+                {children}
+              </JiraAppShell>
+            </WorkspaceRealtimeProvider>
+          </StoreProvider>
         ) : (
           children
         )}
