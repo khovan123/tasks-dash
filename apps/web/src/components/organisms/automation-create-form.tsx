@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { zodResolver } from "@hookform/resolvers/zod";
 import {
   AUTOMATION_ACTIONS,
@@ -9,15 +9,9 @@ import {
 } from "@tasks-dash/contracts";
 import { useRouter } from "next/navigation";
 import { Controller, FormProvider, useForm } from "react-hook-form";
-import {
-  Check,
-  ChevronsUpDown,
-  Clock,
-  Info,
-  MessageSquare,
-  Plus,
-  Zap,
-} from "lucide-react";
+import { Clock, Info, MessageSquare, Plus, Zap } from "lucide-react";
+import { SearchableSelect } from "@/components/molecules/searchable-select";
+import { FormCard } from "@/components/organisms/form-card";
 import {
   AUTOMATION_CHANNEL_OPTIONS,
   AUTOMATION_CRON_PRESETS,
@@ -27,11 +21,10 @@ import {
   renderAutomationSamplePreview,
 } from "@/features/automations/config";
 import {
-  DiscordAutomationValues,
+  type DiscordAutomationValues,
   discordAutomationSchema,
 } from "@/features/automations/schemas/discord-automation.schema";
 import { apiRequest } from "@/lib/api/api-request";
-import { FormCard } from "@/components/organisms/form-card";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import {
@@ -41,6 +34,7 @@ import {
   FieldGroup,
   FieldLabel,
 } from "@/components/ui/field";
+import { Input } from "@/components/ui/input";
 import {
   InputGroup,
   InputGroupAddon,
@@ -49,32 +43,12 @@ import {
   InputGroupTextarea,
   InputGroupText,
 } from "@/components/ui/input-group";
-import { Input } from "@/components/ui/input";
-import {
-  Popover,
-  PopoverContent,
-  PopoverTrigger,
-} from "@/components/ui/popover";
-import {
-  Command,
-  CommandEmpty,
-  CommandGroup,
-  CommandInput,
-  CommandItem,
-  CommandList,
-} from "@/components/ui/command";
-import { cn } from "@/lib/utils";
 import { Separator } from "@/components/ui/separator";
 
 export function AutomationCreateForm({ projectKey }: { projectKey: string }) {
   const router = useRouter();
-  const [discordChannels, setDiscordChannels] = useState<
-    Array<{ id: string; name: string }>
-  >([]);
+  const [discordChannels, setDiscordChannels] = useState<Array<{ id: string; name: string }>>([]);
   const [isLoadingChannels, setIsLoadingChannels] = useState(true);
-  const [openTrigger, setOpenTrigger] = useState(false);
-  const [openChannel, setOpenChannel] = useState(false);
-
   const form = useForm<DiscordAutomationValues>({
     resolver: zodResolver(discordAutomationSchema),
     defaultValues: {
@@ -95,12 +69,12 @@ export function AutomationCreateForm({ projectKey }: { projectKey: string }) {
         const channels = await apiRequest<Array<{ id: string; name: string }>>(
           `/api/integrations/discord/projects/${projectKey}/channels`,
         );
-        if (active && Array.isArray(channels) && channels.length > 0) {
+        if (active && channels.length > 0) {
           setDiscordChannels(channels);
           form.setValue("channelType", channels[0].id || channels[0].name);
         }
       } catch {
-        // Fallback to the shared predefined channel catalog.
+        // Optional remote catalog: shared predefined channels remain available.
       } finally {
         if (active) setIsLoadingChannels(false);
       }
@@ -109,13 +83,28 @@ export function AutomationCreateForm({ projectKey }: { projectKey: string }) {
     return () => {
       active = false;
     };
-  }, [projectKey, form]);
+  }, [form, projectKey]);
+
+  const triggerOptions = useMemo(
+    () =>
+      AUTOMATION_TRIGGER_OPTIONS.map((option) => ({
+        value: option.value,
+        label: option.label,
+        group: option.group,
+      })),
+    [],
+  );
+  const channelOptions = useMemo(
+    () =>
+      (discordChannels.length > 0 ? discordChannels : AUTOMATION_CHANNEL_OPTIONS).map(
+        (channel) => ({ value: channel.id, label: channel.name }),
+      ),
+    [discordChannels],
+  );
 
   const watchedTrigger = form.watch("trigger");
-  const watchedTitle = form.watch("title");
-  const watchedMessage = form.watch("message");
-  const previewTitle = renderAutomationSamplePreview(watchedTitle, projectKey);
-  const previewMessage = renderAutomationSamplePreview(watchedMessage, projectKey);
+  const previewTitle = renderAutomationSamplePreview(form.watch("title"), projectKey);
+  const previewMessage = renderAutomationSamplePreview(form.watch("message"), projectKey);
 
   async function submit(values: DiscordAutomationValues): Promise<void> {
     form.clearErrors("root");
@@ -148,8 +137,7 @@ export function AutomationCreateForm({ projectKey }: { projectKey: string }) {
       router.refresh();
     } catch (error) {
       form.setError("root", {
-        message:
-          error instanceof Error ? error.message : "Không thể tạo automation.",
+        message: error instanceof Error ? error.message : "Không thể tạo automation.",
       });
     }
   }
@@ -167,7 +155,7 @@ export function AutomationCreateForm({ projectKey }: { projectKey: string }) {
         <FormCard
           eyebrow="Event automation tùy biến"
           title="Tạo automation của bạn"
-          description="Tùy chỉnh bất kỳ trigger nào từ GitHub App Webhooks hoặc hệ thống để bắn thông báo Discord theo ý bạn."
+          description="Tùy chỉnh trigger từ GitHub App Webhooks hoặc hệ thống để gửi thông báo Discord."
           footer={
             <Button disabled={form.formState.isSubmitting}>
               <Zap data-icon="inline-start" />
@@ -189,67 +177,22 @@ export function AutomationCreateForm({ projectKey }: { projectKey: string }) {
             </Field>
 
             <Field>
-              <FieldLabel htmlFor="automation-trigger">
-                Trigger sự kiện *
-              </FieldLabel>
+              <FieldLabel htmlFor="automation-trigger">Trigger sự kiện *</FieldLabel>
               <Controller
                 control={form.control}
                 name="trigger"
                 render={({ field }) => (
-                  <Popover open={openTrigger} onOpenChange={setOpenTrigger}>
-                    <PopoverTrigger asChild>
-                      <Button
-                        id="automation-trigger"
-                        variant="outline"
-                        role="combobox"
-                        aria-expanded={openTrigger}
-                        className="w-full justify-between font-normal"
-                      >
-                        {field.value
-                          ? AUTOMATION_TRIGGER_OPTIONS.find(
-                              (trigger) => trigger.value === field.value,
-                            )?.label
-                          : "Chọn trigger sự kiện..."}
-                        <ChevronsUpDown className="ml-2 size-4 shrink-0 opacity-50" />
-                      </Button>
-                    </PopoverTrigger>
-                    <PopoverContent className="w-112.5 p-0" align="start">
-                      <Command>
-                        <CommandInput placeholder="Tìm kiếm trigger..." />
-                        <CommandList>
-                          <CommandEmpty>
-                            Không tìm thấy trigger nào.
-                          </CommandEmpty>
-                          {AUTOMATION_TRIGGER_GROUPS.map((groupName) => (
-                            <CommandGroup key={groupName} heading={groupName}>
-                              {AUTOMATION_TRIGGER_OPTIONS.filter(
-                                (trigger) => trigger.group === groupName,
-                              ).map((option) => (
-                                <CommandItem
-                                  key={option.value}
-                                  value={option.label}
-                                  onSelect={() => {
-                                    field.onChange(option.value);
-                                    setOpenTrigger(false);
-                                  }}
-                                >
-                                  <Check
-                                    className={cn(
-                                      "mr-2 size-4",
-                                      field.value === option.value
-                                        ? "opacity-100"
-                                        : "opacity-0",
-                                    )}
-                                  />
-                                  {option.label}
-                                </CommandItem>
-                              ))}
-                            </CommandGroup>
-                          ))}
-                        </CommandList>
-                      </Command>
-                    </PopoverContent>
-                  </Popover>
+                  <SearchableSelect
+                    triggerId="automation-trigger"
+                    value={field.value}
+                    options={triggerOptions}
+                    groupOrder={AUTOMATION_TRIGGER_GROUPS}
+                    onValueChange={field.onChange}
+                    placeholder="Chọn trigger sự kiện..."
+                    searchPlaceholder="Tìm kiếm trigger..."
+                    emptyText="Không tìm thấy trigger nào."
+                    contentClassName="w-112.5"
+                  />
                 )}
               />
               {form.formState.errors.trigger?.message ? (
@@ -264,72 +207,25 @@ export function AutomationCreateForm({ projectKey }: { projectKey: string }) {
               <Controller
                 control={form.control}
                 name="channelType"
-                render={({ field }) => {
-                  const channelList =
-                    discordChannels.length > 0
-                      ? discordChannels
-                      : AUTOMATION_CHANNEL_OPTIONS;
-                  const selectedChannel = channelList.find(
-                    (channel) => channel.id === field.value,
-                  );
-                  return (
-                    <Popover open={openChannel} onOpenChange={setOpenChannel}>
-                      <PopoverTrigger asChild>
-                        <Button
-                          id="automation-channel"
-                          variant="outline"
-                          role="combobox"
-                          aria-expanded={openChannel}
-                          className="w-full justify-between font-normal"
-                        >
-                          {selectedChannel
-                            ? selectedChannel.name
-                            : "Chọn kênh Discord..."}
-                          <ChevronsUpDown className="ml-2 size-4 shrink-0 opacity-50" />
-                        </Button>
-                      </PopoverTrigger>
-                      <PopoverContent className="w-112.5 p-0" align="start">
-                        <Command>
-                          <CommandInput placeholder="Tìm kiếm kênh..." />
-                          <CommandList>
-                            <CommandEmpty>
-                              Không tìm thấy kênh nào.
-                            </CommandEmpty>
-                            <CommandGroup>
-                              {channelList.map((channel) => (
-                                <CommandItem
-                                  key={channel.id}
-                                  value={channel.name}
-                                  onSelect={() => {
-                                    field.onChange(channel.id);
-                                    setOpenChannel(false);
-                                  }}
-                                >
-                                  <Check
-                                    className={cn(
-                                      "mr-2 size-4",
-                                      field.value === channel.id
-                                        ? "opacity-100"
-                                        : "opacity-0",
-                                    )}
-                                  />
-                                  {channel.name}
-                                </CommandItem>
-                              ))}
-                            </CommandGroup>
-                          </CommandList>
-                        </Command>
-                      </PopoverContent>
-                    </Popover>
-                  );
-                }}
+                render={({ field }) => (
+                  <SearchableSelect
+                    triggerId="automation-channel"
+                    value={field.value}
+                    options={channelOptions}
+                    onValueChange={field.onChange}
+                    placeholder="Chọn kênh Discord..."
+                    searchPlaceholder="Tìm kiếm kênh..."
+                    emptyText="Không tìm thấy kênh nào."
+                    contentClassName="w-112.5"
+                  />
+                )}
               />
               <FieldDescription>
                 {isLoadingChannels
                   ? "Đang tải danh sách kênh Discord từ Server dự án…"
                   : discordChannels.length > 0
                     ? "Danh sách kênh Discord được đồng bộ tự động từ Discord Server của dự án."
-                    : "Chọn kênh Discord trong server dự án để gửi thông báo này tới."}
+                    : "Không lấy được catalog động; đang dùng danh sách kênh mặc định."}
               </FieldDescription>
             </Field>
           </FieldGroup>
@@ -347,12 +243,10 @@ export function AutomationCreateForm({ projectKey }: { projectKey: string }) {
                 id="automation-cron"
                 {...form.register("cronExpression")}
                 placeholder="0 9 * * *"
-                className="font-mono bg-background"
+                className="bg-background font-mono"
               />
               <div className="flex flex-wrap gap-1.5 pt-1">
-                <span className="mr-1 self-center text-xs text-muted-foreground">
-                  Lịch mẫu:
-                </span>
+                <span className="mr-1 self-center text-xs text-muted-foreground">Lịch mẫu:</span>
                 {AUTOMATION_CRON_PRESETS.map((preset) => (
                   <Badge
                     key={preset.cron}
@@ -372,13 +266,10 @@ export function AutomationCreateForm({ projectKey }: { projectKey: string }) {
                 ))}
               </div>
               <FieldDescription>
-                Định dạng chuẩn Cron: <code>phút giờ ngày tháng thứ</code> (Ví
-                dụ: <code>0 9 * * *</code> = 9:00 sáng mỗi ngày).
+                Định dạng chuẩn Cron: <code>phút giờ ngày tháng thứ</code>.
               </FieldDescription>
               {form.formState.errors.cronExpression?.message ? (
-                <FieldError>
-                  {form.formState.errors.cronExpression.message}
-                </FieldError>
+                <FieldError>{form.formState.errors.cronExpression.message}</FieldError>
               ) : null}
             </Field>
           ) : null}
@@ -386,32 +277,27 @@ export function AutomationCreateForm({ projectKey }: { projectKey: string }) {
           <div className="flex flex-col gap-2 rounded-lg border bg-muted/40 p-3.5">
             <div className="flex items-center gap-2 text-xs font-semibold text-foreground">
               <Info className="size-4 text-primary" />
-              Biến có sẵn (Bấm để chèn nhanh vào Nội dung)
+              Biến có sẵn (bấm để chèn nhanh)
             </div>
             <div className="flex flex-wrap gap-1.5">
               {AUTOMATION_HELPER_VARIABLES.map((variable) => (
-                <div key={variable.code} className="inline-flex items-center gap-1">
-                  <Badge
-                    variant="outline"
-                    className="cursor-pointer bg-background font-mono text-[11px]"
-                    onClick={() => appendVariable("message", variable.code)}
-                    title={`Chèn ${variable.code} vào Nội dung`}
-                  >
-                    <Plus className="mr-0.5 size-3" />
-                    {variable.label}{" "}
-                    <span className="opacity-60 font-mono">
-                      ({variable.code})
-                    </span>
-                  </Badge>
-                </div>
+                <Badge
+                  key={variable.code}
+                  variant="outline"
+                  className="cursor-pointer bg-background font-mono text-[11px]"
+                  onClick={() => appendVariable("message", variable.code)}
+                  title={`Chèn ${variable.code} vào Nội dung`}
+                >
+                  <Plus className="mr-0.5 size-3" />
+                  {variable.label}{" "}
+                  <span className="font-mono opacity-60">({variable.code})</span>
+                </Badge>
               ))}
             </div>
           </div>
 
           <Field>
-            <FieldLabel htmlFor="automation-title">
-              Tiêu đề thông báo *
-            </FieldLabel>
+            <FieldLabel htmlFor="automation-title">Tiêu đề thông báo *</FieldLabel>
             <InputGroup>
               <InputGroupInput
                 id="automation-title"
@@ -424,8 +310,7 @@ export function AutomationCreateForm({ projectKey }: { projectKey: string }) {
                   size="xs"
                   onClick={() => appendVariable("title", "{{projectKey}}")}
                 >
-                  <Plus data-icon="inline-start" />
-                  Project key
+                  <Plus data-icon="inline-start" /> Project key
                 </InputGroupButton>
               </InputGroupAddon>
             </InputGroup>
@@ -435,9 +320,7 @@ export function AutomationCreateForm({ projectKey }: { projectKey: string }) {
           </Field>
 
           <Field>
-            <FieldLabel htmlFor="automation-message">
-              Nội dung chi tiết *
-            </FieldLabel>
+            <FieldLabel htmlFor="automation-message">Nội dung chi tiết *</FieldLabel>
             <InputGroup>
               <InputGroupTextarea
                 id="automation-message"
@@ -447,15 +330,10 @@ export function AutomationCreateForm({ projectKey }: { projectKey: string }) {
               />
               <InputGroupAddon align="block-end" className="border-t">
                 <InputGroupText>
-                  <Info data-icon="inline-start" />
-                  Hỗ trợ Markdown Discord
+                  <Info data-icon="inline-start" /> Hỗ trợ Markdown Discord
                 </InputGroupText>
               </InputGroupAddon>
             </InputGroup>
-            <FieldDescription>
-              Hỗ trợ xuống dòng và định dạng Discord markdown (`**bold**`,
-              `*italic*`, `[link](url)`).
-            </FieldDescription>
             {form.formState.errors.message?.message ? (
               <FieldError>{form.formState.errors.message.message}</FieldError>
             ) : null}
@@ -463,48 +341,32 @@ export function AutomationCreateForm({ projectKey }: { projectKey: string }) {
 
           <div className="flex flex-col gap-2 pt-2">
             <Separator />
-            <div className="flex items-center gap-2 text-xs font-semibold text-muted-foreground uppercase tracking-wider">
+            <div className="flex items-center gap-2 text-xs font-semibold uppercase tracking-wider text-muted-foreground">
               <MessageSquare className="size-4 text-primary" />
-              Xem trước thông báo Discord (Live Preview)
+              Xem trước thông báo Discord
             </div>
-
-            <div className="rounded-lg border bg-card p-4 font-sans text-card-foreground shadow-sm">
+            <div className="rounded-lg border bg-card p-4 text-card-foreground shadow-sm">
               <div className="flex items-start gap-3">
-                <div className="grid size-9 shrink-0 place-items-center rounded-full bg-primary text-xs font-black text-primary-foreground shadow-sm">
+                <div className="grid size-9 shrink-0 place-items-center rounded-full bg-primary text-xs font-black text-primary-foreground">
                   TD
                 </div>
                 <div className="flex min-w-0 flex-1 flex-col gap-1.5">
                   <div className="flex items-center gap-2">
                     <span className="text-sm font-bold">Tasks Dash Bot</span>
-                    <Badge
-                      variant="secondary"
-                      className="px-1 py-0.5 text-[9px]"
-                    >
-                      BOT
-                    </Badge>
-                    <span className="text-xs text-muted-foreground">
-                      Hôm nay lúc 19:24
-                    </span>
+                    <Badge variant="secondary" className="px-1 py-0.5 text-[9px]">BOT</Badge>
                   </div>
-
-                  <div className="flex flex-col gap-1.5 rounded-md border-l-4 border-primary bg-muted/40 p-3 text-sm shadow-sm">
+                  <div className="flex flex-col gap-1.5 rounded-md border-l-4 border-primary bg-muted/40 p-3 text-sm">
                     {previewTitle ? (
-                      <div className="font-bold leading-snug">
-                        {previewTitle}
-                      </div>
+                      <div className="font-bold leading-snug">{previewTitle}</div>
                     ) : (
-                      <div className="text-xs italic text-muted-foreground">
-                        (Chưa nhập tiêu đề)
-                      </div>
+                      <div className="text-xs italic text-muted-foreground">(Chưa nhập tiêu đề)</div>
                     )}
                     {previewMessage ? (
-                      <div className="whitespace-pre-wrap rounded border bg-background p-2.5 font-mono text-xs leading-relaxed text-foreground">
+                      <div className="whitespace-pre-wrap rounded border bg-background p-2.5 font-mono text-xs leading-relaxed">
                         {previewMessage}
                       </div>
                     ) : (
-                      <div className="text-xs italic text-muted-foreground">
-                        (Chưa nhập nội dung)
-                      </div>
+                      <div className="text-xs italic text-muted-foreground">(Chưa nhập nội dung)</div>
                     )}
                   </div>
                 </div>

@@ -10,12 +10,16 @@ import {
 import { Controller, FormProvider, useForm } from "react-hook-form";
 import { useState } from "react";
 import { MailPlus, RefreshCw, Trash2, UserMinus } from "lucide-react";
-import { MemberAvatar } from "@/components/molecules/member-avatar";
 import { MemberInfoBadge } from "@/components/molecules/member-info-badge";
 import { RoleBadge } from "@/components/molecules/role-badge";
 import { SectionHeading } from "@/components/molecules/section-heading";
 import { FormCard } from "@/components/organisms/form-card";
 import { useMemberInvitations } from "@/features/members/hooks/use-member-invitations";
+import {
+  ASSIGNABLE_MEMBER_ROLES,
+  invitationStatusPresentation,
+  roleLabel,
+} from "@/features/members/presentation";
 import {
   type InviteMemberValues,
   inviteMemberSchema,
@@ -37,12 +41,7 @@ import {
   EmptyHeader,
   EmptyTitle,
 } from "@/components/ui/empty";
-import {
-  Field,
-  FieldError,
-  FieldGroup,
-  FieldLabel,
-} from "@/components/ui/field";
+import { Field, FieldError, FieldGroup, FieldLabel } from "@/components/ui/field";
 import { Input } from "@/components/ui/input";
 import {
   Select,
@@ -53,10 +52,6 @@ import {
 } from "@/components/ui/select";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { useWorkspacePresence } from "@/components/layout/jira-app-shell";
-
-function roleLabel(role: WorkspaceMemberView["role"]): string {
-  return role.replaceAll("_", " ");
-}
 
 export function WorkspaceMembersManager({
   members,
@@ -93,28 +88,24 @@ export function WorkspaceMembersManager({
 
   async function inviteMember(values: InviteMemberValues): Promise<void> {
     form.clearErrors("root");
-    const created = await invite(values);
-    if (created) {
-      form.reset({
-        email: "",
-        role: MEMBER_ROLES.viewer,
-        projectIds: [],
-        allProjects: false,
-      });
+    const result = await invite(values);
+    if (!result.ok) {
+      form.setError("root", { message: result.error });
       return;
     }
-    if (inviteError) {
-      form.setError("root", { message: inviteError });
-    }
+    form.reset({
+      email: "",
+      role: MEMBER_ROLES.viewer,
+      projectIds: [],
+      allProjects: false,
+    });
   }
 
   async function removeMember(memberId: string): Promise<void> {
     setBusyMemberId(memberId);
     setMemberActionError(null);
     try {
-      await apiRequest(`/api/workspace/members/${memberId}`, {
-        method: "DELETE",
-      });
+      await apiRequest(`/api/workspace/members/${memberId}`, { method: "DELETE" });
       window.location.reload();
     } catch (error) {
       setMemberActionError(
@@ -170,13 +161,11 @@ export function WorkspaceMembersManager({
                           <SelectValue placeholder="Chọn vai trò" />
                         </SelectTrigger>
                         <SelectContent>
-                          {Object.values(MEMBER_ROLES)
-                            .filter((role) => role !== MEMBER_ROLES.owner)
-                            .map((role) => (
-                              <SelectItem key={role} value={role}>
-                                {roleLabel(role)}
-                              </SelectItem>
-                            ))}
+                          {ASSIGNABLE_MEMBER_ROLES.map((role) => (
+                            <SelectItem key={role} value={role}>
+                              {roleLabel(role)}
+                            </SelectItem>
+                          ))}
                         </SelectContent>
                       </Select>
                     )}
@@ -217,23 +206,18 @@ export function WorkspaceMembersManager({
                         <div className="grid max-h-40 gap-3 overflow-y-auto sm:grid-cols-2">
                           {projects.map((project) => {
                             const selectedIds = form.watch("projectIds") || [];
-                            const isChecked = selectedIds.includes(project._id);
+                            const checked = selectedIds.includes(project._id);
                             return (
-                              <div
-                                key={project._id}
-                                className="flex items-center gap-2"
-                              >
+                              <div key={project._id} className="flex items-center gap-2">
                                 <Checkbox
                                   id={`invite-project-${project._id}`}
-                                  checked={isChecked}
-                                  onCheckedChange={(checked) => {
+                                  checked={checked}
+                                  onCheckedChange={(nextChecked) => {
                                     form.setValue(
                                       "projectIds",
-                                      checked
+                                      nextChecked
                                         ? [...selectedIds, project._id]
-                                        : selectedIds.filter(
-                                            (id) => id !== project._id,
-                                          ),
+                                        : selectedIds.filter((id) => id !== project._id),
                                     );
                                   }}
                                 />
@@ -277,19 +261,14 @@ export function WorkspaceMembersManager({
         <TabsContent value="members" className="mt-4">
           <Card>
             <CardHeader>
-              <SectionHeading
-                title="Workspace members"
-                meta={`${members.length} members`}
-              />
+              <SectionHeading title="Workspace members" meta={`${members.length} members`} />
             </CardHeader>
             <CardContent>
               {members.length === 0 ? (
                 <Empty>
                   <EmptyHeader>
                     <EmptyTitle>Chưa có thành viên</EmptyTitle>
-                    <EmptyDescription>
-                      Mời thành viên đầu tiên vào workspace.
-                    </EmptyDescription>
+                    <EmptyDescription>Mời thành viên đầu tiên vào workspace.</EmptyDescription>
                   </EmptyHeader>
                 </Empty>
               ) : (
@@ -299,34 +278,17 @@ export function WorkspaceMembersManager({
                       key={member._id}
                       className="flex flex-col gap-3 rounded-xl border p-4 sm:flex-row sm:items-center sm:justify-between"
                     >
-                      <div className="flex min-w-0 items-center gap-3">
-                        <MemberAvatar
-                          memberId={member._id}
-                          name={member.name}
-                          email={member.email}
-                          avatarUrl={member.avatarUrl}
-                          githubLogin={member.githubLogin}
-                          discordUsername={member.discordUsername}
-                          presence={memberPresence(member)}
-                          className="size-10"
-                        />
-                        <div className="min-w-0">
-                          <MemberInfoBadge
-                            memberId={member._id}
-                            name={member.name}
-                            email={member.email}
-                            avatarUrl={member.avatarUrl}
-                            githubLogin={member.githubLogin}
-                            discordUsername={member.discordUsername}
-                            presence={memberPresence(member)}
-                            className="hidden"
-                          />
-                          <p className="truncate font-semibold">{member.name}</p>
-                          <p className="truncate text-sm text-muted-foreground">
-                            {member.email}
-                          </p>
-                        </div>
-                      </div>
+                      <MemberInfoBadge
+                        memberId={member._id}
+                        name={member.name}
+                        email={member.email}
+                        avatarUrl={member.avatarUrl}
+                        githubLogin={member.githubLogin}
+                        discordUsername={member.discordUsername}
+                        presence={memberPresence(member)}
+                        avatarClassName="size-10"
+                        textClassName="text-sm font-semibold leading-none"
+                      />
 
                       <div className="flex flex-wrap items-center gap-2">
                         <RoleBadge role={member.role} />
@@ -339,7 +301,7 @@ export function WorkspaceMembersManager({
                             onClick={() => void removeMember(member._id)}
                           >
                             <UserMinus className="size-4" />
-                            Gỡ
+                            {busyMemberId === member._id ? "Đang gỡ…" : "Gỡ"}
                           </Button>
                         ) : null}
                       </div>
@@ -364,51 +326,50 @@ export function WorkspaceMembersManager({
                 <Empty>
                   <EmptyHeader>
                     <EmptyTitle>Không có lời mời</EmptyTitle>
-                    <EmptyDescription>
-                      Các lời mời workspace sẽ hiển thị tại đây.
-                    </EmptyDescription>
+                    <EmptyDescription>Các lời mời workspace sẽ hiển thị tại đây.</EmptyDescription>
                   </EmptyHeader>
                 </Empty>
               ) : (
                 <div className="grid gap-3">
-                  {invitations.map((invitation) => (
-                    <article
-                      key={invitation._id}
-                      className="flex flex-col gap-3 rounded-xl border p-4 sm:flex-row sm:items-center sm:justify-between"
-                    >
-                      <div>
-                        <p className="font-semibold">{invitation.email}</p>
-                        <p className="text-sm text-muted-foreground">
-                          {roleLabel(invitation.role)} · {invitation.status}
-                        </p>
-                      </div>
-                      {canManage ? (
-                        <div className="flex gap-2">
-                          {invitation.status ===
-                          MEMBER_INVITATION_STATUSES.pending ? (
+                  {invitations.map((invitation) => {
+                    const presentation = invitationStatusPresentation(invitation.status);
+                    return (
+                      <article
+                        key={invitation._id}
+                        className="flex flex-col gap-3 rounded-xl border p-4 sm:flex-row sm:items-center sm:justify-between"
+                      >
+                        <div>
+                          <p className="font-semibold">{invitation.email}</p>
+                          <div className="mt-1 flex items-center gap-2 text-sm text-muted-foreground">
+                            <RoleBadge role={invitation.role} />
+                            <Badge variant={presentation.variant}>{presentation.label}</Badge>
+                          </div>
+                        </div>
+                        {canManage ? (
+                          <div className="flex gap-2">
+                            {invitation.status === MEMBER_INVITATION_STATUSES.pending ? (
+                              <Button
+                                variant="outline"
+                                size="sm"
+                                disabled={busyInvitationId === invitation._id}
+                                onClick={() => void resend(invitation._id)}
+                              >
+                                <RefreshCw className="size-4" /> Gửi lại
+                              </Button>
+                            ) : null}
                             <Button
-                              variant="outline"
+                              variant="ghost"
                               size="sm"
                               disabled={busyInvitationId === invitation._id}
-                              onClick={() => void resend(invitation._id)}
+                              onClick={() => void revoke(invitation._id)}
                             >
-                              <RefreshCw className="size-4" />
-                              Gửi lại
+                              <Trash2 className="size-4 text-destructive" /> Xóa
                             </Button>
-                          ) : null}
-                          <Button
-                            variant="ghost"
-                            size="sm"
-                            disabled={busyInvitationId === invitation._id}
-                            onClick={() => void revoke(invitation._id)}
-                          >
-                            <Trash2 className="size-4 text-destructive" />
-                            Xóa
-                          </Button>
-                        </div>
-                      ) : null}
-                    </article>
-                  ))}
+                          </div>
+                        ) : null}
+                      </article>
+                    );
+                  })}
                 </div>
               )}
             </CardContent>

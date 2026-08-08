@@ -1,15 +1,16 @@
 "use client";
 
+import { useState } from "react";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { useRouter } from "next/navigation";
 import { Controller, FormProvider, useForm } from "react-hook-form";
 import { Link2 } from "lucide-react";
-import { apiRequest } from "@/lib/api/api-request";
+import { FormCard } from "@/components/organisms/form-card";
 import {
-  DiscordFormValues,
+  type DiscordFormValues,
   discordFormSchema,
 } from "@/features/integrations/schemas/discord-form.schema";
-import { FormCard } from "@/components/layout/app-shell";
+import { apiRequest } from "@/lib/api/api-request";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { Button } from "@/components/ui/button";
 import {
@@ -30,21 +31,22 @@ import {
 
 export function DiscordConnectForm({ projectKeys }: { projectKeys: string[] }) {
   const router = useRouter();
+  const [success, setSuccess] = useState(false);
   const form = useForm<DiscordFormValues>({
     resolver: zodResolver(discordFormSchema),
     defaultValues: { projectKey: "", webhookUrl: "" },
   });
-  const success =
-    form.formState.isSubmitSuccessful && !form.formState.errors.root;
 
   async function submit(values: DiscordFormValues): Promise<void> {
     form.clearErrors("root");
+    setSuccess(false);
     try {
       await apiRequest("/api/integrations/discord/connect", {
         method: "POST",
         body: JSON.stringify(values),
       });
       form.reset();
+      setSuccess(true);
       router.refresh();
     } catch (error) {
       form.setError("root", {
@@ -60,15 +62,11 @@ export function DiscordConnectForm({ projectKeys }: { projectKeys: string[] }) {
         <FormCard
           eyebrow="Manual webhook fallback"
           title="Gắn webhook có sẵn"
-          description="Chỉ dùng khi project cần một channel/webhook đặc biệt không do Tasks Dash bot quản lý. Luồng tự động ở trên là lựa chọn mặc định."
+          description="Chỉ dùng khi project cần một channel/webhook đặc biệt không do Tasks Dash bot quản lý."
           footer={
-            <Button
-              disabled={form.formState.isSubmitting || projectKeys.length === 0}
-            >
+            <Button disabled={form.formState.isSubmitting || projectKeys.length === 0}>
               <Link2 />
-              {form.formState.isSubmitting
-                ? "Đang xác minh…"
-                : "Kết nối webhook thủ công"}
+              {form.formState.isSubmitting ? "Đang xác minh…" : "Kết nối webhook thủ công"}
             </Button>
           }
         >
@@ -94,9 +92,7 @@ export function DiscordConnectForm({ projectKeys }: { projectKeys: string[] }) {
                 )}
               />
               {form.formState.errors.projectKey?.message ? (
-                <FieldError>
-                  {form.formState.errors.projectKey.message}
-                </FieldError>
+                <FieldError>{form.formState.errors.projectKey.message}</FieldError>
               ) : null}
             </Field>
             <Field>
@@ -109,30 +105,22 @@ export function DiscordConnectForm({ projectKeys }: { projectKeys: string[] }) {
                 placeholder="https://discord.com/api/webhooks/..."
                 aria-invalid={Boolean(form.formState.errors.webhookUrl)}
               />
-              <FieldDescription>
-                URL được xác minh rồi mã hóa AES-256-GCM.
-              </FieldDescription>
+              <FieldDescription>URL được xác minh rồi mã hóa AES-256-GCM.</FieldDescription>
               {form.formState.errors.webhookUrl?.message ? (
-                <FieldError>
-                  {form.formState.errors.webhookUrl.message}
-                </FieldError>
+                <FieldError>{form.formState.errors.webhookUrl.message}</FieldError>
               ) : null}
             </Field>
           </FieldGroup>
           {form.formState.errors.root?.message ? (
             <Alert variant="destructive">
               <AlertTitle>Không thể kết nối</AlertTitle>
-              <AlertDescription>
-                {form.formState.errors.root.message}
-              </AlertDescription>
+              <AlertDescription>{form.formState.errors.root.message}</AlertDescription>
             </Alert>
           ) : null}
           {success ? (
             <Alert variant="success">
               <AlertTitle>Đã kết nối</AlertTitle>
-              <AlertDescription>
-                Discord webhook đã được xác minh và lưu an toàn.
-              </AlertDescription>
+              <AlertDescription>Discord webhook đã được xác minh và lưu an toàn.</AlertDescription>
             </Alert>
           ) : null}
         </FormCard>

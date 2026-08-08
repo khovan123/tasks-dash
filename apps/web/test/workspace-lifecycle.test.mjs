@@ -38,8 +38,9 @@ test("workspace lifecycle includes named onboarding, create, rename and delete",
   assert.match(dto, /SetupFirstWorkspaceDto/);
   assert.match(dto, /UpdateWorkspaceDto/);
   assert.match(dto, /DeleteWorkspaceDto/);
-  assert.match(switcher, /href="\/workspaces\/new"/);
-  assert.match(switcher, /Tạo workspace mới/);
+  assert.match(switcher, /NewWorkspaceModal/);
+  assert.match(switcher, /Tạo Workspace mới/);
+  assert.equal(switcher.includes('className="hidden"'), false);
   assert.match(createForm, /Đặt tên workspace đầu tiên/);
   assert.match(createForm, /WorkspaceFormFields/);
   assert.match(createFields, /workspaceName/);

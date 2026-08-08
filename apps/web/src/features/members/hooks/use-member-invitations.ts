@@ -4,6 +4,12 @@ import { useState } from "react";
 import { useRouter } from "next/navigation";
 import type { MemberRole } from "@tasks-dash/contracts";
 import { apiRequest } from "@/lib/api/api-request";
+import {
+  mutationErrorMessage,
+  mutationFailure,
+  mutationSuccess,
+  type MutationResult,
+} from "@/lib/api/mutation-result";
 
 export interface InviteMemberPayload {
   email: string;
@@ -22,24 +28,25 @@ export function useMemberInvitations() {
   async function runInvitationAction(
     invitationId: string,
     action: () => Promise<void>,
-  ): Promise<boolean> {
+  ): Promise<MutationResult<void>> {
     setBusyInvitationId(invitationId);
     setActionError(null);
     try {
       await action();
       router.refresh();
-      return true;
-    } catch (error) {
-      setActionError(
-        error instanceof Error ? error.message : "Không thể cập nhật lời mời.",
-      );
-      return false;
+      return mutationSuccess(undefined);
+    } catch (cause) {
+      const message = mutationErrorMessage(cause, "Không thể cập nhật lời mời.");
+      setActionError(message);
+      return mutationFailure(message);
     } finally {
       setBusyInvitationId(null);
     }
   }
 
-  async function invite(payload: InviteMemberPayload): Promise<boolean> {
+  async function invite(
+    payload: InviteMemberPayload,
+  ): Promise<MutationResult<void>> {
     setInviting(true);
     setInviteError(null);
     try {
@@ -48,18 +55,17 @@ export function useMemberInvitations() {
         body: JSON.stringify(payload),
       });
       router.refresh();
-      return true;
-    } catch (error) {
-      setInviteError(
-        error instanceof Error ? error.message : "Không thể gửi lời mời.",
-      );
-      return false;
+      return mutationSuccess(undefined);
+    } catch (cause) {
+      const message = mutationErrorMessage(cause, "Không thể gửi lời mời.");
+      setInviteError(message);
+      return mutationFailure(message);
     } finally {
       setInviting(false);
     }
   }
 
-  function resend(invitationId: string): Promise<boolean> {
+  function resend(invitationId: string): Promise<MutationResult<void>> {
     return runInvitationAction(invitationId, async () => {
       await apiRequest(`/api/workspace/invitations/${invitationId}/resend`, {
         method: "POST",
@@ -67,7 +73,7 @@ export function useMemberInvitations() {
     });
   }
 
-  function revoke(invitationId: string): Promise<boolean> {
+  function revoke(invitationId: string): Promise<MutationResult<void>> {
     return runInvitationAction(invitationId, async () => {
       await apiRequest(`/api/workspace/invitations/${invitationId}`, {
         method: "DELETE",

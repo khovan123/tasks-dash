@@ -1,13 +1,15 @@
 "use client";
 
+import { useMemo, useState } from "react";
 import { zodResolver } from "@hookform/resolvers/zod";
 import Link from "next/link";
 import { Controller, FormProvider, useForm } from "react-hook-form";
-import { useState } from "react";
-import { Check, ChevronsUpDown, Github, Link2Off, Save } from "lucide-react";
+import { Github, Link2Off, Save } from "lucide-react";
+import { SearchableSelect } from "@/components/molecules/searchable-select";
+import type { GithubRepositoryOption } from "@/features/integrations/types";
 import {
-  RepositoryLinkFormValues,
-  RepositoryLinkPayload,
+  type RepositoryLinkFormValues,
+  type RepositoryLinkPayload,
   repositoryLinkSchema,
 } from "@/features/integrations/schemas/repository-link.schema";
 import { apiRequest } from "@/lib/api/api-request";
@@ -19,30 +21,6 @@ import {
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { Button } from "@/components/ui/button";
 import { Field, FieldError, FieldLabel } from "@/components/ui/field";
-import {
-  Popover,
-  PopoverContent,
-  PopoverTrigger,
-} from "@/components/ui/popover";
-import {
-  Command,
-  CommandEmpty,
-  CommandGroup,
-  CommandInput,
-  CommandItem,
-  CommandList,
-} from "@/components/ui/command";
-import { cn } from "@/lib/utils";
-
-export interface GithubRepositoryOption {
-  id: number;
-  name: string;
-  full_name: string;
-  private: boolean;
-  default_branch: string;
-  html_url: string;
-  linkedProjectKey?: string;
-}
 
 export interface RepositoryLinkFormProps {
   projectKey: string;
@@ -53,9 +31,7 @@ export interface RepositoryLinkFormProps {
 
 interface RepositoryMutationResult {
   projectKey: string;
-  repository: null | {
-    fullName: string;
-  };
+  repository: null | { fullName: string };
 }
 
 export function RepositoryLinkForm({
@@ -66,11 +42,17 @@ export function RepositoryLinkForm({
 }: RepositoryLinkFormProps) {
   const dispatch = useAppDispatch();
   const currentProject = useAppSelector(selectProject(projectKey));
-  const [open, setOpen] = useState(false);
   const [isEditing, setIsEditing] = useState(false);
-
   const currentRepository = repositories.find(
     (repository) => repository.full_name === currentRepositoryFullName,
+  );
+  const repositoryOptions = useMemo(
+    () =>
+      repositories.map((repository) => ({
+        value: String(repository.id),
+        label: repository.full_name,
+      })),
+    [repositories],
   );
   const form = useForm<
     RepositoryLinkFormValues,
@@ -108,9 +90,7 @@ export function RepositoryLinkForm({
     } catch (error) {
       form.setError("root", {
         message:
-          error instanceof Error
-            ? error.message
-            : "Không thể liên kết repository.",
+          error instanceof Error ? error.message : "Không thể liên kết repository.",
       });
     }
   }
@@ -128,9 +108,7 @@ export function RepositoryLinkForm({
     } catch (error) {
       form.setError("root", {
         message:
-          error instanceof Error
-            ? error.message
-            : "Không thể ngắt liên kết repository.",
+          error instanceof Error ? error.message : "Không thể ngắt liên kết repository.",
       });
     }
   }
@@ -140,25 +118,21 @@ export function RepositoryLinkForm({
   return (
     <FormProvider {...form}>
       <form onSubmit={form.handleSubmit(submit)} noValidate className="w-full">
-        <div className="rounded-xl border border-border/70 bg-card/90 p-4 shadow-sm backdrop-blur-2xl w-full">
-          <div className="flex flex-col gap-1.5 mb-3">
-            <h3 className="font-semibold text-foreground text-sm flex items-center gap-2">
-              <Github className="size-4 text-primary" />
-              Liên kết GitHub Repository
+        <div className="w-full rounded-xl border border-border/70 bg-card/90 p-4 shadow-sm backdrop-blur-2xl">
+          <div className="mb-3 flex flex-col gap-1.5">
+            <h3 className="flex items-center gap-2 text-sm font-semibold text-foreground">
+              <Github className="size-4 text-primary" /> Liên kết GitHub Repository
             </h3>
           </div>
 
-          <div className="flex flex-col sm:flex-row items-end gap-3 w-full">
-            <div className="flex-1 w-full">
+          <div className="flex w-full flex-col items-end gap-3 sm:flex-row">
+            <div className="w-full flex-1">
               {repositories.length === 0 ? (
                 <Alert>
                   <AlertTitle>Chưa có repository khả dụng</AlertTitle>
                   <AlertDescription>
                     Cài GitHub App hoặc cấp quyền repository trong{" "}
-                    <Link
-                      className="font-medium text-primary hover:underline"
-                      href="/settings/integrations"
-                    >
+                    <Link className="font-medium text-primary hover:underline" href="/settings/integrations">
                       Tích hợp
                     </Link>
                     .
@@ -173,73 +147,30 @@ export function RepositoryLinkForm({
                     control={form.control}
                     name="repositoryId"
                     render={({ field }) => (
-                      <Popover open={open} onOpenChange={setOpen}>
-                        <PopoverTrigger asChild>
-                          <Button
-                            id="github-repository"
-                            variant="outline"
-                            role="combobox"
-                            aria-expanded={open}
-                            className="w-full justify-between font-normal"
-                          >
-                            {field.value
-                              ? repositories.find(
-                                  (repository) =>
-                                    String(repository.id) === field.value,
-                                )?.full_name
-                              : "Chọn repository..."}
-                            <ChevronsUpDown className="ml-2 size-4 shrink-0 opacity-50" />
-                          </Button>
-                        </PopoverTrigger>
-                        <PopoverContent className="w-(--radix-popover-trigger-width) p-0">
-                          <Command>
-                            <CommandInput placeholder="Tìm kiếm repository..." />
-                            <CommandList>
-                              <CommandEmpty>Không tìm thấy repository.</CommandEmpty>
-                              <CommandGroup>
-                                {repositories.map((repository) => (
-                                  <CommandItem
-                                    key={repository.id}
-                                    value={repository.full_name}
-                                    onSelect={() => {
-                                      form.setValue(
-                                        "repositoryId",
-                                        String(repository.id),
-                                      );
-                                      setOpen(false);
-                                    }}
-                                  >
-                                    <Check
-                                      className={cn(
-                                        "mr-2 size-4",
-                                        field.value === String(repository.id)
-                                          ? "opacity-100"
-                                          : "opacity-0",
-                                      )}
-                                    />
-                                    {repository.full_name}
-                                  </CommandItem>
-                                ))}
-                              </CommandGroup>
-                            </CommandList>
-                          </Command>
-                        </PopoverContent>
-                      </Popover>
+                      <SearchableSelect
+                        triggerId="github-repository"
+                        value={field.value}
+                        options={repositoryOptions}
+                        onValueChange={field.onChange}
+                        placeholder="Chọn repository..."
+                        searchPlaceholder="Tìm kiếm repository..."
+                        emptyText="Không tìm thấy repository."
+                      />
                     )}
                   />
                   {form.formState.errors.repositoryId?.message ? (
-                    <FieldError className="text-[11px] mt-1">
+                    <FieldError className="mt-1 text-[11px]">
                       {form.formState.errors.repositoryId.message}
                     </FieldError>
                   ) : null}
                 </Field>
               ) : currentRepositoryFullName ? (
                 <div className="flex flex-col gap-1 py-1">
-                  <span className="text-xs text-muted-foreground font-medium">
+                  <span className="text-xs font-medium text-muted-foreground">
                     Repository đang liên kết
                   </span>
                   <a
-                    className="font-bold text-primary hover:underline text-sm w-fit"
+                    className="w-fit text-sm font-bold text-primary hover:underline"
                     href={`https://github.com/${currentRepositoryFullName}`}
                     target="_blank"
                     rel="noreferrer"
@@ -249,18 +180,14 @@ export function RepositoryLinkForm({
                 </div>
               ) : (
                 <div className="flex flex-col gap-1 py-1">
-                  <span className="text-xs text-muted-foreground font-medium">
-                    GitHub Repository
-                  </span>
-                  <span className="text-sm text-muted-foreground">
-                    Chưa liên kết repository.
-                  </span>
+                  <span className="text-xs font-medium text-muted-foreground">GitHub Repository</span>
+                  <span className="text-sm text-muted-foreground">Chưa liên kết repository.</span>
                 </div>
               )}
             </div>
 
-            {canManage && (
-              <div className="flex items-center gap-2 shrink-0 w-full sm:w-auto">
+            {canManage ? (
+              <div className="flex w-full shrink-0 items-center gap-2 sm:w-auto">
                 {showSelector ? (
                   <>
                     <Button
@@ -275,7 +202,7 @@ export function RepositoryLinkForm({
                       <Save />
                       {form.formState.isSubmitting ? "Đang lưu…" : "Lưu thay đổi"}
                     </Button>
-                    {currentRepositoryFullName && (
+                    {currentRepositoryFullName ? (
                       <Button
                         variant="ghost"
                         type="button"
@@ -285,17 +212,14 @@ export function RepositoryLinkForm({
                       >
                         Hủy
                       </Button>
-                    )}
+                    ) : null}
                   </>
                 ) : (
                   <>
                     <Button
                       type="button"
                       className="w-full sm:w-auto"
-                      onClick={(event) => {
-                        event.preventDefault();
-                        setIsEditing(true);
-                      }}
+                      onClick={() => setIsEditing(true)}
                       disabled={form.formState.isSubmitting}
                     >
                       <Github /> Đổi repository
@@ -312,13 +236,11 @@ export function RepositoryLinkForm({
                   </>
                 )}
               </div>
-            )}
+            ) : null}
           </div>
 
           {form.formState.errors.root?.message ? (
-            <FieldError className="mt-2 text-xs">
-              {form.formState.errors.root.message}
-            </FieldError>
+            <FieldError className="mt-2 text-xs">{form.formState.errors.root.message}</FieldError>
           ) : null}
         </div>
       </form>

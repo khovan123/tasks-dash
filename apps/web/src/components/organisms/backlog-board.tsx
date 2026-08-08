@@ -3,14 +3,10 @@
 import type { DragEvent } from "react";
 import { useMemo, useState } from "react";
 import { Plus } from "lucide-react";
-import { NewWorkItemModal } from "@/components/new-work-item-modal";
-import { WorkItemBacklogRow } from "@/components/organisms/work-item-backlog-row";
-import {
-  WorkItemDetailDrawer,
-  type DetailWorkItem,
-} from "@/components/work-item-detail-drawer";
 import { SectionHeading } from "@/components/molecules/section-heading";
-import { useWorkspacePresence } from "@/components/layout/jira-app-shell";
+import { NewWorkItemModal } from "@/components/organisms/new-work-item-modal";
+import { WorkItemBacklogRow } from "@/components/organisms/work-item-backlog-row";
+import { WorkItemDetailDrawer } from "@/components/organisms/work-item-detail-drawer";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader } from "@/components/ui/card";
@@ -25,11 +21,14 @@ import {
   useProjectWorkItems,
 } from "@/features/work-items/hooks/use-project-work-items";
 import type {
+  DetailWorkItem,
   WorkflowStatusView,
   WorkItemMember,
   WorkItemView,
 } from "@/features/work-items/types";
 import { apiRequest } from "@/lib/api/api-request";
+import { useAppSelector } from "@/lib/store/hooks";
+import { selectPresence } from "@/lib/store/realtime-slice";
 
 export function BacklogBoard({
   projectKey,
@@ -56,7 +55,7 @@ export function BacklogBoard({
   const [saving, setSaving] = useState(false);
   const [detailItem, setDetailItem] = useState<DetailWorkItem | null>(null);
   const [drawerOpen, setDrawerOpen] = useState(false);
-  const presenceByMemberId = useWorkspacePresence();
+  const presenceByMemberId = useAppSelector(selectPresence);
 
   function handleItemUpdate(updated: DetailWorkItem) {
     setItems((current) => mergeWorkItem(current, updated));

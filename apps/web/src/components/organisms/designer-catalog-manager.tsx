@@ -4,17 +4,17 @@ import { zodResolver } from "@hookform/resolvers/zod";
 import { DESIGN_CATALOG_TYPES } from "@tasks-dash/contracts";
 import { Controller, FormProvider, useForm } from "react-hook-form";
 import { ExternalLink, Figma, Plus, Trash2 } from "lucide-react";
+import { FormCard } from "@/components/organisms/form-card";
 import {
-  DesignCatalogFormValues,
+  type DesignCatalogFormValues,
   designCatalogSchema,
 } from "@/features/design-catalog/schemas/design-catalog.schema";
+import type { DesignCatalogItem } from "@/features/design-catalog/types";
 import { apiRequest } from "@/lib/api/api-request";
+import { mutationErrorMessage } from "@/lib/api/mutation-result";
+import { parseCommaSeparatedValues } from "@/lib/text-list";
 import { useAppDispatch } from "@/lib/store/hooks";
-import {
-  replaceDesignCatalog,
-  type RealtimeDesignCatalogItem,
-} from "@/lib/store/realtime-slice";
-import { FormCard } from "@/components/layout/app-shell";
+import { replaceDesignCatalog } from "@/lib/store/realtime-slice";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import {
@@ -47,15 +47,6 @@ import {
 } from "@/components/ui/select";
 import { Textarea } from "@/components/ui/textarea";
 
-interface DesignCatalogItem {
-  _id: string;
-  name: string;
-  type: string;
-  figmaUrl: string;
-  description: string;
-  tags: string[];
-}
-
 export function DesignerCatalogManager({
   projectKey,
   items,
@@ -78,7 +69,7 @@ export function DesignerCatalogManager({
   });
 
   async function syncCatalog(): Promise<void> {
-    const nextItems = await apiRequest<RealtimeDesignCatalogItem[]>(
+    const nextItems = await apiRequest<DesignCatalogItem[]>(
       `/api/projects/${projectKey}/design-catalog`,
     );
     dispatch(replaceDesignCatalog({ projectKey, items: nextItems }));
@@ -94,10 +85,7 @@ export function DesignerCatalogManager({
           type: values.type,
           figmaUrl: values.figmaUrl,
           description: values.description,
-          tags: values.tags
-            .split(",")
-            .map((tag) => tag.trim())
-            .filter(Boolean),
+          tags: parseCommaSeparatedValues(values.tags),
         }),
       });
       form.reset({
@@ -108,39 +96,39 @@ export function DesignerCatalogManager({
         tags: "",
       });
       await syncCatalog();
-    } catch (error) {
+    } catch (cause) {
       form.setError("root", {
-        message:
-          error instanceof Error
-            ? error.message
-            : "Không thể thêm Figma vào catalog.",
+        message: mutationErrorMessage(cause, "Không thể thêm Figma vào catalog."),
       });
     }
   }
 
   async function remove(itemId: string): Promise<void> {
-    await apiRequest(`/api/projects/${projectKey}/design-catalog/${itemId}`, {
-      method: "DELETE",
-    });
-    await syncCatalog();
+    form.clearErrors("root");
+    try {
+      await apiRequest(`/api/projects/${projectKey}/design-catalog/${itemId}`, {
+        method: "DELETE",
+      });
+      await syncCatalog();
+    } catch (cause) {
+      form.setError("root", {
+        message: mutationErrorMessage(cause, "Không thể xóa Figma khỏi catalog."),
+      });
+    }
   }
 
   return (
     <div className="flex flex-col gap-6">
-      {canManageCatalog && (
+      {canManageCatalog ? (
         <FormProvider {...form}>
           <form onSubmit={form.handleSubmit(submit)} noValidate>
             <FormCard
               eyebrow="Designer catalog"
               title="Liên kết Figma"
               footer={
-                <Button
-                  disabled={form.formState.isSubmitting || !canManageCatalog}
-                >
+                <Button disabled={form.formState.isSubmitting}>
                   <Plus data-icon="inline-start" />
-                  {form.formState.isSubmitting
-                    ? "Đang thêm…"
-                    : "Thêm vào catalog"}
+                  {form.formState.isSubmitting ? "Đang thêm…" : "Thêm vào catalog"}
                 </Button>
               }
             >
@@ -150,7 +138,6 @@ export function DesignerCatalogManager({
                   <Input
                     id="design-name"
                     {...form.register("name")}
-                    disabled={!canManageCatalog}
                     placeholder="Checkout / Payment Button"
                   />
                 </Field>
@@ -160,11 +147,7 @@ export function DesignerCatalogManager({
                     control={form.control}
                     name="type"
                     render={({ field }) => (
-                      <Select
-                        onValueChange={field.onChange}
-                        value={field.value}
-                        disabled={!canManageCatalog}
-                      >
+                      <Select onValueChange={field.onChange} value={field.value}>
                         <SelectTrigger id="design-type" className="w-full">
                           <SelectValue placeholder="Chọn loại" />
                         </SelectTrigger>
@@ -185,7 +168,6 @@ export function DesignerCatalogManager({
                 <Input
                   id="figma-url"
                   {...form.register("figmaUrl")}
-                  disabled={!canManageCatalog}
                   placeholder="https://www.figma.com/design/..."
                 />
               </Field>
@@ -194,7 +176,6 @@ export function DesignerCatalogManager({
                 <Textarea
                   id="design-description"
                   {...form.register("description")}
-                  disabled={!canManageCatalog}
                   placeholder="Mục đích, state và quy tắc sử dụng"
                 />
               </Field>
@@ -203,7 +184,6 @@ export function DesignerCatalogManager({
                 <Input
                   id="design-tags"
                   {...form.register("tags")}
-                  disabled={!canManageCatalog}
                   placeholder="mobile, checkout, v2"
                 />
               </Field>
@@ -213,7 +193,7 @@ export function DesignerCatalogManager({
             </FormCard>
           </form>
         </FormProvider>
-      )}
+      ) : null}
 
       {items.length === 0 ? (
         <Empty>
@@ -237,16 +217,14 @@ export function DesignerCatalogManager({
                     size="icon-sm"
                     type="button"
                     aria-label={`Xóa ${item.name}`}
-                    disabled={!canManageCatalog}
+                    disabled={!canManageCatalog || form.formState.isSubmitting}
                     onClick={() => void remove(item._id)}
                   >
                     <Trash2 className="text-destructive" />
                   </Button>
                 </div>
                 <CardTitle>{item.name}</CardTitle>
-                <CardDescription>
-                  {item.description || "Chưa có mô tả."}
-                </CardDescription>
+                <CardDescription>{item.description || "Chưa có mô tả."}</CardDescription>
               </CardHeader>
               <CardContent className="flex flex-wrap gap-2">
                 {item.tags.map((tag) => (

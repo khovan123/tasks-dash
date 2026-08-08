@@ -11,6 +11,12 @@ export interface GithubRepositoryStatus {
   linkedProjectKey?: string;
 }
 
+export interface GithubRepositoryOption extends GithubRepositoryStatus {
+  name: string;
+  private: boolean;
+  default_branch: string;
+}
+
 export interface DiscordWorkspaceStatus {
   botConfigured: boolean;
   configured: boolean;
@@ -52,4 +58,14 @@ export interface DiscordChannelView {
   id: string;
   name?: string | null;
   label: string;
+}
+
+export interface DiscordProvisionResult {
+  provisionedProjects: string[];
+  failedProjects: Array<{ projectKey: string; error: string }>;
+}
+
+export interface DiscordCleanupResult {
+  deletedChannelsCount: number;
+  deletedCategoriesCount: number;
 }
